@@ -1,0 +1,145 @@
+# rsp42 configuration (example).
+#
+# Copy to config/config.yaml and adjust. Every value can be overridden with an
+# environment variable prefixed RSP42_, using underscores for nesting, e.g.
+# RSP42_SMDPP_FQDN or RSP42_SERVER_ES9P_PORT.
+#
+# Defaults use the SGP.26 v3.0.2 (2026) Variant O test certificates. Run
+# scripts/extract-testdata.sh once to populate testdata/ before starting.
+
+server:
+  bind: "0.0.0.0"
+  es9p:
+    port: 8443
+    tls:
+      enabled: true
+      cert_file: "testdata/sgp26/SM-DP+/DPtls/CERT_DPtls_NIST.pem"
+      key_file: "testdata/sgp26/SM-DP+/DPtls/SK_DPtls_NIST.pem"
+      min_version: "1.2"
+  es2p:
+    port: 8444
+    tls:
+      enabled: true
+      cert_file: "testdata/sgp26/SM-DP+/DPtls/CERT_DPtls_NIST.pem"
+      key_file: "testdata/sgp26/SM-DP+/DPtls/SK_DPtls_NIST.pem"
+      client_ca_file: "testdata/sgp26/CertificateIssuer/CERT_CI_NIST.pem"
+      min_version: "1.2"
+  admin:
+    port: 9000
+
+smdpp:
+  fqdn: "testsmdpplus1.example.com"
+  oid: "2.999.10"
+  host_id: "0000000000000000"
+  curve: "nist"
+  transaction_id_len: 16
+  session_ttl: "30m"
+  download_ttl: "24h"
+  max_download_attempts: 5
+  max_cc_attempts: 3
+  es12:
+    enabled: true
+    smds_address: "testrootsmds.example.com"
+    register_on_confirm: true
+    forwarding_indicator: true
+    delete_on_install: true
+    tls:
+      client_cert_file: "testdata/sgp26/SM-DP+/DPtls/CERT_DPtls_NIST.pem"
+      client_key_file: "testdata/sgp26/SM-DP+/DPtls/SK_DPtls_NIST.pem"
+      ca_file: "testdata/sgp26/CertificateIssuer/CERT_CI_NIST.pem"
+
+certs:
+  root_dir: "testdata/sgp26"
+  ci: "CertificateIssuer"
+  eum: "EUM"
+  euicc: "eUICC"
+  dp_auth: "SM-DP+/DPauth"
+  dp_pb: "SM-DP+/DPpb"
+  dp_tls: "SM-DP+/DPtls"
+  ds_auth: "SM-DS/DSauth"
+  ds_tls: "SM-DS/DStls"
+  allow_expired_test_certs: true
+
+profiles:
+  upp_dir: "testdata/upp"
+  repository: "sqlite"
+  store:
+    dsn: "file:rsp42.db?_pragma=journal_mode(WAL)&_pragma=busy_timeout(5000)"
+  personalization:
+    enabled: true
+    default_algorithm: "milenage"
+    source:
+      kind: "csv"
+      path: "testdata/personalization/profiles.csv"
+      mapping:
+        iccid: "iccid"
+        imsi: "imsi"
+        k: "k"
+        opc: "opc"
+    iccid_pool_prefix: "8900012"
+    imsi_pool_prefix: "00101"
+
+notifications:
+  es2p_callback:
+    enabled: false
+    url: ""
+    client_cert_file: ""
+    client_key_file: ""
+    ca_file: ""
+    max_attempts: 5          # delivery attempts before a notification is dead-lettered
+    retry_interval: "30s"    # how often pending notifications are retried
+
+smds:
+  enabled: true
+  role: "root"
+  fqdn: "testrootsmds.example.com"
+  oid: "2.999.15"
+  curve: "nist"
+  event_ttl: "720h"
+  dsauth:
+    cert_file: "testdata/sgp26/SM-DS/DSauth/CERT_DSauth_NIST.der"
+    key_file: "testdata/sgp26/SM-DS/DSauth/SK_DSauth_NIST.pem"
+  dstls:
+    cert_file: "testdata/sgp26/SM-DS/DStls/CERT_DStls_NIST.pem"
+    key_file: "testdata/sgp26/SM-DS/DStls/SK_DStls_NIST.pem"
+  cascade:
+    enabled: false
+    root_address: ""
+    tls:
+      client_cert_file: ""
+      client_key_file: ""
+      ca_file: ""
+  server:
+    bind: "0.0.0.0"
+    es11:
+      port: 9443
+      tls:
+        enabled: true
+        cert_file: "testdata/sgp26/SM-DS/DStls/CERT_DStls_NIST.pem"
+        key_file: "testdata/sgp26/SM-DS/DStls/SK_DStls_NIST.pem"
+        min_version: "1.2"
+    es12:
+      port: 9444
+      tls:
+        enabled: true
+        cert_file: "testdata/sgp26/SM-DS/DStls/CERT_DStls_NIST.pem"
+        key_file: "testdata/sgp26/SM-DS/DStls/SK_DStls_NIST.pem"
+        client_ca_file: "testdata/sgp26/CertificateIssuer/CERT_CI_NIST.pem"
+        min_version: "1.2"
+    admin:
+      port: 9100
+  store:
+    dsn: "file:rsp42-smds.db?_pragma=journal_mode(WAL)&_pragma=busy_timeout(5000)"
+
+kms:
+  provider: "file"
+  kek_hex: "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f"  # test-only KEK
+
+log:
+  level: "info"
+  format: "json"
+
+audit:
+  enabled: true
+  sink: "db"
+  file: "audit.log"

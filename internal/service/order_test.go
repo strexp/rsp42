@@ -1,0 +1,145 @@
+package service
+
+import (
+	"path/filepath"
+	"testing"
+
+	"github.com/stretchr/testify/require"
+
+	"rsp42/internal/kms"
+	"rsp42/internal/store"
+)
+
+func TestCanTransitionMatrix(t *testing.T) {
+	legal := []struct{ from, to store.ProfileState }{
+		{store.StateAvailable, store.StateAllocated},
+		{store.StateAvailable, store.StateLinked},
+		{store.StateAllocated, store.StateConfirmed},
+		{store.StateAllocated, store.StateReleased},
+		{store.StateLinked, store.StateConfirmed},
+		{store.StateConfirmed, store.StateReleased},
+		{store.StateReleased, store.StateDownloaded},
+		{store.StateDownloaded, store.StateInstalled},
+		{store.StateDownloaded, store.StateError},
+		{store.StateError, store.StateAvailable},
+		{store.StateReleased, store.StateError},
+		{store.StateDownloaded, store.StateAvailable},
+		{store.StateConfirmed, store.StateUnavailable},
+		{store.StateReleased, store.StateDownloaded}, // retry
+	}
+	for _, c := range legal {
+		require.True(t, CanTransition(c.from, c.to), "%s -> %s should be legal", c.from, c.to)
+	}
+
+	illegal := []struct{ from, to store.ProfileState }{
+		{store.StateAvailable, store.StateInstalled},
+		{store.StateAvailable, store.StateConfirmed},
+		{store.StateConfirmed, store.StateDownloaded},
+		{store.StateInstalled, store.StateInstalled},
+		{store.StateInstalled, store.StateDownloaded},
+		{store.StateUnavailable, store.StateAllocated},
+	}
+	for _, c := range illegal {
+		if c.from == c.to {
+			continue
+		}
+		require.False(t, CanTransition(c.from, c.to), "%s -> %s should be illegal", c.from, c.to)
+	}
+
+	// Same-state is always idempotent.
+	require.True(t, CanTransition(store.StateConfirmed, store.StateConfirmed))
+}
+
+func newTestStore(t *testing.T) *store.Store {
+	t.Helper()
+	dsn := "file:" + filepath.Join(t.TempDir(), "test.db")
+	s, err := store.Open(dsn)
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = s.Close() })
+	return s
+}
+
+func TestOrderServiceLifecycle(t *testing.T) {
+	s := newTestStore(t)
+	svc := NewOrderService(s.Profiles)
+
+	_, err := s.Profiles.Create(&store.Profile{ICCID: "89000123456789012340", State: store.StateAvailable})
+	require.NoError(t, err)
+
+	p, err := svc.Link("89000123456789012340")
+	require.NoError(t, err)
+	require.Equal(t, store.StateLinked, p.State)
+
+	p, err = svc.Confirm("89000123456789012340", true)
+	require.NoError(t, err)
+	require.Equal(t, store.StateReleased, p.State)
+	require.True(t, p.ReleaseFlag)
+
+	// Idempotent confirm.
+	p, err = svc.Confirm("89000123456789012340", true)
+	require.NoError(t, err)
+	require.Equal(t, store.StateReleased, p.State)
+
+	p, err = svc.MarkDownloaded("89000123456789012340")
+	require.NoError(t, err)
+	require.Equal(t, store.StateDownloaded, p.State)
+	require.Equal(t, 1, p.DownloadAttempts)
+
+	p, err = svc.MarkInstalled("89000123456789012340")
+	require.NoError(t, err)
+	require.Equal(t, store.StateInstalled, p.State)
+	require.NotNil(t, p.InstalledAt)
+
+	// Illegal: Installed -> Downloaded.
+	_, err = svc.MarkDownloaded("89000123456789012340")
+	require.Error(t, err)
+}
+
+func TestSessionEncryptionAtRest(t *testing.T) {
+	s := newTestStore(t)
+	provider, err := kms.NewFileProviderFromKEK(make([]byte, 32))
+	require.NoError(t, err)
+	ss := NewSessionService(s.Sessions, provider, 0)
+
+	secret := []byte("0123456789abcdef")
+	require.NoError(t, ss.Put(&store.Session{
+		TransactionID:   "TXN1",
+		State:           "initiated",
+		ServerChallenge: secret,
+		SharedSecret:    secret,
+		SmdpOtSK:        secret,
+	}))
+
+	// The raw database column must not contain the plaintext.
+	var raw []byte
+	require.NoError(t, s.DB.QueryRow("SELECT server_challenge FROM sessions WHERE transaction_id='TXN1'").Scan(&raw))
+	require.NotEqual(t, secret, raw)
+
+	got, err := ss.Get("TXN1")
+	require.NoError(t, err)
+	require.Equal(t, secret, got.ServerChallenge)
+	require.Equal(t, secret, got.SharedSecret)
+	require.Equal(t, secret, got.SmdpOtSK)
+}
+
+func TestEventRepoReuseForbidden(t *testing.T) {
+	s := newTestStore(t)
+	rec := &store.EventRecord{EID: "89049032123451234512345678901235", EventID: "E1", RSPServerAddress: "dp", CallerOID: "2.999.10"}
+	_, err := s.Events.Insert(rec)
+	require.NoError(t, err)
+
+	// Same triple again is rejected (EventID not reusable).
+	_, err = s.Events.Insert(&store.EventRecord{EID: rec.EID, EventID: "E1", RSPServerAddress: "dp", CallerOID: "2.999.10"})
+	require.ErrorIs(t, err, store.ErrEventIDInUse)
+
+	// Even after soft delete it stays reserved.
+	ok, err := s.Events.SoftDelete(rec.ID)
+	require.NoError(t, err)
+	require.True(t, ok)
+	_, err = s.Events.Insert(&store.EventRecord{EID: rec.EID, EventID: "E1", RSPServerAddress: "dp", CallerOID: "2.999.10"})
+	require.ErrorIs(t, err, store.ErrEventIDInUse)
+
+	// Another caller may use the same EventID.
+	_, err = s.Events.Insert(&store.EventRecord{EID: rec.EID, EventID: "E1", RSPServerAddress: "dp2", CallerOID: "2.999.11"})
+	require.NoError(t, err)
+}

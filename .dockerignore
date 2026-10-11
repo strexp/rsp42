@@ -1,0 +1,10 @@
+refs/
+bin/
+dist/
+testdata/
+.git/
+.github/
+*.db
+*.db-wal
+*.db-shm
+audit.log

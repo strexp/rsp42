@@ -1,0 +1,237 @@
+package rsp
+
+import (
+	"encoding/hex"
+	"encoding/json"
+	"os"
+	"path/filepath"
+	"testing"
+
+	"github.com/stretchr/testify/require"
+
+	"rsp42/internal/asn1"
+)
+
+func golden(t *testing.T) map[string]string {
+	t.Helper()
+	b, err := os.ReadFile(filepath.Join("..", "..", "testdata", "vectors", "rsp_golden.json"))
+	require.NoError(t, err)
+	m := map[string]string{}
+	require.NoError(t, json.Unmarshal(b, &m))
+	return m
+}
+
+func seqBytes(n int, start byte) []byte {
+	out := make([]byte, n)
+	for i := range out {
+		out[i] = start + byte(i)
+	}
+	return out
+}
+
+func repeat(b byte, n int) []byte {
+	out := make([]byte, n)
+	for i := range out {
+		out[i] = b
+	}
+	return out
+}
+
+func hexEq(t *testing.T, want string, got []byte) {
+	t.Helper()
+	require.Equal(t, want, hex.EncodeToString(got))
+}
+
+func TestEncodeServerSigned1(t *testing.T) {
+	g := golden(t)
+	s := &ServerSigned1{
+		TransactionID:   seqBytes(16, 0),
+		EuiccChallenge:  seqBytes(16, 16),
+		ServerAddress:   "testsmdpplus1.example.com",
+		ServerChallenge: seqBytes(16, 32),
+	}
+	hexEq(t, g["ServerSigned1"], s.Encode())
+}
+
+func TestEncodeSmdpSigned2(t *testing.T) {
+	s := &SmdpSigned2{TransactionID: seqBytes(16, 0), CCRequiredFlag: false}
+	// Golden for the ccRequiredFlag=false case is embedded in AuthenticateClientResponseEs9.
+	g := golden(t)
+	require.Contains(t, g["AuthenticateClientResponseEs9_Ok"], hex.EncodeToString(s.Encode()))
+}
+
+func TestEncodeInitialiseSecureChannelRequest(t *testing.T) {
+	r := &InitialiseSecureChannelRequest{
+		RemoteOpID:    1,
+		TransactionID: seqBytes(16, 0),
+		ControlRefTemplate: ControlRefTemplate{
+			KeyType: []byte{0x88}, KeyLen: []byte{0x10}, HostID: []byte("00000000"),
+		},
+		SmdpOtpk: seqBytes(65, 0),
+		SmdpSign: repeat(0, 64),
+	}
+	g := golden(t)
+	require.Contains(t, g["BoundProfilePackage"], hex.EncodeToString(r.Encode()))
+}
+
+func TestEncodeConfigureISDPRequest(t *testing.T) {
+	r := &ConfigureISDPRequest{DpOID: "2.999.10"}
+	// Value captured from asn1tools.
+	hexEq(t, "bf2407b805800388370a", r.Encode())
+	hexEq(t, "bf2400", (&ConfigureISDPRequest{}).Encode())
+}
+
+func TestEncodeStoreMetadataRequest(t *testing.T) {
+	class := int64(2)
+	r := &StoreMetadataRequest{
+		ICCID:               mustHex(t, "98001032547698103214"),
+		ServiceProviderName: "SPN",
+		ProfileName:         "Name",
+		ProfileClass:        &class,
+		Notifications: []NotificationConfigurationInformation{
+			{Operation: 0x40, Address: "a"},
+			{Operation: 0x20, Address: "a"},
+			{Operation: 0x10, Address: "a"},
+		},
+	}
+	g := golden(t)
+	hexEq(t, g["StoreMetadataRequest"], r.Encode())
+}
+
+func TestAssembleBoundProfilePackage(t *testing.T) {
+	bpp := &BoundProfilePackage{
+		InitialiseSecureChannelRequest: &InitialiseSecureChannelRequest{
+			RemoteOpID:         1,
+			TransactionID:      seqBytes(16, 0),
+			ControlRefTemplate: ControlRefTemplate{KeyType: []byte{0x88}, KeyLen: []byte{0x10}, HostID: []byte("00000000")},
+			SmdpOtpk:           seqBytes(65, 0),
+			SmdpSign:           repeat(0, 64),
+		},
+		FirstSequenceOf87: [][]byte{mustHex(t, "8704aabbccdd")},
+		SequenceOf88:      [][]byte{mustHex(t, "8804aabbccdd")},
+		SequenceOf86:      [][]byte{mustHex(t, "8604aabbccdd")},
+	}
+	g := golden(t)
+	hexEq(t, g["BoundProfilePackage"], bpp.Assemble())
+
+	// Decode round-trip.
+	dec, err := DecodeBoundProfilePackage(bpp.Assemble())
+	require.NoError(t, err)
+	require.Equal(t, bpp.FirstSequenceOf87, dec.FirstSequenceOf87)
+	require.Equal(t, bpp.SequenceOf88, dec.SequenceOf88)
+	require.Equal(t, bpp.SequenceOf86, dec.SequenceOf86)
+}
+
+func TestEncodeResponses(t *testing.T) {
+	g := golden(t)
+	txn := seqBytes(16, 0)
+
+	// AuthenticateClientResponseEs9 OK.
+	class := int64(2)
+	profileMeta := (&StoreMetadataRequest{ICCID: mustHex(t, "98001032547698103214"), ServiceProviderName: "SPN", ProfileName: "Name"}).Encode()
+	_ = class
+	smdpSigned2 := (&SmdpSigned2{TransactionID: txn, CCRequiredFlag: false}).Encode()
+	sig2 := tlvBytes(asn1.App(55, false), repeat(0, 64))
+	certDER := mustRead(t, "../../testdata/sgp26/EUM/CERT_EUM_NIST.der")
+	pdr := (&PrepareDownloadRequest{SmdpSigned2Raw: smdpSigned2, SmdpSignature2Raw: sig2, SmdpCertificateDER: certDER}).Encode()
+	got := AuthenticateClientResponseEs9Ok(txn, profileMeta, pdr)
+	hexEq(t, g["AuthenticateClientResponseEs9_Ok"], got)
+
+	// GetBoundProfilePackageResponse OK.
+	bpp := mustHex(t, g["BoundProfilePackage"])
+	hexEq(t, g["GetBoundProfilePackageResponse_Ok"], GetBoundProfilePackageResponseOk(txn, bpp))
+
+	// CancelSessionResponseEs9 OK.
+	hexEq(t, g["CancelSessionResponseEs9"], CancelSessionResponseEs9Ok())
+
+	// AuthenticateClientResponseEs11 OK.
+	entries := [][2]string{{"e1", "a"}, {"e2", "b"}}
+	hexEq(t, g["AuthenticateClientResponseEs11_Ok"], AuthenticateClientResponseEs11Ok(txn, entries))
+}
+
+func TestDecodePrepareDownloadResponse(t *testing.T) {
+	g := golden(t)
+	ok, errResp, err := DecodePrepareDownloadResponse(mustHex(t, g["PrepareDownloadResponse_Ok"]))
+	require.NoError(t, err)
+	require.Nil(t, errResp)
+	require.NotNil(t, ok)
+	require.Equal(t, seqBytes(16, 0), ok.EuiccSigned2.TransactionID)
+	require.Equal(t, seqBytes(65, 0), ok.EuiccSigned2.EuiccOtpk)
+	require.Equal(t, repeat(0, 64), ok.EuiccSignature2)
+
+	ok, errResp, err = DecodePrepareDownloadResponse(mustHex(t, g["PrepareDownloadResponse_Err"]))
+	require.NoError(t, err)
+	require.Nil(t, ok)
+	require.EqualValues(t, 1, errResp.DownloadErrorCode)
+}
+
+func TestDecodeAuthenticateServerResponse(t *testing.T) {
+	g := golden(t)
+	ok, errResp, err := DecodeAuthenticateServerResponse(mustHex(t, g["AuthenticateServerResponse_Ok"]))
+	require.NoError(t, err)
+	require.Nil(t, errResp)
+	require.Equal(t, seqBytes(16, 0), ok.EuiccSigned1.TransactionID)
+	require.Equal(t, "ABC", ok.EuiccSigned1.CtxParams1.MatchingID)
+	require.NotNil(t, ok.EuiccSigned1.EuiccInfo2)
+	require.Equal(t, mustRead(t, "../../testdata/sgp26/eUICC/CERT_EUICC_NIST.der"), ok.EuiccCertificate)
+	require.Equal(t, mustRead(t, "../../testdata/sgp26/EUM/CERT_EUM_NIST.der"), ok.EumCertificate)
+
+	_, errResp, err = DecodeAuthenticateServerResponse(mustHex(t, g["AuthenticateServerResponse_Err"]))
+	require.NoError(t, err)
+	require.EqualValues(t, 3, errResp.AuthenticateErrorCode)
+}
+
+func TestDecodeCancelSession(t *testing.T) {
+	g := golden(t)
+	ok, _, err := DecodeCancelSessionResponse(mustHex(t, g["CancelSessionResponse"]))
+	require.NoError(t, err)
+	require.Equal(t, seqBytes(16, 0), ok.Signed.TransactionID)
+	require.Equal(t, "2.999.10", ok.Signed.SmdpOID)
+	require.EqualValues(t, 0, ok.Signed.Reason)
+
+	req, err := DecodeCancelSessionRequestEs9(mustHex(t, g["CancelSessionRequestEs9"]))
+	require.NoError(t, err)
+	require.Equal(t, seqBytes(16, 0), req.TransactionID)
+	require.EqualValues(t, 5, req.Reason)
+}
+
+func TestDecodeHandleNotification(t *testing.T) {
+	g := golden(t)
+	h, err := DecodeHandleNotification(mustHex(t, g["HandleNotification"]))
+	require.NoError(t, err)
+	require.NotNil(t, h.Pending.InstallationResult)
+	pir := h.Pending.InstallationResult
+	require.Equal(t, seqBytes(16, 0), pir.Data.TransactionID)
+	require.NotNil(t, pir.Data.FinalResult)
+	require.True(t, pir.Data.FinalResult.Success)
+	require.Equal(t, mustHex(t, "a0000005591010ffffffff8900001000"), pir.Data.FinalResult.AID)
+
+	o, err := DecodePendingNotification(mustHex(t, g["OtherSignedNotification"]))
+	require.NoError(t, err)
+	require.NotNil(t, o.OtherSigned)
+	require.EqualValues(t, 2, o.OtherSigned.Notification.SeqNumber)
+	require.Equal(t, mustRead(t, "../../testdata/sgp26/eUICC/CERT_EUICC_NIST.der"), o.OtherSigned.EuiccCertificate)
+}
+
+func TestParseEUICCInfo1(t *testing.T) {
+	g := golden(t)
+	info, err := ParseEUICCInfo1(mustHex(t, g["EUICCInfo1"]))
+	require.NoError(t, err)
+	require.Equal(t, mustHex(t, "020200"), info.SVN)
+	require.Len(t, info.CiPKIDListForVerification, 1)
+	require.Len(t, info.CiPKIDListForSigning, 1)
+}
+
+func mustHex(t *testing.T, s string) []byte {
+	t.Helper()
+	b, err := hex.DecodeString(s)
+	require.NoError(t, err)
+	return b
+}
+
+func mustRead(t *testing.T, p string) []byte {
+	t.Helper()
+	b, err := os.ReadFile(p)
+	require.NoError(t, err)
+	return b
+}

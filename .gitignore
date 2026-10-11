@@ -1,0 +1,21 @@
+# reference material (upstream sources, not part of the project)
+refs/
+
+# local planning notes (not part of the project)
+TODO.md
+
+# build artifacts
+/bin/
+*.exe
+*.test
+*.out
+
+# local databases and audit output
+*.db
+*.db-wal
+*.db-shm
+audit.log
+
+# editor/OS noise
+.DS_Store
+*.swp
