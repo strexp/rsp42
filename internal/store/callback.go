@@ -25,9 +25,7 @@ type CallbackRepo struct{ db *sql.DB }
 
 const callbackCols = `id, url, payload_json, notification_point_id, status, attempts, next_retry_at, response, created_at`
 
-func scanCallback(sc interface {
-	Scan(dest ...any) error
-}) (*Callback, error) {
+func scanCallback(sc rowScanner) (*Callback, error) {
 	var c Callback
 	var pointID, attempts sql.NullInt64
 	var nextRetry sql.NullInt64

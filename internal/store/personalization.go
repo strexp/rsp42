@@ -76,18 +76,25 @@ const personalizationUpdate = `UPDATE personalization SET
 
 // Upsert inserts or replaces a row. A row with an ICCID is keyed by
 // (tenant, iccid); a credentials-pool row (no ICCID) is keyed by (tenant, imsi).
+// The lookup-then-write runs in one transaction so two concurrent upserts
+// cannot both decide to insert and violate the tenant-scoped unique index.
 func (r *PersonalizationRepo) Upsert(p *Personalization) error {
+	return withTx(r.db, func(tx *sql.Tx) error { return upsertPersonalization(tx, p) })
+}
+
+// upsertPersonalization is Upsert's body, usable inside a transaction.
+func upsertPersonalization(db dbtx, p *Personalization) error {
 	now := time.Now().UTC().Unix()
 	created := now
 	if !p.CreatedAt.IsZero() {
 		created = p.CreatedAt.Unix()
 	}
-	existing, err := r.lookup(p.TenantID, p.ICCID, p.IMSI)
+	existing, err := lookupPersonalization(db, p.TenantID, p.ICCID, p.IMSI)
 	if err != nil && !errors.Is(err, ErrNotFound) {
 		return err
 	}
 	if existing != nil {
-		_, err := r.db.Exec(personalizationUpdate,
+		_, err := db.Exec(personalizationUpdate,
 			nullStr(p.IMSI), p.K, p.OPc, nullStr(p.PIN1), nullStr(p.PUK1), nullStr(p.ADM1), nullStr(p.ADM2),
 			nullStr(p.SPN), nullStr(p.Algorithm), p.Rotation, p.Xoring, p.NumberOfKeccak,
 			nullStr(p.PLMN), nullStr(p.MSISDN), p.ACC, nullStr(p.FilePatches), now, existing.ID)
@@ -99,7 +106,7 @@ func (r *PersonalizationRepo) Upsert(p *Personalization) error {
 		p.UpdatedAt = toTime(now)
 		return nil
 	}
-	res, err := r.db.Exec(`INSERT INTO personalization
+	res, err := db.Exec(`INSERT INTO personalization
 		(tenant_id, iccid, imsi, k, opc, pin1, puk1, adm1, adm2, spn, algorithm, rotation, xoring,
 		 number_of_keccak, plmn, msisdn, acc, file_patches, created_at, updated_at)
 		VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
@@ -117,6 +124,11 @@ func (r *PersonalizationRepo) Upsert(p *Personalization) error {
 
 // lookup finds a row by ICCID when set, otherwise by IMSI within the tenant.
 func (r *PersonalizationRepo) lookup(tenant, iccid, imsi string) (*Personalization, error) {
+	return lookupPersonalization(r.db, tenant, iccid, imsi)
+}
+
+// lookupPersonalization is lookup's body, usable inside a transaction.
+func lookupPersonalization(db dbtx, tenant, iccid, imsi string) (*Personalization, error) {
 	query := "SELECT " + personalizationCols + " FROM personalization WHERE COALESCE(tenant_id,'') = ?"
 	args := []any{tenant}
 	switch {
@@ -129,7 +141,7 @@ func (r *PersonalizationRepo) lookup(tenant, iccid, imsi string) (*Personalizati
 	default:
 		return nil, ErrNotFound
 	}
-	row := r.db.QueryRow(query, args...)
+	row := db.QueryRow(query, args...)
 	p, err := scanPersonalization(row)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, ErrNotFound

@@ -13,7 +13,7 @@ type EventRepo struct{ db *sql.DB }
 const eventCols = `id, COALESCE(tenant_id,''), eid, event_id, rsp_server_address, caller_oid, forwarding_indicator, cascaded,
 	root_event_id, COALESCE(iccid,''), COALESCE(matching_id,''), registered_at, expires_at, deleted_at`
 
-func scanEvent(sc interface{ Scan(dest ...any) error }) (*EventRecord, error) {
+func scanEvent(sc rowScanner) (*EventRecord, error) {
 	var e EventRecord
 	var fwd, casc int
 	var root sql.NullString

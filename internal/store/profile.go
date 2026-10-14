@@ -15,9 +15,7 @@ const profileCols = `id, tenant_id, external_ref, iccid, imsi, profile_type, eid
 	smds_address, release_flag, download_attempts, cc_attempts, upp_template, ppr_ids, personalization,
 	created_at, updated_at, installed_at, error_reason, batch_id`
 
-func scanProfile(sc interface {
-	Scan(dest ...any) error
-}) (*Profile, error) {
+func scanProfile(sc rowScanner) (*Profile, error) {
 	var p Profile
 	var tenant, extRef, imsi, ptype, eid, matching, smds, upp, pers, errReason sql.NullString
 	var ccHash, pprIds []byte

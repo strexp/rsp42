@@ -31,33 +31,46 @@ type UPPRepo struct{ db *sql.DB }
 const uppCols = `id, COALESCE(tenant_id,''), name, saip_major, saip_minor, sha256, bytes, active, created_at, updated_at`
 const uppColsMeta = `id, COALESCE(tenant_id,''), name, saip_major, saip_minor, sha256, active, created_at, updated_at`
 
-// Upsert inserts or replaces a template, scoped by (tenant, name).
+// Upsert inserts or replaces a template, scoped by (tenant, name). It is a
+// single statement, so a concurrent write cannot interleave between an insert
+// decision and the write.
 func (r *UPPRepo) Upsert(t *UPPTemplate) error {
+	return upsertTemplate(r.db, t)
+}
+
+// upsertTemplate is Upsert's body, usable inside a transaction. The conflict
+// target is omitted on purpose: upp_templates is unique on the expression index
+// COALESCE(tenant_id,”), name (migration 00007), which cannot be named as an
+// ON CONFLICT target. created_at is preserved on conflict, matching the
+// previous UPDATE-then-INSERT behaviour.
+func upsertTemplate(db dbtx, t *UPPTemplate) error {
 	now := time.Now().UTC().Unix()
 	created := now
 	if !t.CreatedAt.IsZero() {
 		created = t.CreatedAt.Unix()
 	}
-	res, err := r.db.Exec(`UPDATE upp_templates SET
-		 saip_major=?, saip_minor=?, sha256=?, bytes=?, active=?, updated_at=?
-		 WHERE name=? AND COALESCE(tenant_id,'')=?`,
-		t.SAIPMajor, t.SAIPMinor, t.SHA256, t.Bytes, boolInt(t.Active), now, t.Name, t.TenantID)
-	if err != nil {
-		return err
-	}
-	if n, _ := res.RowsAffected(); n > 0 {
-		return nil
-	}
-	_, err = r.db.Exec(`INSERT INTO upp_templates
+	_, err := db.Exec(`INSERT INTO upp_templates
 		(tenant_id, name, saip_major, saip_minor, sha256, bytes, active, created_at, updated_at)
-		VALUES (?,?,?,?,?,?,?,?,?)`,
+		VALUES (?,?,?,?,?,?,?,?,?)
+		ON CONFLICT DO UPDATE SET
+			saip_major = excluded.saip_major,
+			saip_minor = excluded.saip_minor,
+			sha256     = excluded.sha256,
+			bytes      = excluded.bytes,
+			active     = excluded.active,
+			updated_at = excluded.updated_at`,
 		nullStr(t.TenantID), t.Name, t.SAIPMajor, t.SAIPMinor, t.SHA256, t.Bytes, boolInt(t.Active), created, now)
 	return err
 }
 
 // GetScoped loads a template in exactly the given scope ("" = global).
 func (r *UPPRepo) GetScoped(tenant, name string) (*UPPTemplate, error) {
-	row := r.db.QueryRow(`SELECT `+uppCols+` FROM upp_templates WHERE name = ? AND COALESCE(tenant_id,'') = ?`, name, tenant)
+	return getScoped(r.db, tenant, name)
+}
+
+// getScoped is GetScoped's body, usable inside a transaction.
+func getScoped(db dbtx, tenant, name string) (*UPPTemplate, error) {
+	row := db.QueryRow(`SELECT `+uppCols+` FROM upp_templates WHERE name = ? AND COALESCE(tenant_id,'') = ?`, name, tenant)
 	t, err := scanUPP(row, true)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, fmt.Errorf("store: upp template %q (tenant %q): %w", name, tenant, ErrNotFound)
@@ -200,8 +213,6 @@ func (r *UPPRepo) CountForTenant(tenant string) (int, error) {
 	return n, err
 }
 
-type rowScanner interface{ Scan(dest ...any) error }
-
 func scanUPP(sc rowScanner, withBytes bool) (*UPPTemplate, error) {
 	var t UPPTemplate
 	var active int
@@ -250,8 +261,8 @@ func scanUPPVersion(sc rowScanner) (*UPPTemplateVersion, error) {
 
 // archiveCurrent snapshots the current template row into the version history.
 // It is a no-op when the row does not exist or its bytes are unchanged.
-func (r *UPPRepo) archiveCurrent(tenant, name, note string) error {
-	cur, err := r.GetScoped(tenant, name)
+func archiveCurrent(db dbtx, tenant, name, note string) error {
+	cur, err := getScoped(db, tenant, name)
 	if errors.Is(err, ErrNotFound) {
 		return nil
 	}
@@ -259,20 +270,20 @@ func (r *UPPRepo) archiveCurrent(tenant, name, note string) error {
 		return err
 	}
 	var next int
-	if err := r.db.QueryRow(`SELECT COALESCE(MAX(version_no),0)+1 FROM upp_template_versions
+	if err := db.QueryRow(`SELECT COALESCE(MAX(version_no),0)+1 FROM upp_template_versions
 		WHERE COALESCE(tenant_id,'') = ? AND name = ?`, tenant, name).Scan(&next); err != nil {
 		return err
 	}
 	if next > 1 {
 		// Nothing new to archive when the bytes already match the last revision.
 		var last string
-		if err := r.db.QueryRow(`SELECT sha256 FROM upp_template_versions
+		if err := db.QueryRow(`SELECT sha256 FROM upp_template_versions
 			WHERE COALESCE(tenant_id,'') = ? AND name = ? ORDER BY version_no DESC LIMIT 1`,
 			tenant, name).Scan(&last); err == nil && last == cur.SHA256 {
 			return nil
 		}
 	}
-	_, err = r.db.Exec(`INSERT INTO upp_template_versions
+	_, err = db.Exec(`INSERT INTO upp_template_versions
 		(tenant_id, name, version_no, saip_major, saip_minor, sha256, bytes, note, created_at)
 		VALUES (?,?,?,?,?,?,?,?,?)`,
 		nullStr(tenant), name, next, cur.SAIPMajor, cur.SAIPMinor, cur.SHA256, cur.Bytes, nullStr(note), unixNow())
@@ -280,12 +291,16 @@ func (r *UPPRepo) archiveCurrent(tenant, name, note string) error {
 }
 
 // UpsertArchived is Upsert with version archiving: the template's previous
-// revision is recorded before it is replaced.
+// revision is recorded before it is replaced. Both statements share one
+// transaction, so a failed replace cannot lose the archived revision and two
+// concurrent promotes cannot both read the same next version number.
 func (r *UPPRepo) UpsertArchived(t *UPPTemplate, note string) error {
-	if err := r.archiveCurrent(t.TenantID, t.Name, note); err != nil {
-		return err
-	}
-	return r.Upsert(t)
+	return withTx(r.db, func(tx *sql.Tx) error {
+		if err := archiveCurrent(tx, t.TenantID, t.Name, note); err != nil {
+			return err
+		}
+		return upsertTemplate(tx, t)
+	})
 }
 
 // ListVersions returns the archived revisions of a template, newest first.

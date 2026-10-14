@@ -314,21 +314,31 @@ func (r *PoolRepo) ListRanges(tenant *string) ([]*ICCIDRange, error) {
 	return out, rows.Err()
 }
 
-// DeleteRange removes an imported range and its still-available pool entries.
+// DeleteRange removes an imported range and its still-available pool entries in
+// one transaction, so a failure cannot leave the range row without its entries
+// (or the reverse).
 func (r *PoolRepo) DeleteRange(id int64) (removed int, err error) {
-	res, err := r.db.Exec(`DELETE FROM iccid_pool WHERE range_id = ? AND state = 'available'`, id)
+	err = withTx(r.db, func(tx *sql.Tx) error {
+		res, err := tx.Exec(`DELETE FROM iccid_pool WHERE range_id = ? AND state = 'available'`, id)
+		if err != nil {
+			return err
+		}
+		removed64, _ := res.RowsAffected()
+		removed = int(removed64)
+
+		res, err = tx.Exec(`DELETE FROM iccid_ranges WHERE id = ?`, id)
+		if err != nil {
+			return err
+		}
+		if n, _ := res.RowsAffected(); n == 0 {
+			return ErrNotFound
+		}
+		return nil
+	})
 	if err != nil {
-		return 0, err
+		return removed, err
 	}
-	removed64, _ := res.RowsAffected()
-	res, err = r.db.Exec(`DELETE FROM iccid_ranges WHERE id = ?`, id)
-	if err != nil {
-		return int(removed64), err
-	}
-	if n, _ := res.RowsAffected(); n == 0 {
-		return int(removed64), ErrNotFound
-	}
-	return int(removed64), nil
+	return removed, nil
 }
 
 const poolCols = `iccid, COALESCE(tenant_id,''), state, range_id, eid, batch_id, reference, profile_id, note,
