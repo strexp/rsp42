@@ -4,6 +4,7 @@ import (
 	"encoding/hex"
 	"fmt"
 	"net/http"
+	"rsp42/internal/api/adminhttp"
 	"strings"
 
 	"github.com/go-chi/chi/v5"
@@ -40,17 +41,17 @@ type decodedUPP struct {
 func (h *Handler) decodedUPP(w http.ResponseWriter, r *http.Request) {
 	t, err := h.UPP.GetScoped(scopeTenantParam(r), chi.URLParam(r, "name"))
 	if err != nil {
-		writeErr(w, http.StatusNotFound, "unknown template")
+		adminhttp.WriteErr(w, http.StatusNotFound, "unknown template")
 		return
 	}
 	seq, err := saip.ParseUPP(t.Bytes)
 	if err != nil {
-		writeErr(w, http.StatusUnprocessableEntity, "invalid UPP: "+err.Error())
+		adminhttp.WriteErr(w, http.StatusUnprocessableEntity, "invalid UPP: "+err.Error())
 		return
 	}
 	hdr, err := saip.ParseHeader(seq.Header())
 	if err != nil {
-		writeErr(w, http.StatusUnprocessableEntity, "invalid profile header: "+err.Error())
+		adminhttp.WriteErr(w, http.StatusUnprocessableEntity, "invalid profile header: "+err.Error())
 		return
 	}
 	out := decodedUPP{
@@ -77,5 +78,5 @@ func (h *Handler) decodedUPP(w http.ResponseWriter, r *http.Request) {
 			PEName: saip.PEName(f.PE.Tag), BodySize: len(f.Body()),
 		})
 	}
-	writeJSON(w, http.StatusOK, out)
+	adminhttp.WriteJSON(w, http.StatusOK, out)
 }

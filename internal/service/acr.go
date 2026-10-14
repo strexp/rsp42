@@ -5,6 +5,7 @@ import (
 	"errors"
 
 	"rsp42/internal/activationcode"
+	"rsp42/internal/iccid"
 	"rsp42/internal/rsp"
 	"rsp42/internal/store"
 )
@@ -16,7 +17,7 @@ func (c *CMAE) handleACR(ctx context.Context, transactionID string, ca *clientAu
 	if err != nil {
 		return nil, rsp.CodeInputRefused.Status(err.Error())
 	}
-	profile, err := c.Profiles.GetByICCID(normalizeICCID(acr.ICCID))
+	profile, err := c.Profiles.GetByICCID(iccid.Normalize(acr.ICCID))
 	if err != nil {
 		return nil, rsp.CodeInputRefused.Status("unknown ICCID")
 	}

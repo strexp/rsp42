@@ -13,14 +13,11 @@ import (
 	"github.com/google/uuid"
 
 	"rsp42/internal/activationcode"
+	"rsp42/internal/api/adminhttp"
+	"rsp42/internal/iccid"
 	"rsp42/internal/rsp"
 	"rsp42/internal/service"
 	"rsp42/internal/store"
-)
-
-const (
-	defaultPageSize = 50
-	maxPageSize     = 500
 )
 
 // profileView is the API representation of a profile (no cc_hash or secrets).
@@ -82,14 +79,14 @@ func profileFilterFromQuery(q map[string][]string) store.ProfileFilter {
 	f.ICCID = get("iccid")
 	f.Query = get("q")
 	if s := get("batchId"); s != "" {
-		if id, err := parseID(s); err == nil {
+		if id, err := adminhttp.ParseID(s); err == nil {
 			f.BatchID = &id
 		}
 	}
-	if t := parseTime(get("from")); t != nil {
+	if t := adminhttp.ParseTime(get("from")); t != nil {
 		f.Since = t
 	}
-	if t := parseTime(get("to")); t != nil {
+	if t := adminhttp.ParseTime(get("to")); t != nil {
 		f.Until = t
 	}
 	return f
@@ -97,26 +94,26 @@ func profileFilterFromQuery(q map[string][]string) store.ProfileFilter {
 
 func (h *Handler) listProfiles(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query()
-	page, size := parsePage(r)
+	page, size := adminhttp.ParsePage(r)
 	items, total, err := h.Profiles.ListFiltered(profileFilterFromQuery(q), size, (page-1)*size, q.Get("sort"))
 	if err != nil {
-		writeErr(w, http.StatusInternalServerError, err.Error())
+		adminhttp.WriteErr(w, http.StatusInternalServerError, err.Error())
 		return
 	}
 	views := make([]profileView, 0, len(items))
 	for _, p := range items {
 		views = append(views, toProfileView(p))
 	}
-	writeListEnvelope(w, views, page, size, total)
+	adminhttp.WriteListEnvelope(w, views, page, size, total)
 }
 
 func (h *Handler) getProfile(w http.ResponseWriter, r *http.Request) {
-	p, err := h.Profiles.GetByICCID(normalizeICCID(chi.URLParam(r, "iccid")))
+	p, err := h.Profiles.GetByICCID(iccid.Normalize(chi.URLParam(r, "iccid")))
 	if err != nil {
-		writeErr(w, http.StatusNotFound, "unknown ICCID")
+		adminhttp.WriteErr(w, http.StatusNotFound, "unknown ICCID")
 		return
 	}
-	writeJSON(w, http.StatusOK, toProfileView(p))
+	adminhttp.WriteJSON(w, http.StatusOK, toProfileView(p))
 }
 
 type createProfileReq struct {
@@ -132,7 +129,7 @@ type createProfileReq struct {
 
 func (h *Handler) createProfile(w http.ResponseWriter, r *http.Request) {
 	var req createProfileReq
-	if !readJSON(w, r, &req) {
+	if !adminhttp.ReadJSON(w, r, &req) {
 		return
 	}
 	tenant, err := h.effectiveTenant(r, req.Tenant)
@@ -148,7 +145,7 @@ func (h *Handler) createProfile(w http.ResponseWriter, r *http.Request) {
 			writeQuotaErr(w, err)
 			return
 		}
-		writeErr(w, http.StatusConflict, err.Error())
+		adminhttp.WriteErr(w, http.StatusConflict, err.Error())
 		return
 	}
 	if req.MatchingID != "" || req.SMDSAddress != "" {
@@ -162,7 +159,7 @@ func (h *Handler) createProfile(w http.ResponseWriter, r *http.Request) {
 	}
 	h.recordOrder(tenant, p.ICCID, p.EID, p.MatchingID, "downloadOrder", req)
 	h.audit(r, "createProfile", p.ICCID, "Executed-Success", req)
-	writeJSON(w, http.StatusCreated, toProfileView(p))
+	adminhttp.WriteJSON(w, http.StatusCreated, toProfileView(p))
 }
 
 type updateProfileReq struct {
@@ -176,14 +173,14 @@ type updateProfileReq struct {
 }
 
 func (h *Handler) updateProfile(w http.ResponseWriter, r *http.Request) {
-	iccid := normalizeICCID(chi.URLParam(r, "iccid"))
+	iccid := iccid.Normalize(chi.URLParam(r, "iccid"))
 	p, err := h.Profiles.GetByICCID(iccid)
 	if err != nil {
-		writeErr(w, http.StatusNotFound, "unknown ICCID")
+		adminhttp.WriteErr(w, http.StatusNotFound, "unknown ICCID")
 		return
 	}
 	var req updateProfileReq
-	if !readJSON(w, r, &req) {
+	if !adminhttp.ReadJSON(w, r, &req) {
 		return
 	}
 	if req.EID != nil {
@@ -192,7 +189,7 @@ func (h *Handler) updateProfile(w http.ResponseWriter, r *http.Request) {
 	if req.Tenant != nil {
 		if *req.Tenant != "" && h.Tenants != nil {
 			if _, err := h.Tenants.Get(*req.Tenant); err != nil {
-				writeErr(w, http.StatusBadRequest, "unknown tenant "+*req.Tenant)
+				adminhttp.WriteErr(w, http.StatusBadRequest, "unknown tenant "+*req.Tenant)
 				return
 			}
 		}
@@ -214,17 +211,17 @@ func (h *Handler) updateProfile(w http.ResponseWriter, r *http.Request) {
 		p.PPRIds = rsp.PPRIDBits(*req.PPRIds)
 	}
 	if err := h.Profiles.Update(p); err != nil {
-		writeErr(w, http.StatusInternalServerError, err.Error())
+		adminhttp.WriteErr(w, http.StatusInternalServerError, err.Error())
 		return
 	}
 	h.audit(r, "updateProfile", iccid, "Executed-Success", req)
-	writeJSON(w, http.StatusOK, toProfileView(p))
+	adminhttp.WriteJSON(w, http.StatusOK, toProfileView(p))
 }
 
 func (h *Handler) deleteProfile(w http.ResponseWriter, r *http.Request) {
-	iccid := normalizeICCID(chi.URLParam(r, "iccid"))
+	iccid := iccid.Normalize(chi.URLParam(r, "iccid"))
 	if err := h.Orders.Delete(iccid); err != nil {
-		writeErr(w, http.StatusNotFound, "unknown ICCID")
+		adminhttp.WriteErr(w, http.StatusNotFound, "unknown ICCID")
 		return
 	}
 	h.audit(r, "deleteProfile", iccid, "Executed-Success", nil)
@@ -232,18 +229,18 @@ func (h *Handler) deleteProfile(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) confirmProfile(w http.ResponseWriter, r *http.Request) {
-	iccid := normalizeICCID(chi.URLParam(r, "iccid"))
+	iccid := iccid.Normalize(chi.URLParam(r, "iccid"))
 	var req struct {
 		Release          bool   `json:"release"`
 		MatchingID       string `json:"matchingId"`
 		ConfirmationCode string `json:"confirmationCode"`
 	}
-	if !readJSON(w, r, &req) {
+	if !adminhttp.ReadJSON(w, r, &req) {
 		return
 	}
 	p, err := h.Profiles.GetByICCID(iccid)
 	if err != nil {
-		writeErr(w, http.StatusNotFound, "unknown ICCID")
+		adminhttp.WriteErr(w, http.StatusNotFound, "unknown ICCID")
 		return
 	}
 	if _, err := h.effectiveTenant(r, p.TenantID); err != nil {
@@ -258,56 +255,56 @@ func (h *Handler) confirmProfile(w http.ResponseWriter, r *http.Request) {
 		p.CCHash, p.CCRequired = sum[:], true
 	}
 	if err := h.Profiles.Update(p); err != nil {
-		writeErr(w, http.StatusInternalServerError, err.Error())
+		adminhttp.WriteErr(w, http.StatusInternalServerError, err.Error())
 		return
 	}
 	p, err = h.Orders.Confirm(iccid, req.Release)
 	if err != nil {
 		h.audit(r, "confirmProfile", iccid, "Failed", req)
-		writeErr(w, http.StatusBadRequest, err.Error())
+		adminhttp.WriteErr(w, http.StatusBadRequest, err.Error())
 		return
 	}
 	h.recordOrder(p.TenantID, iccid, p.EID, p.MatchingID, "confirmOrder", req)
 	h.audit(r, "confirmProfile", iccid, "Executed-Success", req)
-	writeJSON(w, http.StatusOK, toProfileView(p))
+	adminhttp.WriteJSON(w, http.StatusOK, toProfileView(p))
 }
 
 func (h *Handler) cancelProfile(w http.ResponseWriter, r *http.Request) {
-	iccid := normalizeICCID(chi.URLParam(r, "iccid"))
+	iccid := iccid.Normalize(chi.URLParam(r, "iccid"))
 	var req struct {
 		FinalStatus string `json:"finalStatus"`
 	}
-	if !readJSON(w, r, &req) {
+	if !adminhttp.ReadJSON(w, r, &req) {
 		return
 	}
 	p, err := h.Orders.Cancel(iccid, strings.EqualFold(req.FinalStatus, "Unavailable"))
 	if err != nil {
-		writeErr(w, http.StatusBadRequest, err.Error())
+		adminhttp.WriteErr(w, http.StatusBadRequest, err.Error())
 		return
 	}
 	_, _ = h.effectiveTenant(r, p.TenantID)
 	h.recordOrder(p.TenantID, iccid, p.EID, p.MatchingID, "cancelOrder", req)
 	h.audit(r, "cancelProfile", iccid, "Executed-Success", req)
-	writeJSON(w, http.StatusOK, toProfileView(p))
+	adminhttp.WriteJSON(w, http.StatusOK, toProfileView(p))
 }
 
 func (h *Handler) releaseProfile(w http.ResponseWriter, r *http.Request) {
-	iccid := normalizeICCID(chi.URLParam(r, "iccid"))
+	iccid := iccid.Normalize(chi.URLParam(r, "iccid"))
 	p, err := h.Orders.Release(iccid)
 	if err != nil {
-		writeErr(w, http.StatusBadRequest, err.Error())
+		adminhttp.WriteErr(w, http.StatusBadRequest, err.Error())
 		return
 	}
 	_, _ = h.effectiveTenant(r, p.TenantID)
 	h.recordOrder(p.TenantID, iccid, p.EID, p.MatchingID, "releaseProfile", nil)
 	h.audit(r, "releaseProfile", iccid, "Executed-Success", nil)
-	writeJSON(w, http.StatusOK, toProfileView(p))
+	adminhttp.WriteJSON(w, http.StatusOK, toProfileView(p))
 }
 
 // profileTimeline merges order-audit rows, received notifications, download
 // sessions and audit entries for an ICCID into a single (newest-first) list.
 func (h *Handler) profileTimeline(w http.ResponseWriter, r *http.Request) {
-	iccid := normalizeICCID(chi.URLParam(r, "iccid"))
+	iccid := iccid.Normalize(chi.URLParam(r, "iccid"))
 	type event struct {
 		Time    time.Time `json:"time"`
 		Kind    string    `json:"kind"` // order | notification | session | audit
@@ -320,7 +317,7 @@ func (h *Handler) profileTimeline(w http.ResponseWriter, r *http.Request) {
 	if h.OrderRepo != nil {
 		orders, err := h.OrderRepo.ListByICCID(iccid)
 		if err != nil {
-			writeErr(w, http.StatusInternalServerError, err.Error())
+			adminhttp.WriteErr(w, http.StatusInternalServerError, err.Error())
 			return
 		}
 		for _, o := range orders {
@@ -330,7 +327,7 @@ func (h *Handler) profileTimeline(w http.ResponseWriter, r *http.Request) {
 	if h.Notifs != nil {
 		notifs, err := h.Notifs.ListByICCID(iccid)
 		if err != nil {
-			writeErr(w, http.StatusInternalServerError, err.Error())
+			adminhttp.WriteErr(w, http.StatusInternalServerError, err.Error())
 			return
 		}
 		for _, n := range notifs {
@@ -353,7 +350,7 @@ func (h *Handler) profileTimeline(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	if h.Audit != nil {
-		entries, err := h.Audit.ListBySubject(iccid, maxPageSize)
+		entries, err := h.Audit.ListBySubject(iccid, adminhttp.MaxPageSize)
 		if err == nil {
 			for _, e := range entries {
 				events = append(events, event{
@@ -363,32 +360,32 @@ func (h *Handler) profileTimeline(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	sort.Slice(events, func(i, j int) bool { return events[i].Time.After(events[j].Time) })
-	writeJSON(w, http.StatusOK, map[string]any{"iccid": iccid, "events": events})
+	adminhttp.WriteJSON(w, http.StatusOK, map[string]any{"iccid": iccid, "events": events})
 }
 
 // activationCode returns the activation code for a profile, optionally rotating
 // the matchingId so previously issued QR codes stop working (G14).
 func (h *Handler) activationCode(w http.ResponseWriter, r *http.Request) {
-	iccid := normalizeICCID(chi.URLParam(r, "iccid"))
+	iccid := iccid.Normalize(chi.URLParam(r, "iccid"))
 	p, err := h.Profiles.GetByICCID(iccid)
 	if err != nil {
-		writeErr(w, http.StatusNotFound, "unknown ICCID")
+		adminhttp.WriteErr(w, http.StatusNotFound, "unknown ICCID")
 		return
 	}
 	if r.URL.Query().Get("rotate") == "1" {
 		p.MatchingID = "MATCH-" + strings.ReplaceAll(uuid.NewString(), "-", "")[:16]
 		if err := h.Profiles.Update(p); err != nil {
-			writeErr(w, http.StatusInternalServerError, err.Error())
+			adminhttp.WriteErr(w, http.StatusInternalServerError, err.Error())
 			return
 		}
 		h.audit(r, "rotateActivationCode", iccid, "Executed-Success", nil)
 	}
 	if p.MatchingID == "" {
-		writeErr(w, http.StatusBadRequest, "profile has no matchingId; confirm the order first")
+		adminhttp.WriteErr(w, http.StatusBadRequest, "profile has no matchingId; confirm the order first")
 		return
 	}
 	c := &activationcode.Code{FQDN: h.FQDN, MatchingID: p.MatchingID, OID: h.OID, CCRequired: p.CCRequired}
-	writeJSON(w, http.StatusOK, map[string]any{
+	adminhttp.WriteJSON(w, http.StatusOK, map[string]any{
 		"matchingId":     p.MatchingID,
 		"activationCode": c.String(),
 		"qrContent":      c.QRContent(),

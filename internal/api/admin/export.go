@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"rsp42/internal/api/adminhttp"
 	"strconv"
 	"strings"
 	"time"
@@ -24,7 +25,7 @@ func (h *Handler) exportProfiles(w http.ResponseWriter, r *http.Request) {
 	filter := profileFilterFromQuery(q)
 	items, _, err := h.Profiles.ListFiltered(filter, exportLimit, 0, q.Get("sort"))
 	if err != nil {
-		writeErr(w, http.StatusInternalServerError, err.Error())
+		adminhttp.WriteErr(w, http.StatusInternalServerError, err.Error())
 		return
 	}
 	if !wantCSV(r) {
@@ -32,7 +33,7 @@ func (h *Handler) exportProfiles(w http.ResponseWriter, r *http.Request) {
 		for _, p := range items {
 			views = append(views, toProfileView(p))
 		}
-		writeJSON(w, http.StatusOK, map[string]any{"items": views, "total": len(views)})
+		adminhttp.WriteJSON(w, http.StatusOK, map[string]any{"items": views, "total": len(views)})
 		return
 	}
 	w.Header().Set("Content-Type", "text/csv")
@@ -65,7 +66,7 @@ func (h *Handler) exportPersonalization(w http.ResponseWriter, r *http.Request) 
 	tenant := scopeTenantParam(r)
 	items, _, err := h.Perso.ListPage(r.URL.Query().Get("iccid"), tenant, exportLimit, 0)
 	if err != nil {
-		writeErr(w, http.StatusInternalServerError, err.Error())
+		adminhttp.WriteErr(w, http.StatusInternalServerError, err.Error())
 		return
 	}
 	if !wantCSV(r) {
@@ -73,7 +74,7 @@ func (h *Handler) exportPersonalization(w http.ResponseWriter, r *http.Request) 
 		for _, d := range items {
 			views = append(views, toPersoView(d, true))
 		}
-		writeJSON(w, http.StatusOK, map[string]any{"items": views, "total": len(views)})
+		adminhttp.WriteJSON(w, http.StatusOK, map[string]any{"items": views, "total": len(views)})
 		return
 	}
 	w.Header().Set("Content-Type", "text/csv")
@@ -121,11 +122,11 @@ func (h *Handler) importProfiles(w http.ResponseWriter, r *http.Request) {
 		(r.Method == http.MethodPost && r.URL.Query().Get("format") == "csv") {
 		recs, err := readProfileCSV(r)
 		if err != nil {
-			writeErr(w, http.StatusBadRequest, err.Error())
+			adminhttp.WriteErr(w, http.StatusBadRequest, err.Error())
 			return
 		}
 		req.Records = recs
-	} else if !readJSON(w, r, &req) {
+	} else if !adminhttp.ReadJSON(w, r, &req) {
 		return
 	}
 	type result struct {
@@ -172,7 +173,7 @@ func (h *Handler) importProfiles(w http.ResponseWriter, r *http.Request) {
 		results = append(results, res)
 	}
 	h.audit(r, "importProfiles", "", "Executed-Success", map[string]any{"imported": ok, "total": len(req.Records)})
-	writeJSON(w, http.StatusOK, map[string]any{"imported": ok, "results": results})
+	adminhttp.WriteJSON(w, http.StatusOK, map[string]any{"imported": ok, "results": results})
 }
 
 // importProfileRecord is one row of a profile import (JSON or CSV).

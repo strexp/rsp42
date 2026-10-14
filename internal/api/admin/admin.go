@@ -8,12 +8,12 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
-	"strconv"
 	"strings"
 	"time"
 
 	"github.com/go-chi/chi/v5"
 
+	"rsp42/internal/api/adminhttp"
 	"rsp42/internal/api/common"
 	"rsp42/internal/api/middleware"
 	"rsp42/internal/service"
@@ -53,9 +53,6 @@ type Handler struct {
 	FQDN string
 	OID  string
 }
-
-// normalizeICCID strips a trailing F padding nibble.
-func normalizeICCID(s string) string { return strings.TrimRight(s, "fF") }
 
 // Mount registers the management API on r.
 func Mount(r chi.Router, h *Handler) {
@@ -153,32 +150,10 @@ func Mount(r chi.Router, h *Handler) {
 	})
 }
 
-// Helpers -------------------------------------------------------------------
+// adminhttp.ErrorBody is the stable management-API error model (G10).
 
-func writeJSON(w http.ResponseWriter, status int, v any) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(status)
-	_ = json.NewEncoder(w).Encode(v)
-}
-
-func writeErr(w http.ResponseWriter, status int, msg string) {
-	writeJSON(w, status, errorBody(errCode(status, msg), msg))
-}
-
-// errorBody is the stable management-API error model (G10).
-func errorBody(code, message string) map[string]string {
-	return map[string]string{"code": code, "message": message}
-}
-
-// errorBodyDetails is errorBody plus a machine-readable details object. It is
+// adminhttp.ErrorBodyDetails is adminhttp.ErrorBody plus a machine-readable details object. It is
 // used where a stable code alone is not enough to act on (N16, N3).
-func errorBodyDetails(code, message string, details any) map[string]any {
-	body := map[string]any{"code": code, "message": message}
-	if details != nil {
-		body["details"] = details
-	}
-	return body
-}
 
 // writeSAIPVersionErr reports a template refused by profiles.allowed_saip_versions
 // (N16). The stable code is saip_version_not_supported.
@@ -186,68 +161,19 @@ func (h *Handler) writeSAIPVersionErr(w http.ResponseWriter, rej *service.SAIPVe
 	if rej == nil {
 		return
 	}
-	writeJSON(w, http.StatusConflict, errorBodyDetails("saip_version_not_supported", rej.Error(),
+	adminhttp.WriteJSON(w, http.StatusConflict, adminhttp.ErrorBodyDetails("saip_version_not_supported", rej.Error(),
 		map[string]any{"templateVersion": rej.TemplateVersion, "maxSupported": rej.MaxSupported}))
 }
 
-// errCode derives a stable machine-readable code from the HTTP status when a
+// adminhttp.ErrCode derives a stable machine-readable code from the HTTP status when a
 // handler has no more specific one. Every status a handler can produce maps to
 // a named code; there is deliberately no bare "error" code (N7).
-func errCode(status int, msg string) string {
-	switch status {
-	case http.StatusBadRequest:
-		return "invalid_request"
-	case http.StatusUnauthorized:
-		return "unauthorized"
-	case http.StatusForbidden:
-		return "forbidden"
-	case http.StatusNotFound:
-		return "not_found"
-	case http.StatusConflict:
-		return "conflict"
-	case http.StatusUnprocessableEntity:
-		return "unprocessable_entity"
-	case http.StatusNotImplemented:
-		return "not_implemented"
-	default:
-		if status >= 500 {
-			return "internal_error"
-		}
-		return "request_failed"
-	}
-}
 
-// readJSON decodes a management-API request body. The size budget comes from
+// adminhttp.ReadJSON decodes a management-API request body. The size budget comes from
 // middleware.MaxBody (api.Options.BodyLimit), so no separate limit applies.
-func readJSON(w http.ResponseWriter, r *http.Request, v any) bool {
-	if err := json.NewDecoder(r.Body).Decode(v); err != nil {
-		writeErr(w, http.StatusBadRequest, "invalid JSON: "+err.Error())
-		return false
-	}
-	return true
-}
 
-func atoiDefault(s string, def int) int {
-	if s == "" {
-		return def
-	}
-	n, err := strconv.Atoi(s)
-	if err != nil {
-		return def
-	}
-	return n
-}
-
-// tenantFilter returns the `?tenant=` filter: nil when absent, a pointer to the
+// adminhttp.TenantFilter returns the `?tenant=` filter: nil when absent, a pointer to the
 // raw value otherwise ("" selects the platform-default rows).
-func tenantFilter(r *http.Request) *string {
-	q := r.URL.Query()
-	if !q.Has("tenant") {
-		return nil
-	}
-	t := strings.TrimSpace(q.Get("tenant"))
-	return &t
-}
 
 // effectiveTenant resolves the tenant of a write: the explicit body value wins,
 // then `?tenant=`. A non-empty tenant must be registered. The resolved value is
@@ -318,7 +244,7 @@ func (h *Handler) recordOrder(tenant, iccid, eid, matchingID, action string, req
 
 // openapi returns the complete OpenAPI 3.0 description of the management API.
 func (h *Handler) openapi(w http.ResponseWriter, _ *http.Request) {
-	writeJSON(w, http.StatusOK, openAPIDoc())
+	adminhttp.WriteJSON(w, http.StatusOK, openAPIDoc())
 }
 
 func op(summary string, params ...string) map[string]any {
@@ -329,46 +255,13 @@ func op(summary string, params ...string) map[string]any {
 	return m
 }
 
-// clampSize bounds a page size to [1, maxPageSize] with the shared default.
-func clampSize(n int) int {
-	if n < 1 {
-		return defaultPageSize
-	}
-	if n > maxPageSize {
-		return maxPageSize
-	}
-	return n
-}
+// adminhttp.ClampSize bounds a page size to [1, adminhttp.MaxPageSize] with the shared default.
 
-// clampPage bounds a 1-based page number.
-func clampPage(n int) int {
-	if n < 1 {
-		return 1
-	}
-	return n
-}
+// adminhttp.ClampPage bounds a 1-based page number.
 
-// parseID parses a positive identifier.
-func parseID(s string) (int64, error) {
-	id, err := strconv.ParseInt(s, 10, 64)
-	if err != nil || id <= 0 {
-		return 0, fmt.Errorf("invalid id %q", s)
-	}
-	return id, nil
-}
+// adminhttp.ParseID parses a positive identifier.
 
-// parseTime parses a query timestamp; nil when empty or unparsable.
-func parseTime(s string) *time.Time {
-	if s == "" {
-		return nil
-	}
-	for _, layout := range []string{time.RFC3339, "2006-01-02"} {
-		if t, err := time.Parse(layout, s); err == nil {
-			return &t
-		}
-	}
-	return nil
-}
+// adminhttp.ParseTime parses a query timestamp; nil when empty or unparsable.
 
 // serviceAllocate maps a create-profile request onto an allocation request.
 func serviceAllocate(req createProfileReq, tenant string) service.AllocateRequest {
@@ -382,22 +275,14 @@ func serviceAllocate(req createProfileReq, tenant string) service.AllocateReques
 	}
 }
 
-// firstNonEmpty returns the first non-empty string.
-func firstNonEmpty(vals ...string) string {
-	for _, v := range vals {
-		if v != "" {
-			return v
-		}
-	}
-	return ""
-}
+// adminhttp.FirstNonEmpty returns the first non-empty string.
 
 // writeTenantErr reports a tenant-resolution failure with a stable code.
 func writeTenantErr(w http.ResponseWriter, err error) {
-	writeJSON(w, http.StatusBadRequest, errorBody("unknown_tenant", err.Error()))
+	adminhttp.WriteJSON(w, http.StatusBadRequest, adminhttp.ErrorBody("unknown_tenant", err.Error()))
 }
 
 // writeQuotaErr reports a quota violation with a stable code.
 func writeQuotaErr(w http.ResponseWriter, err error) {
-	writeJSON(w, http.StatusConflict, errorBody("quota_exceeded", err.Error()))
+	adminhttp.WriteJSON(w, http.StatusConflict, adminhttp.ErrorBody("quota_exceeded", err.Error()))
 }

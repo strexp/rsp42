@@ -8,6 +8,8 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
+	"rsp42/internal/api/adminhttp"
+	"rsp42/internal/iccid"
 	"rsp42/internal/service"
 	"rsp42/internal/store"
 )
@@ -28,7 +30,7 @@ type DSAdminConfig struct {
 func MountDS(r chi.Router, cfg DSAdminConfig) {
 	r.Route("/admin/api/v1", func(r chi.Router) {
 		r.Get("/openapi.json", func(w http.ResponseWriter, _ *http.Request) {
-			writeJSON(w, http.StatusOK, openAPIDoc())
+			adminhttp.WriteJSON(w, http.StatusOK, openAPIDoc())
 		})
 		r.Get("/events", func(w http.ResponseWriter, req *http.Request) {
 			listDSEvents(w, req, cfg.Events)
@@ -63,23 +65,23 @@ type eventView struct {
 // lifecycle filters (G20).
 func listDSEvents(w http.ResponseWriter, r *http.Request, events *store.EventRepo) {
 	q := r.URL.Query()
-	page, size := parsePage(r)
+	page, size := adminhttp.ParsePage(r)
 
 	filter := store.EventFilter{
 		EID: q.Get("eid"), EventID: q.Get("eventId"),
-		ICCID: normalizeICCID(q.Get("iccid")), MatchingID: q.Get("matchingId"),
+		ICCID: iccid.Normalize(q.Get("iccid")), MatchingID: q.Get("matchingId"),
 		Status: q.Get("status"), Sort: q.Get("sort"),
-		Tenant: tenantFilter(r),
+		Tenant: adminhttp.TenantFilter(r),
 	}
-	if t := parseTime(firstNonEmpty(q.Get("from"), q.Get("since"))); t != nil {
+	if t := adminhttp.ParseTime(adminhttp.FirstNonEmpty(q.Get("from"), q.Get("since"))); t != nil {
 		filter.Since = t
 	}
-	if t := parseTime(firstNonEmpty(q.Get("to"), q.Get("until"))); t != nil {
+	if t := adminhttp.ParseTime(adminhttp.FirstNonEmpty(q.Get("to"), q.Get("until"))); t != nil {
 		filter.Until = t
 	}
 	recs, total, err := events.ListFiltered(filter, size, (page-1)*size, time.Now().UTC())
 	if err != nil {
-		writeErr(w, http.StatusBadRequest, err.Error())
+		adminhttp.WriteErr(w, http.StatusBadRequest, err.Error())
 		return
 	}
 	views := make([]eventView, 0, len(recs))
@@ -93,7 +95,7 @@ func listDSEvents(w http.ResponseWriter, r *http.Request, events *store.EventRep
 			ExpiresAt: rec.ExpiresAt, DeletedAt: rec.DeletedAt,
 		})
 	}
-	writeListEnvelope(w, views, page, size, total)
+	adminhttp.WriteListEnvelope(w, views, page, size, total)
 }
 
 // createDSEvent registers an event through the management API (N8). It exists
@@ -102,7 +104,7 @@ func listDSEvents(w http.ResponseWriter, r *http.Request, events *store.EventRep
 // omitted, and re-using one is a 409.
 func createDSEvent(w http.ResponseWriter, r *http.Request, cfg DSAdminConfig) {
 	if cfg.Events == nil {
-		writeErr(w, http.StatusNotImplemented, "event store not configured")
+		adminhttp.WriteErr(w, http.StatusNotImplemented, "event store not configured")
 		return
 	}
 	var req struct {
@@ -117,11 +119,11 @@ func createDSEvent(w http.ResponseWriter, r *http.Request, cfg DSAdminConfig) {
 		TTL                 string `json:"ttl"`
 		ExpiresAt           string `json:"expiresAt"`
 	}
-	if !readJSON(w, r, &req) {
+	if !adminhttp.ReadJSON(w, r, &req) {
 		return
 	}
 	if req.EID == "" || req.RSPServerAddress == "" {
-		writeJSON(w, http.StatusBadRequest, errorBody("invalid_request", "eid and rspServerAddress are required"))
+		adminhttp.WriteJSON(w, http.StatusBadRequest, adminhttp.ErrorBody("invalid_request", "eid and rspServerAddress are required"))
 		return
 	}
 	tenant := req.Tenant
@@ -134,25 +136,25 @@ func createDSEvent(w http.ResponseWriter, r *http.Request, cfg DSAdminConfig) {
 	}
 	rec := &store.EventRecord{
 		EID: req.EID, EventID: eventID, RSPServerAddress: req.RSPServerAddress,
-		CallerOID:           firstNonEmpty(req.CallerOID, adminActor),
+		CallerOID:           adminhttp.FirstNonEmpty(req.CallerOID, adminActor),
 		ForwardingIndicator: req.ForwardingIndicator,
 		TenantID:            tenant,
-		ICCID:               normalizeICCID(req.ICCID),
+		ICCID:               iccid.Normalize(req.ICCID),
 		MatchingID:          req.MatchingID,
 		RegisteredAt:        time.Now().UTC(),
 	}
 	switch {
 	case req.ExpiresAt != "":
-		t := parseTime(req.ExpiresAt)
+		t := adminhttp.ParseTime(req.ExpiresAt)
 		if t == nil {
-			writeJSON(w, http.StatusBadRequest, errorBody("invalid_request", "expiresAt must be an RFC3339 timestamp or a date"))
+			adminhttp.WriteJSON(w, http.StatusBadRequest, adminhttp.ErrorBody("invalid_request", "expiresAt must be an RFC3339 timestamp or a date"))
 			return
 		}
 		rec.ExpiresAt = t
 	case req.TTL != "":
 		d, err := time.ParseDuration(req.TTL)
 		if err != nil || d < 0 {
-			writeJSON(w, http.StatusBadRequest, errorBody("invalid_request", "ttl must be a non-negative duration"))
+			adminhttp.WriteJSON(w, http.StatusBadRequest, adminhttp.ErrorBody("invalid_request", "ttl must be a non-negative duration"))
 			return
 		}
 		exp := rec.RegisteredAt.Add(d)
@@ -163,35 +165,35 @@ func createDSEvent(w http.ResponseWriter, r *http.Request, cfg DSAdminConfig) {
 	}
 	if _, err := cfg.Events.Insert(rec); err != nil {
 		if errors.Is(err, store.ErrEventIDInUse) {
-			writeJSON(w, http.StatusConflict, errorBody("event_id_in_use", "EventID already used for this EID"))
+			adminhttp.WriteJSON(w, http.StatusConflict, adminhttp.ErrorBody("event_id_in_use", "EventID already used for this EID"))
 			return
 		}
-		writeErr(w, http.StatusInternalServerError, err.Error())
+		adminhttp.WriteErr(w, http.StatusInternalServerError, err.Error())
 		return
 	}
 	auditDS(cfg, r, tenant, "registerEvent", rec.EID, map[string]any{"eventId": eventID, "iccid": rec.ICCID})
-	writeJSON(w, http.StatusCreated, toEventView(rec))
+	adminhttp.WriteJSON(w, http.StatusCreated, toEventView(rec))
 }
 
 // deleteDSEvent soft-deletes an event (N8). The ES12 delete path keeps the
 // record for audit; this endpoint does the same.
 func deleteDSEvent(w http.ResponseWriter, r *http.Request, cfg DSAdminConfig) {
 	if cfg.Events == nil {
-		writeErr(w, http.StatusNotImplemented, "event store not configured")
+		adminhttp.WriteErr(w, http.StatusNotImplemented, "event store not configured")
 		return
 	}
-	id, err := parseID(chi.URLParam(r, "id"))
+	id, err := adminhttp.ParseID(chi.URLParam(r, "id"))
 	if err != nil {
-		writeJSON(w, http.StatusBadRequest, errorBody("invalid_request", "invalid event id"))
+		adminhttp.WriteJSON(w, http.StatusBadRequest, adminhttp.ErrorBody("invalid_request", "invalid event id"))
 		return
 	}
 	ok, err := cfg.Events.SoftDelete(id)
 	if err != nil {
-		writeErr(w, http.StatusInternalServerError, err.Error())
+		adminhttp.WriteErr(w, http.StatusInternalServerError, err.Error())
 		return
 	}
 	if !ok {
-		writeErr(w, http.StatusNotFound, "unknown or already deleted event")
+		adminhttp.WriteErr(w, http.StatusNotFound, "unknown or already deleted event")
 		return
 	}
 	auditDS(cfg, r, r.URL.Query().Get("tenant"), "deleteEvent", chi.URLParam(r, "id"), nil)

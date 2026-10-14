@@ -3,6 +3,7 @@ package admin
 import (
 	"encoding/json"
 	"net/http"
+	"rsp42/internal/api/adminhttp"
 	"strconv"
 	"time"
 
@@ -43,20 +44,20 @@ func toAuditView(e *store.AuditEntry) auditView {
 // listAudit exposes the audit log (management edits, ES9+/ES11/ES2+ requests).
 func (h *Handler) listAudit(w http.ResponseWriter, r *http.Request) {
 	if h.Audit == nil {
-		writeErr(w, http.StatusNotImplemented, "audit log not configured")
+		adminhttp.WriteErr(w, http.StatusNotImplemented, "audit log not configured")
 		return
 	}
 	q := r.URL.Query()
 	filter := store.AuditFilter{
 		Interface: q.Get("interface"), Function: q.Get("function"),
 		Subject: q.Get("subject"), Actor: q.Get("actor"), Outcome: q.Get("outcome"),
-		Tenant: tenantFilter(r),
+		Tenant: adminhttp.TenantFilter(r),
 	}
 	// `since`/`until` are accepted as aliases for `from`/`to`.
-	if t := parseTime(firstNonEmpty(q.Get("from"), q.Get("since"))); t != nil {
+	if t := adminhttp.ParseTime(adminhttp.FirstNonEmpty(q.Get("from"), q.Get("since"))); t != nil {
 		filter.Since = t
 	}
-	if t := parseTime(firstNonEmpty(q.Get("to"), q.Get("until"))); t != nil {
+	if t := adminhttp.ParseTime(adminhttp.FirstNonEmpty(q.Get("to"), q.Get("until"))); t != nil {
 		filter.Until = t
 	}
 
@@ -65,26 +66,26 @@ func (h *Handler) listAudit(w http.ResponseWriter, r *http.Request) {
 	// concurrent writes.
 	if q.Has("afterId") {
 		if q.Has("page") || q.Has("size") {
-			writeJSON(w, http.StatusBadRequest, errorBody("invalid_request",
+			adminhttp.WriteJSON(w, http.StatusBadRequest, adminhttp.ErrorBody("invalid_request",
 				"afterId is mutually exclusive with page/size"))
 			return
 		}
 		afterID, err := strconv.ParseInt(q.Get("afterId"), 10, 64)
 		if err != nil || afterID < 0 {
-			writeJSON(w, http.StatusBadRequest, errorBody("invalid_request",
+			adminhttp.WriteJSON(w, http.StatusBadRequest, adminhttp.ErrorBody("invalid_request",
 				"afterId must be a non-negative integer"))
 			return
 		}
-		limit := atoiDefault(q.Get("limit"), 500)
+		limit := adminhttp.AtoiDefault(q.Get("limit"), 500)
 		if limit < 1 {
 			limit = 500
 		}
-		if limit > maxPageSize {
-			limit = maxPageSize
+		if limit > adminhttp.MaxPageSize {
+			limit = adminhttp.MaxPageSize
 		}
 		entries, err := h.Audit.ListAfterID(filter, afterID, limit)
 		if err != nil {
-			writeErr(w, http.StatusInternalServerError, err.Error())
+			adminhttp.WriteErr(w, http.StatusInternalServerError, err.Error())
 			return
 		}
 		views := make([]auditView, 0, len(entries))
@@ -95,21 +96,21 @@ func (h *Handler) listAudit(w http.ResponseWriter, r *http.Request) {
 		if len(entries) > 0 {
 			next = entries[len(entries)-1].ID
 		}
-		writeJSON(w, http.StatusOK, map[string]any{
+		adminhttp.WriteJSON(w, http.StatusOK, map[string]any{
 			"items": views, "nextAfterId": next, "hasMore": len(entries) == limit,
 		})
 		return
 	}
 
-	page, size := parsePage(r)
+	page, size := adminhttp.ParsePage(r)
 	entries, total, err := h.Audit.ListFiltered(filter, size, (page-1)*size)
 	if err != nil {
-		writeErr(w, http.StatusInternalServerError, err.Error())
+		adminhttp.WriteErr(w, http.StatusInternalServerError, err.Error())
 		return
 	}
 	views := make([]auditView, 0, len(entries))
 	for _, e := range entries {
 		views = append(views, toAuditView(e))
 	}
-	writeListEnvelope(w, views, page, size, total)
+	adminhttp.WriteListEnvelope(w, views, page, size, total)
 }

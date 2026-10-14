@@ -332,5 +332,3 @@ func randomToken() string {
 	_, _ = rand.Read(b)
 	return strings.ToUpper(hex.EncodeToString(b))
 }
-
-func normalizeICCID(iccid string) string { return strings.TrimRight(iccid, "fF") }

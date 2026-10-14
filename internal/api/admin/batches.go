@@ -9,6 +9,8 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
+	"rsp42/internal/api/adminhttp"
+	"rsp42/internal/iccid"
 	"rsp42/internal/service"
 	"rsp42/internal/store"
 )
@@ -45,11 +47,11 @@ type createBatchReq struct {
 
 func (h *Handler) createBatch(w http.ResponseWriter, r *http.Request) {
 	var req createBatchReq
-	if !readJSON(w, r, &req) {
+	if !adminhttp.ReadJSON(w, r, &req) {
 		return
 	}
 	if req.Count < 1 || req.Count > maxBatchSize {
-		writeErr(w, http.StatusBadRequest, "count must be between 1 and "+strconv.Itoa(maxBatchSize))
+		adminhttp.WriteErr(w, http.StatusBadRequest, "count must be between 1 and "+strconv.Itoa(maxBatchSize))
 		return
 	}
 	tenant, err := h.effectiveTenant(r, req.Tenant)
@@ -61,7 +63,7 @@ func (h *Handler) createBatch(w http.ResponseWriter, r *http.Request) {
 		Name: req.Name, TenantID: tenant, ProfileType: req.ProfileType, State: "Open", Total: req.Count, Note: req.Note,
 	})
 	if err != nil {
-		writeErr(w, http.StatusInternalServerError, err.Error())
+		adminhttp.WriteErr(w, http.StatusInternalServerError, err.Error())
 		return
 	}
 	allocated := 0
@@ -75,7 +77,7 @@ func (h *Handler) createBatch(w http.ResponseWriter, r *http.Request) {
 				writeQuotaErr(w, err)
 				return
 			}
-			writeErr(w, http.StatusInternalServerError, "allocated "+strconv.Itoa(allocated)+" of "+strconv.Itoa(req.Count)+": "+err.Error())
+			adminhttp.WriteErr(w, http.StatusInternalServerError, "allocated "+strconv.Itoa(allocated)+" of "+strconv.Itoa(req.Count)+": "+err.Error())
 			return
 		}
 		p.BatchID = &id
@@ -84,21 +86,21 @@ func (h *Handler) createBatch(w http.ResponseWriter, r *http.Request) {
 	}
 	h.audit(r, "createBatch", strconv.FormatInt(id, 10), "Executed-Success", map[string]any{"count": allocated})
 	b, _ := h.Batch.Get(id)
-	writeJSON(w, http.StatusCreated, toBatchView(b))
+	adminhttp.WriteJSON(w, http.StatusCreated, toBatchView(b))
 }
 
 func (h *Handler) listBatches(w http.ResponseWriter, r *http.Request) {
-	page, size := parsePage(r)
+	page, size := adminhttp.ParsePage(r)
 	items, total, err := h.Batch.List(scopeTenantParam(r), size, (page-1)*size)
 	if err != nil {
-		writeErr(w, http.StatusInternalServerError, err.Error())
+		adminhttp.WriteErr(w, http.StatusInternalServerError, err.Error())
 		return
 	}
 	views := make([]batchView, 0, len(items))
 	for _, b := range items {
 		views = append(views, toBatchView(b))
 	}
-	writeListEnvelope(w, views, page, size, total)
+	adminhttp.WriteListEnvelope(w, views, page, size, total)
 }
 
 func (h *Handler) getBatch(w http.ResponseWriter, r *http.Request) {
@@ -108,7 +110,7 @@ func (h *Handler) getBatch(w http.ResponseWriter, r *http.Request) {
 	}
 	b, err := h.Batch.Get(id)
 	if err != nil {
-		writeErr(w, http.StatusNotFound, "unknown batch")
+		adminhttp.WriteErr(w, http.StatusNotFound, "unknown batch")
 		return
 	}
 	// State breakdown for the batch's profiles.
@@ -119,14 +121,14 @@ func (h *Handler) getBatch(w http.ResponseWriter, r *http.Request) {
 	} {
 		_, total, err := h.Profiles.ListFiltered(store.ProfileFilter{BatchID: &id, State: string(s)}, 1, 0, "")
 		if err != nil {
-			writeErr(w, http.StatusInternalServerError, err.Error())
+			adminhttp.WriteErr(w, http.StatusInternalServerError, err.Error())
 			return
 		}
 		if total > 0 {
 			counts[string(s)] = total
 		}
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"batch": toBatchView(b), "states": counts})
+	adminhttp.WriteJSON(w, http.StatusOK, map[string]any{"batch": toBatchView(b), "states": counts})
 }
 
 func (h *Handler) listBatchItems(w http.ResponseWriter, r *http.Request) {
@@ -135,17 +137,17 @@ func (h *Handler) listBatchItems(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	q := r.URL.Query()
-	page, size := parsePage(r)
+	page, size := adminhttp.ParsePage(r)
 	items, total, err := h.Profiles.ListFiltered(store.ProfileFilter{BatchID: &id, State: q.Get("state")}, size, (page-1)*size, q.Get("sort"))
 	if err != nil {
-		writeErr(w, http.StatusInternalServerError, err.Error())
+		adminhttp.WriteErr(w, http.StatusInternalServerError, err.Error())
 		return
 	}
 	views := make([]profileView, 0, len(items))
 	for _, p := range items {
 		views = append(views, toProfileView(p))
 	}
-	writeListEnvelope(w, views, page, size, total)
+	adminhttp.WriteListEnvelope(w, views, page, size, total)
 }
 
 func (h *Handler) confirmBatch(w http.ResponseWriter, r *http.Request) {
@@ -156,7 +158,7 @@ func (h *Handler) confirmBatch(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		Release bool `json:"release"`
 	}
-	if !readJSON(w, r, &req) {
+	if !adminhttp.ReadJSON(w, r, &req) {
 		return
 	}
 	applied, failed := h.applyToBatch(r, id, func(p *store.Profile) error {
@@ -166,7 +168,7 @@ func (h *Handler) confirmBatch(w http.ResponseWriter, r *http.Request) {
 	if failed > 0 {
 		h.Batch.UpdateState(id, "Completed")
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"applied": applied, "failed": failed})
+	adminhttp.WriteJSON(w, http.StatusOK, map[string]any{"applied": applied, "failed": failed})
 }
 
 func (h *Handler) cancelBatch(w http.ResponseWriter, r *http.Request) {
@@ -177,7 +179,7 @@ func (h *Handler) cancelBatch(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		FinalStatus string `json:"finalStatus"`
 	}
-	if !readJSON(w, r, &req) {
+	if !adminhttp.ReadJSON(w, r, &req) {
 		return
 	}
 	unavailable := strings.EqualFold(req.FinalStatus, "Unavailable")
@@ -186,7 +188,7 @@ func (h *Handler) cancelBatch(w http.ResponseWriter, r *http.Request) {
 		return err
 	})
 	_ = h.Batch.UpdateState(id, "Cancelled")
-	writeJSON(w, http.StatusOK, map[string]any{"applied": applied, "failed": failed})
+	adminhttp.WriteJSON(w, http.StatusOK, map[string]any{"applied": applied, "failed": failed})
 }
 
 func (h *Handler) deleteBatch(w http.ResponseWriter, r *http.Request) {
@@ -195,7 +197,7 @@ func (h *Handler) deleteBatch(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := h.Batch.Delete(id); err != nil {
-		writeErr(w, http.StatusNotFound, "unknown batch")
+		adminhttp.WriteErr(w, http.StatusNotFound, "unknown batch")
 		return
 	}
 	h.audit(r, "deleteBatch", strconv.FormatInt(id, 10), "Executed-Success", nil)
@@ -222,7 +224,7 @@ func (h *Handler) applyToBatch(r *http.Request, id int64, fn func(*store.Profile
 func batchID(w http.ResponseWriter, r *http.Request) (int64, bool) {
 	id, err := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
 	if err != nil || id <= 0 {
-		writeErr(w, http.StatusBadRequest, "invalid batch id")
+		adminhttp.WriteErr(w, http.StatusBadRequest, "invalid batch id")
 		return 0, false
 	}
 	return id, true
@@ -236,11 +238,11 @@ func (h *Handler) bulkProfiles(w http.ResponseWriter, r *http.Request) {
 		Release     bool     `json:"release"`
 		FinalStatus string   `json:"finalStatus"`
 	}
-	if !readJSON(w, r, &req) {
+	if !adminhttp.ReadJSON(w, r, &req) {
 		return
 	}
 	if len(req.ICCIDs) == 0 {
-		writeErr(w, http.StatusBadRequest, "iccids is required")
+		adminhttp.WriteErr(w, http.StatusBadRequest, "iccids is required")
 		return
 	}
 	type result struct {
@@ -250,7 +252,7 @@ func (h *Handler) bulkProfiles(w http.ResponseWriter, r *http.Request) {
 	}
 	results := make([]result, 0, len(req.ICCIDs))
 	for _, raw := range req.ICCIDs {
-		iccid := normalizeICCID(raw)
+		iccid := iccid.Normalize(raw)
 		var err error
 		switch req.Action {
 		case "confirm":
@@ -262,7 +264,7 @@ func (h *Handler) bulkProfiles(w http.ResponseWriter, r *http.Request) {
 		case "delete":
 			err = h.Profiles.Delete(iccid)
 		default:
-			writeErr(w, http.StatusBadRequest, "unknown action "+req.Action)
+			adminhttp.WriteErr(w, http.StatusBadRequest, "unknown action "+req.Action)
 			return
 		}
 		res := result{ICCID: iccid, OK: err == nil}
@@ -276,5 +278,5 @@ func (h *Handler) bulkProfiles(w http.ResponseWriter, r *http.Request) {
 		results = append(results, res)
 	}
 	h.audit(r, "bulkProfiles", req.Action, "Executed-Success", map[string]any{"count": len(req.ICCIDs)})
-	writeJSON(w, http.StatusOK, map[string]any{"action": req.Action, "results": results})
+	adminhttp.WriteJSON(w, http.StatusOK, map[string]any{"action": req.Action, "results": results})
 }

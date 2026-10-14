@@ -4,6 +4,8 @@ import (
 	"encoding/hex"
 	"fmt"
 	"net/http"
+	"rsp42/internal/api/adminhttp"
+	"rsp42/internal/iccid"
 	"strings"
 
 	"github.com/go-chi/chi/v5"
@@ -56,11 +58,11 @@ func toPersoView(d *personalization.Data, reveal bool) persoView {
 
 func (h *Handler) listPerso(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query()
-	page, size := parsePage(r)
+	page, size := adminhttp.ParsePage(r)
 	reveal := q.Get("reveal") == "1"
 	items, total, err := h.Perso.ListPage(q.Get("iccid"), scopeTenantParam(r), size, (page-1)*size)
 	if err != nil {
-		writeErr(w, http.StatusInternalServerError, err.Error())
+		adminhttp.WriteErr(w, http.StatusInternalServerError, err.Error())
 		return
 	}
 	views := make([]persoView, 0, len(items))
@@ -69,23 +71,23 @@ func (h *Handler) listPerso(w http.ResponseWriter, r *http.Request) {
 		v.Tenant = scopeTenantParam(r)
 		views = append(views, v)
 	}
-	writeListEnvelope(w, views, page, size, total)
+	adminhttp.WriteListEnvelope(w, views, page, size, total)
 }
 
 func (h *Handler) getPerso(w http.ResponseWriter, r *http.Request) {
-	iccid := normalizeICCID(chi.URLParam(r, "iccid"))
+	iccid := iccid.Normalize(chi.URLParam(r, "iccid"))
 	d, err := h.Perso.Resolve(scopeTenantParam(r), iccid, "")
 	if err != nil {
-		writeErr(w, http.StatusInternalServerError, err.Error())
+		adminhttp.WriteErr(w, http.StatusInternalServerError, err.Error())
 		return
 	}
 	if d == nil {
-		writeErr(w, http.StatusNotFound, "no personalization for ICCID")
+		adminhttp.WriteErr(w, http.StatusNotFound, "no personalization for ICCID")
 		return
 	}
 	v := toPersoView(d, r.URL.Query().Get("reveal") == "1")
 	v.Tenant = scopeTenantParam(r)
-	writeJSON(w, http.StatusOK, v)
+	adminhttp.WriteJSON(w, http.StatusOK, v)
 }
 
 type persoReq struct {
@@ -146,13 +148,13 @@ func hexField(s, name string) ([]byte, error) {
 }
 
 func (h *Handler) putPerso(w http.ResponseWriter, r *http.Request) {
-	iccid := normalizeICCID(chi.URLParam(r, "iccid"))
+	iccid := iccid.Normalize(chi.URLParam(r, "iccid"))
 	if iccid == "" {
-		writeErr(w, http.StatusBadRequest, "iccid is required")
+		adminhttp.WriteErr(w, http.StatusBadRequest, "iccid is required")
 		return
 	}
 	var req persoReq
-	if !readJSON(w, r, &req) {
+	if !adminhttp.ReadJSON(w, r, &req) {
 		return
 	}
 	tenant, err := h.effectiveTenant(r, "")
@@ -162,22 +164,22 @@ func (h *Handler) putPerso(w http.ResponseWriter, r *http.Request) {
 	}
 	d, err := req.toData(iccid)
 	if err != nil {
-		writeErr(w, http.StatusBadRequest, err.Error())
+		adminhttp.WriteErr(w, http.StatusBadRequest, err.Error())
 		return
 	}
 	if err := h.Perso.Put(tenant, d); err != nil {
-		writeErr(w, http.StatusInternalServerError, err.Error())
+		adminhttp.WriteErr(w, http.StatusInternalServerError, err.Error())
 		return
 	}
 	h.audit(r, "putPersonalization", iccid, "Executed-Success", nil)
 	stored, _ := h.Perso.Resolve(tenant, iccid, "")
-	writeJSON(w, http.StatusOK, toPersoView(stored, false))
+	adminhttp.WriteJSON(w, http.StatusOK, toPersoView(stored, false))
 }
 
 func (h *Handler) deletePerso(w http.ResponseWriter, r *http.Request) {
-	iccid := normalizeICCID(chi.URLParam(r, "iccid"))
+	iccid := iccid.Normalize(chi.URLParam(r, "iccid"))
 	if err := h.Perso.Delete(scopeTenantParam(r), iccid); err != nil {
-		writeErr(w, http.StatusNotFound, "no personalization for ICCID")
+		adminhttp.WriteErr(w, http.StatusNotFound, "no personalization for ICCID")
 		return
 	}
 	h.audit(r, "deletePersonalization", iccid, "Executed-Success", nil)
@@ -191,7 +193,7 @@ func (h *Handler) importPerso(w http.ResponseWriter, r *http.Request) {
 			persoReq
 		} `json:"records"`
 	}
-	if !readJSON(w, r, &req) {
+	if !adminhttp.ReadJSON(w, r, &req) {
 		return
 	}
 	tenant, err := h.effectiveTenant(r, "")
@@ -201,24 +203,24 @@ func (h *Handler) importPerso(w http.ResponseWriter, r *http.Request) {
 	}
 	n := 0
 	for i, rec := range req.Records {
-		iccid := normalizeICCID(rec.ICCID)
+		iccid := iccid.Normalize(rec.ICCID)
 		if iccid == "" {
-			writeErr(w, http.StatusBadRequest, fmt.Sprintf("record %d has no iccid", i+1))
+			adminhttp.WriteErr(w, http.StatusBadRequest, fmt.Sprintf("record %d has no iccid", i+1))
 			return
 		}
 		d, err := rec.persoReq.toData(iccid)
 		if err != nil {
-			writeErr(w, http.StatusBadRequest, fmt.Sprintf("record %d: %v", i+1, err))
+			adminhttp.WriteErr(w, http.StatusBadRequest, fmt.Sprintf("record %d: %v", i+1, err))
 			return
 		}
 		if err := h.Perso.Put(tenant, d); err != nil {
-			writeErr(w, http.StatusInternalServerError, err.Error())
+			adminhttp.WriteErr(w, http.StatusInternalServerError, err.Error())
 			return
 		}
 		n++
 	}
 	h.audit(r, "importPersonalization", "", "Executed-Success", map[string]any{"records": n, "tenant": tenant})
-	writeJSON(w, http.StatusOK, map[string]any{"imported": n})
+	adminhttp.WriteJSON(w, http.StatusOK, map[string]any{"imported": n})
 }
 
 // importPersoPool imports credentials that have no ICCID yet (IMSI + K/OPc), to
@@ -228,7 +230,7 @@ func (h *Handler) importPersoPool(w http.ResponseWriter, r *http.Request) {
 		Tenant  string     `json:"tenant"`
 		Records []persoReq `json:"records"`
 	}
-	if !readJSON(w, r, &req) {
+	if !adminhttp.ReadJSON(w, r, &req) {
 		return
 	}
 	tenant, err := h.effectiveTenant(r, req.Tenant)
@@ -261,5 +263,5 @@ func (h *Handler) importPersoPool(w http.ResponseWriter, r *http.Request) {
 		results = append(results, res)
 	}
 	h.audit(r, "importPersonalizationPool", "", "Executed-Success", map[string]any{"imported": ok, "total": len(req.Records)})
-	writeJSON(w, http.StatusOK, map[string]any{"imported": ok, "results": results})
+	adminhttp.WriteJSON(w, http.StatusOK, map[string]any{"imported": ok, "results": results})
 }

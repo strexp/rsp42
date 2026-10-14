@@ -3,6 +3,7 @@ package admin
 import (
 	"errors"
 	"net/http"
+	"rsp42/internal/api/adminhttp"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -36,36 +37,36 @@ func toTenantView(t *store.Tenant) tenantView {
 
 func (h *Handler) listTenants(w http.ResponseWriter, _ *http.Request) {
 	if h.Tenants == nil {
-		writeErr(w, http.StatusNotImplemented, "tenant registry not configured")
+		adminhttp.WriteErr(w, http.StatusNotImplemented, "tenant registry not configured")
 		return
 	}
 	items, err := h.Tenants.List()
 	if err != nil {
-		writeErr(w, http.StatusInternalServerError, err.Error())
+		adminhttp.WriteErr(w, http.StatusInternalServerError, err.Error())
 		return
 	}
 	views := make([]tenantView, 0, len(items))
 	for _, t := range items {
 		views = append(views, toTenantView(t))
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"items": views, "total": len(views)})
+	adminhttp.WriteJSON(w, http.StatusOK, map[string]any{"items": views, "total": len(views)})
 }
 
 func (h *Handler) getTenant(w http.ResponseWriter, r *http.Request) {
 	if h.Tenants == nil {
-		writeErr(w, http.StatusNotImplemented, "tenant registry not configured")
+		adminhttp.WriteErr(w, http.StatusNotImplemented, "tenant registry not configured")
 		return
 	}
 	t, err := h.Tenants.Get(chi.URLParam(r, "id"))
 	if err != nil {
-		writeErr(w, http.StatusNotFound, "unknown tenant")
+		adminhttp.WriteErr(w, http.StatusNotFound, "unknown tenant")
 		return
 	}
 	v := toTenantView(t)
 	if usage, err := h.Tenants.Usage(t.ID); err == nil {
 		v.Usage = &usage
 	}
-	writeJSON(w, http.StatusOK, v)
+	adminhttp.WriteJSON(w, http.StatusOK, v)
 }
 
 type tenantReq struct {
@@ -80,18 +81,18 @@ type tenantReq struct {
 
 func (h *Handler) upsertTenant(w http.ResponseWriter, r *http.Request) {
 	if h.Tenants == nil {
-		writeErr(w, http.StatusNotImplemented, "tenant registry not configured")
+		adminhttp.WriteErr(w, http.StatusNotImplemented, "tenant registry not configured")
 		return
 	}
 	var req tenantReq
-	if !readJSON(w, r, &req) {
+	if !adminhttp.ReadJSON(w, r, &req) {
 		return
 	}
 	if id := chi.URLParam(r, "id"); id != "" {
 		req.ID = id
 	}
 	if req.ID == "" {
-		writeErr(w, http.StatusBadRequest, "id is required")
+		adminhttp.WriteErr(w, http.StatusBadRequest, "id is required")
 		return
 	}
 	// A PATCH-style update keeps the existing values for omitted fields.
@@ -132,17 +133,17 @@ func (h *Handler) upsertTenant(w http.ResponseWriter, r *http.Request) {
 		t.Status = store.TenantActive
 	}
 	if err := h.Tenants.Upsert(t); err != nil {
-		writeErr(w, http.StatusInternalServerError, err.Error())
+		adminhttp.WriteErr(w, http.StatusInternalServerError, err.Error())
 		return
 	}
 	h.audit(r, "upsertTenant", t.ID, "Executed-Success", req)
 	stored, _ := h.Tenants.Get(t.ID)
-	writeJSON(w, http.StatusOK, toTenantView(stored))
+	adminhttp.WriteJSON(w, http.StatusOK, toTenantView(stored))
 }
 
 func (h *Handler) deleteTenant(w http.ResponseWriter, r *http.Request) {
 	if h.Tenants == nil {
-		writeErr(w, http.StatusNotImplemented, "tenant registry not configured")
+		adminhttp.WriteErr(w, http.StatusNotImplemented, "tenant registry not configured")
 		return
 	}
 	id := chi.URLParam(r, "id")
@@ -155,13 +156,13 @@ func (h *Handler) deleteTenant(w http.ResponseWriter, r *http.Request) {
 	if !force {
 		usage, err := h.Tenants.Usage(id)
 		if err != nil {
-			writeErr(w, http.StatusInternalServerError, err.Error())
+			adminhttp.WriteErr(w, http.StatusInternalServerError, err.Error())
 			return
 		}
 		if !usage.Empty() {
 			// The usage object sits at the top level (N3): the caller reads it
 			// to warn before retrying with force.
-			writeJSON(w, http.StatusConflict, map[string]any{
+			adminhttp.WriteJSON(w, http.StatusConflict, map[string]any{
 				"code":    "tenant_in_use",
 				"message": `tenant still owns resources; pass ?force=true&reassignTo=<tenant|""> to migrate them first`,
 				"usage":   usage,
@@ -169,7 +170,7 @@ func (h *Handler) deleteTenant(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		if err := h.Tenants.Delete(id); err != nil {
-			writeErr(w, http.StatusNotFound, "unknown tenant")
+			adminhttp.WriteErr(w, http.StatusNotFound, "unknown tenant")
 			return
 		}
 		h.audit(r, "deleteTenant", id, "Executed-Success", nil)
@@ -181,23 +182,23 @@ func (h *Handler) deleteTenant(w http.ResponseWriter, r *http.Request) {
 	// the platform-global scope (tenant_id = NULL).
 	reassignTo := q.Get("reassignTo")
 	if reassignTo == id {
-		writeJSON(w, http.StatusBadRequest, errorBody("invalid_request",
+		adminhttp.WriteJSON(w, http.StatusBadRequest, adminhttp.ErrorBody("invalid_request",
 			"reassignTo must differ from the tenant being deleted"))
 		return
 	}
 	if reassignTo != "" {
 		if _, err := h.Tenants.Get(reassignTo); err != nil {
-			writeJSON(w, http.StatusBadRequest, errorBody("unknown_tenant",
+			adminhttp.WriteJSON(w, http.StatusBadRequest, adminhttp.ErrorBody("unknown_tenant",
 				"reassignTo tenant is not registered"))
 			return
 		}
 	}
 	if err := h.Tenants.DeleteWithReassign(id, reassignTo); err != nil {
 		if errors.Is(err, store.ErrNotFound) {
-			writeErr(w, http.StatusNotFound, "unknown tenant")
+			adminhttp.WriteErr(w, http.StatusNotFound, "unknown tenant")
 			return
 		}
-		writeErr(w, http.StatusInternalServerError, err.Error())
+		adminhttp.WriteErr(w, http.StatusInternalServerError, err.Error())
 		return
 	}
 	h.audit(r, "deleteTenant", id, "Executed-Success", map[string]any{"force": true, "reassignTo": reassignTo})

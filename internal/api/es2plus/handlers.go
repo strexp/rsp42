@@ -16,6 +16,7 @@ import (
 
 	"rsp42/internal/api/common"
 	"rsp42/internal/api/middleware"
+	"rsp42/internal/iccid"
 	"rsp42/internal/rsp"
 	"rsp42/internal/service"
 	"rsp42/internal/store"
@@ -201,7 +202,7 @@ func (h *Handler) confirmOrder(w http.ResponseWriter, r *http.Request) {
 		writeFailure(w, rsp.CodeMandatoryElementMissing, "iccid is required")
 		return
 	}
-	p, err := h.Profiles.GetByICCID(normalizeICCID(req.ICCID))
+	p, err := h.Profiles.GetByICCID(iccid.Normalize(req.ICCID))
 	if err != nil {
 		writeFailure(w, rsp.CodeICCIDUnknown, "unknown ICCID")
 		return
@@ -265,7 +266,7 @@ func (h *Handler) cancelOrder(w http.ResponseWriter, r *http.Request) {
 		common.WriteStatusFailure(w, err)
 		return
 	}
-	if _, err := h.Orders.Cancel(normalizeICCID(req.ICCID), final == finalUnavailable); err != nil {
+	if _, err := h.Orders.Cancel(iccid.Normalize(req.ICCID), final == finalUnavailable); err != nil {
 		writeError(w, err)
 		return
 	}
@@ -309,7 +310,7 @@ func (h *Handler) releaseProfile(w http.ResponseWriter, r *http.Request) {
 		common.WriteStatusFailure(w, err)
 		return
 	}
-	if _, err := h.Orders.Release(normalizeICCID(req.ICCID)); err != nil {
+	if _, err := h.Orders.Release(iccid.Normalize(req.ICCID)); err != nil {
 		writeError(w, err)
 		return
 	}
@@ -409,8 +410,8 @@ func (h *Handler) authorize(tenant string, p *store.Profile, eid string) error {
 // authorizeICCID loads a profile and enforces tenant ownership. An unknown
 // ICCID is reported as such (8.2.1/3.9), distinct from an authorisation
 // failure (8.2.1/1.2).
-func (h *Handler) authorizeICCID(tenant, iccid string) error {
-	p, err := h.Profiles.GetByICCID(normalizeICCID(iccid))
+func (h *Handler) authorizeICCID(tenant, rawICCID string) error {
+	p, err := h.Profiles.GetByICCID(iccid.Normalize(rawICCID))
 	if err != nil {
 		return rsp.CodeICCIDUnknown.Status("unknown ICCID")
 	}
@@ -498,6 +499,3 @@ func writeError(w http.ResponseWriter, err error) {
 
 // normalizeICCID strips a trailing F padding so DB lookups match 19/20-digit
 // inputs.
-func normalizeICCID(iccid string) string {
-	return strings.TrimRight(iccid, "fF")
-}

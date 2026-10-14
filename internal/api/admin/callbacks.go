@@ -4,6 +4,8 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"rsp42/internal/api/adminhttp"
+	"rsp42/internal/iccid"
 	"strconv"
 	"time"
 
@@ -49,69 +51,69 @@ func toCallbackView(c *store.Callback) callbackView {
 // with no way to inspect or re-drive it.
 func (h *Handler) listCallbacks(w http.ResponseWriter, r *http.Request) {
 	if h.Callbacks == nil {
-		writeErr(w, http.StatusNotImplemented, "callback queue not configured")
+		adminhttp.WriteErr(w, http.StatusNotImplemented, "callback queue not configured")
 		return
 	}
 	q := r.URL.Query()
-	page, size := parsePage(r)
+	page, size := adminhttp.ParsePage(r)
 	filter := store.CallbackFilter{
 		Status: q.Get("state"),
-		ICCID:  normalizeICCID(q.Get("iccid")),
-		Tenant: tenantFilter(r),
+		ICCID:  iccid.Normalize(q.Get("iccid")),
+		Tenant: adminhttp.TenantFilter(r),
 	}
-	if t := parseTime(firstNonEmpty(q.Get("from"), q.Get("since"))); t != nil {
+	if t := adminhttp.ParseTime(adminhttp.FirstNonEmpty(q.Get("from"), q.Get("since"))); t != nil {
 		filter.Since = t
 	}
-	if t := parseTime(firstNonEmpty(q.Get("to"), q.Get("until"))); t != nil {
+	if t := adminhttp.ParseTime(adminhttp.FirstNonEmpty(q.Get("to"), q.Get("until"))); t != nil {
 		filter.Until = t
 	}
 	items, total, err := h.Callbacks.ListFiltered(filter, size, (page-1)*size)
 	if err != nil {
-		writeErr(w, http.StatusInternalServerError, err.Error())
+		adminhttp.WriteErr(w, http.StatusInternalServerError, err.Error())
 		return
 	}
 	views := make([]callbackView, 0, len(items))
 	for _, c := range items {
 		views = append(views, toCallbackView(c))
 	}
-	writeListEnvelope(w, views, page, size, total)
+	adminhttp.WriteListEnvelope(w, views, page, size, total)
 }
 
 // retryCallback re-queues one dead-lettered callback.
 func (h *Handler) retryCallback(w http.ResponseWriter, r *http.Request) {
 	if h.Callbacks == nil {
-		writeErr(w, http.StatusNotImplemented, "callback queue not configured")
+		adminhttp.WriteErr(w, http.StatusNotImplemented, "callback queue not configured")
 		return
 	}
-	id, err := parseID(chi.URLParam(r, "id"))
+	id, err := adminhttp.ParseID(chi.URLParam(r, "id"))
 	if err != nil {
-		writeErr(w, http.StatusBadRequest, "invalid callback id")
+		adminhttp.WriteErr(w, http.StatusBadRequest, "invalid callback id")
 		return
 	}
 	if err := h.Callbacks.Requeue(id); err != nil {
 		switch {
 		case errors.Is(err, store.ErrNotFound):
-			writeErr(w, http.StatusNotFound, "unknown callback")
+			adminhttp.WriteErr(w, http.StatusNotFound, "unknown callback")
 		case errors.Is(err, store.ErrConflict):
-			writeJSON(w, http.StatusConflict, errorBody("conflict", "callback is not in a dead-letter state"))
+			adminhttp.WriteJSON(w, http.StatusConflict, adminhttp.ErrorBody("conflict", "callback is not in a dead-letter state"))
 		default:
-			writeErr(w, http.StatusInternalServerError, err.Error())
+			adminhttp.WriteErr(w, http.StatusInternalServerError, err.Error())
 		}
 		return
 	}
 	h.audit(r, "retryCallback", strconv.FormatInt(id, 10), "Executed-Success", nil)
 	got, err := h.Callbacks.Get(id)
 	if err != nil {
-		writeErr(w, http.StatusInternalServerError, err.Error())
+		adminhttp.WriteErr(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	writeJSON(w, http.StatusOK, toCallbackView(got))
+	adminhttp.WriteJSON(w, http.StatusOK, toCallbackView(got))
 }
 
 // retryDeadCallbacks re-queues a batch of dead-lettered callbacks.
 func (h *Handler) retryDeadCallbacks(w http.ResponseWriter, r *http.Request) {
 	if h.Callbacks == nil {
-		writeErr(w, http.StatusNotImplemented, "callback queue not configured")
+		adminhttp.WriteErr(w, http.StatusNotImplemented, "callback queue not configured")
 		return
 	}
 	var req struct {
@@ -119,7 +121,7 @@ func (h *Handler) retryDeadCallbacks(w http.ResponseWriter, r *http.Request) {
 		Before string `json:"before"`
 		Limit  int    `json:"limit"`
 	}
-	if !readJSON(w, r, &req) {
+	if !adminhttp.ReadJSON(w, r, &req) {
 		return
 	}
 	tenant, err := h.effectiveTenant(r, req.Tenant)
@@ -129,9 +131,9 @@ func (h *Handler) retryDeadCallbacks(w http.ResponseWriter, r *http.Request) {
 	}
 	before := time.Now().UTC()
 	if req.Before != "" {
-		t := parseTime(req.Before)
+		t := adminhttp.ParseTime(req.Before)
 		if t == nil {
-			writeErr(w, http.StatusBadRequest, "before must be an RFC3339 timestamp or a date")
+			adminhttp.WriteErr(w, http.StatusBadRequest, "before must be an RFC3339 timestamp or a date")
 			return
 		}
 		before = *t
@@ -142,9 +144,9 @@ func (h *Handler) retryDeadCallbacks(w http.ResponseWriter, r *http.Request) {
 	}
 	n, err := h.Callbacks.RequeueDead(tenantPtr, before, req.Limit)
 	if err != nil {
-		writeErr(w, http.StatusInternalServerError, err.Error())
+		adminhttp.WriteErr(w, http.StatusInternalServerError, err.Error())
 		return
 	}
 	h.audit(r, "retryCallback", "retry-dead", "Executed-Success", map[string]any{"requeued": n})
-	writeJSON(w, http.StatusOK, map[string]any{"requeued": n})
+	adminhttp.WriteJSON(w, http.StatusOK, map[string]any{"requeued": n})
 }

@@ -2,6 +2,8 @@ package admin
 
 import (
 	"net/http"
+	"rsp42/internal/api/adminhttp"
+	"rsp42/internal/iccid"
 	"time"
 
 	"rsp42/internal/store"
@@ -23,21 +25,21 @@ type notificationView struct {
 // only reachable through a profile timeline).
 func (h *Handler) listNotifications(w http.ResponseWriter, r *http.Request) {
 	if h.Notifs == nil {
-		writeErr(w, http.StatusNotImplemented, "notification store not configured")
+		adminhttp.WriteErr(w, http.StatusNotImplemented, "notification store not configured")
 		return
 	}
 	q := r.URL.Query()
-	page, size := parsePage(r)
-	filter := store.NotificationFilter{ICCID: normalizeICCID(q.Get("iccid")), EID: q.Get("eid")}
-	if t := parseTime(q.Get("from")); t != nil {
+	page, size := adminhttp.ParsePage(r)
+	filter := store.NotificationFilter{ICCID: iccid.Normalize(q.Get("iccid")), EID: q.Get("eid")}
+	if t := adminhttp.ParseTime(q.Get("from")); t != nil {
 		filter.Since = t
 	}
-	if t := parseTime(q.Get("to")); t != nil {
+	if t := adminhttp.ParseTime(q.Get("to")); t != nil {
 		filter.Until = t
 	}
 	items, total, err := h.Notifs.ListFiltered(filter, size, (page-1)*size)
 	if err != nil {
-		writeErr(w, http.StatusInternalServerError, err.Error())
+		adminhttp.WriteErr(w, http.StatusInternalServerError, err.Error())
 		return
 	}
 	views := make([]notificationView, 0, len(items))
@@ -48,5 +50,5 @@ func (h *Handler) listNotifications(w http.ResponseWriter, r *http.Request) {
 			SignatureOK: n.SignatureOK, Processed: n.Processed, ReceivedAt: n.ReceivedAt,
 		})
 	}
-	writeListEnvelope(w, views, page, size, total)
+	adminhttp.WriteListEnvelope(w, views, page, size, total)
 }

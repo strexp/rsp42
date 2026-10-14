@@ -2,6 +2,8 @@ package admin
 
 import (
 	"net/http"
+	"rsp42/internal/api/adminhttp"
+	"rsp42/internal/iccid"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -42,24 +44,24 @@ type rangeView struct {
 
 func (h *Handler) listPool(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query()
-	page, size := parsePage(r)
-	items, total, err := h.Pool.ListPage(q.Get("state"), q.Get("iccid"), tenantFilter(r), size, (page-1)*size)
+	page, size := adminhttp.ParsePage(r)
+	items, total, err := h.Pool.ListPage(q.Get("state"), q.Get("iccid"), adminhttp.TenantFilter(r), size, (page-1)*size)
 	if err != nil {
-		writeErr(w, http.StatusInternalServerError, err.Error())
+		adminhttp.WriteErr(w, http.StatusInternalServerError, err.Error())
 		return
 	}
 	views := make([]poolView, 0, len(items))
 	for _, e := range items {
 		views = append(views, toPoolView(e))
 	}
-	writeListEnvelope(w, views, page, size, total)
+	adminhttp.WriteListEnvelope(w, views, page, size, total)
 }
 
 func (h *Handler) poolStats(w http.ResponseWriter, r *http.Request) {
-	filter := tenantFilter(r)
+	filter := adminhttp.TenantFilter(r)
 	counts, ranges, err := h.Pool.Stats(filter)
 	if err != nil {
-		writeErr(w, http.StatusInternalServerError, err.Error())
+		adminhttp.WriteErr(w, http.StatusInternalServerError, err.Error())
 		return
 	}
 	out := map[string]any{"states": counts, "ranges": ranges, "available": counts["available"]}
@@ -68,7 +70,7 @@ func (h *Handler) poolStats(w http.ResponseWriter, r *http.Request) {
 			out["credentials_unbound"] = n
 		}
 	}
-	writeJSON(w, http.StatusOK, out)
+	adminhttp.WriteJSON(w, http.StatusOK, out)
 }
 
 // reserveICCID takes an ICCID from the tenant's pool and, when the tenant has
@@ -80,7 +82,7 @@ func (h *Handler) reserveICCID(w http.ResponseWriter, r *http.Request) {
 		Reference  string `json:"reference"`
 		TTLSeconds int    `json:"ttlSeconds"`
 	}
-	if !readJSON(w, r, &req) {
+	if !adminhttp.ReadJSON(w, r, &req) {
 		return
 	}
 	tenant, err := h.effectiveTenant(r, req.Tenant)
@@ -94,14 +96,14 @@ func (h *Handler) reserveICCID(w http.ResponseWriter, r *http.Request) {
 	}
 	iccid, err := h.Pool.Reserve(tenant, req.EID, req.Reference, ttl)
 	if err != nil {
-		writeErr(w, http.StatusConflict, "no available ICCID in the pool")
+		adminhttp.WriteErr(w, http.StatusConflict, "no available ICCID in the pool")
 		return
 	}
 	resp := map[string]any{"iccid": iccid, "state": "allocated", "tenant": tenant}
 	if h.Perso != nil {
 		imsi, perr := h.Perso.ReservePair(tenant, iccid)
 		if perr != nil {
-			writeErr(w, http.StatusInternalServerError, perr.Error())
+			adminhttp.WriteErr(w, http.StatusInternalServerError, perr.Error())
 			return
 		}
 		if imsi != "" {
@@ -109,7 +111,7 @@ func (h *Handler) reserveICCID(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	h.audit(r, "reserveICCID", iccid, "Executed-Success", map[string]any{"eid": req.EID, "tenant": tenant, "imsi": resp["imsi"]})
-	writeJSON(w, http.StatusOK, resp)
+	adminhttp.WriteJSON(w, http.StatusOK, resp)
 }
 
 func (h *Handler) setICCIDState(w http.ResponseWriter, r *http.Request, state string) {
@@ -118,24 +120,24 @@ func (h *Handler) setICCIDState(w http.ResponseWriter, r *http.Request, state st
 		Tenant string `json:"tenant"`
 		Note   string `json:"note"`
 	}
-	if !readJSON(w, r, &req) {
+	if !adminhttp.ReadJSON(w, r, &req) {
 		return
 	}
 	if req.ICCID == "" {
-		writeErr(w, http.StatusBadRequest, "iccid is required")
+		adminhttp.WriteErr(w, http.StatusBadRequest, "iccid is required")
 		return
 	}
-	iccid := normalizeICCID(req.ICCID)
+	iccid := iccid.Normalize(req.ICCID)
 	tenant, _ := h.effectiveTenant(r, req.Tenant)
 	if err := h.Pool.SetState(iccid, state, req.Note); err != nil {
-		writeErr(w, http.StatusNotFound, "unknown ICCID")
+		adminhttp.WriteErr(w, http.StatusNotFound, "unknown ICCID")
 		return
 	}
 	if state == "available" && h.Perso != nil {
 		_ = h.Perso.UnbindPair(tenant, iccid)
 	}
 	h.audit(r, "setICCIDState", iccid, "Executed-Success", map[string]any{"state": state, "tenant": tenant})
-	writeJSON(w, http.StatusOK, map[string]any{"iccid": iccid, "state": state})
+	adminhttp.WriteJSON(w, http.StatusOK, map[string]any{"iccid": iccid, "state": state})
 }
 
 func (h *Handler) releaseICCID(w http.ResponseWriter, r *http.Request) {
@@ -147,16 +149,16 @@ func (h *Handler) blockICCID(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) listRanges(w http.ResponseWriter, r *http.Request) {
-	items, err := h.Pool.ListRanges(tenantFilter(r))
+	items, err := h.Pool.ListRanges(adminhttp.TenantFilter(r))
 	if err != nil {
-		writeErr(w, http.StatusInternalServerError, err.Error())
+		adminhttp.WriteErr(w, http.StatusInternalServerError, err.Error())
 		return
 	}
 	views := make([]rangeView, 0, len(items))
 	for _, rg := range items {
 		views = append(views, rangeView{ID: rg.ID, Tenant: rg.TenantID, Start: rg.Start, End: rg.End, Note: rg.Note, CreatedAt: rg.CreatedAt})
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"items": views})
+	adminhttp.WriteJSON(w, http.StatusOK, map[string]any{"items": views})
 }
 
 func (h *Handler) importRange(w http.ResponseWriter, r *http.Request) {
@@ -166,7 +168,7 @@ func (h *Handler) importRange(w http.ResponseWriter, r *http.Request) {
 		Note   string `json:"note"`
 		Tenant string `json:"tenant"`
 	}
-	if !readJSON(w, r, &req) {
+	if !adminhttp.ReadJSON(w, r, &req) {
 		return
 	}
 	tenant, err := h.effectiveTenant(r, req.Tenant)
@@ -176,25 +178,25 @@ func (h *Handler) importRange(w http.ResponseWriter, r *http.Request) {
 	}
 	id, inserted, skipped, err := h.Pool.ImportRange(tenant, req.Start, req.End, req.Note)
 	if err != nil {
-		writeErr(w, http.StatusBadRequest, err.Error())
+		adminhttp.WriteErr(w, http.StatusBadRequest, err.Error())
 		return
 	}
 	h.audit(r, "importICCIDRange", req.Start+".."+req.End, "Executed-Success",
 		map[string]any{"rangeId": id, "inserted": inserted, "skipped": skipped, "tenant": tenant})
-	writeJSON(w, http.StatusCreated, map[string]any{"rangeId": id, "inserted": inserted, "skipped": skipped, "tenant": tenant})
+	adminhttp.WriteJSON(w, http.StatusCreated, map[string]any{"rangeId": id, "inserted": inserted, "skipped": skipped, "tenant": tenant})
 }
 
 func (h *Handler) deleteRange(w http.ResponseWriter, r *http.Request) {
-	id, err := parseID(chi.URLParam(r, "id"))
+	id, err := adminhttp.ParseID(chi.URLParam(r, "id"))
 	if err != nil {
-		writeErr(w, http.StatusBadRequest, "invalid range id")
+		adminhttp.WriteErr(w, http.StatusBadRequest, "invalid range id")
 		return
 	}
 	removed, err := h.Pool.DeleteRange(id)
 	if err != nil {
-		writeErr(w, http.StatusNotFound, "unknown range")
+		adminhttp.WriteErr(w, http.StatusNotFound, "unknown range")
 		return
 	}
 	h.audit(r, "deleteICCIDRange", chi.URLParam(r, "id"), "Executed-Success", map[string]any{"removed": removed})
-	writeJSON(w, http.StatusOK, map[string]any{"removed": removed})
+	adminhttp.WriteJSON(w, http.StatusOK, map[string]any{"removed": removed})
 }

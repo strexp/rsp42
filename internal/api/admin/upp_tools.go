@@ -10,6 +10,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
+	"rsp42/internal/api/adminhttp"
 	"rsp42/internal/saip/personalization"
 	"rsp42/internal/service"
 	"rsp42/internal/store"
@@ -133,15 +134,15 @@ var personalizationSchema = []uppFieldSchema{
 func (h *Handler) uppSchema(w http.ResponseWriter, r *http.Request) {
 	t, err := h.UPP.GetScoped(scopeTenantParam(r), chi.URLParam(r, "name"))
 	if err != nil {
-		writeErr(w, http.StatusNotFound, "unknown template")
+		adminhttp.WriteErr(w, http.StatusNotFound, "unknown template")
 		return
 	}
 	ins, err := service.InspectUPP(t.Bytes)
 	if err != nil {
-		writeErr(w, http.StatusUnprocessableEntity, "invalid UPP: "+err.Error())
+		adminhttp.WriteErr(w, http.StatusUnprocessableEntity, "invalid UPP: "+err.Error())
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{
+	adminhttp.WriteJSON(w, http.StatusOK, map[string]any{
 		"template":   toUPPView(t),
 		"inspection": ins,
 		"fields":     annotateSchema(ins),
@@ -155,17 +156,17 @@ func (h *Handler) validateUPP(w http.ResponseWriter, r *http.Request) {
 		Name string `json:"name"`
 		Data string `json:"data"` // base64 DER
 	}
-	if !readJSON(w, r, &req) {
+	if !adminhttp.ReadJSON(w, r, &req) {
 		return
 	}
 	raw, err := base64.StdEncoding.DecodeString(req.Data)
 	if err != nil {
-		writeErr(w, http.StatusBadRequest, "data must be base64-encoded DER")
+		adminhttp.WriteErr(w, http.StatusBadRequest, "data must be base64-encoded DER")
 		return
 	}
 	ins, err := service.InspectUPP(raw)
 	if err != nil {
-		writeJSON(w, http.StatusOK, map[string]any{"valid": false, "error": err.Error()})
+		adminhttp.WriteJSON(w, http.StatusOK, map[string]any{"valid": false, "error": err.Error()})
 		return
 	}
 	// N16: uploading a template just to look at its structure stays possible,
@@ -181,7 +182,7 @@ func (h *Handler) validateUPP(w http.ResponseWriter, r *http.Request) {
 		errors = []string{}
 	}
 	h.audit(r, "validateUPP", req.Name, "Executed-Success", map[string]any{"sha256": ins.SHA256, "saip": ins.SAIP})
-	writeJSON(w, http.StatusOK, map[string]any{
+	adminhttp.WriteJSON(w, http.StatusOK, map[string]any{
 		"valid": len(errors) == 0, "inspection": ins, "warnings": warnings, "errors": errors,
 	})
 }
@@ -198,7 +199,7 @@ func (h *Handler) renderUPP(w http.ResponseWriter, r *http.Request) {
 		Data string `json:"data"`
 		persoReq
 	}
-	if !readJSON(w, r, &req) {
+	if !adminhttp.ReadJSON(w, r, &req) {
 		return
 	}
 	tenant, err := h.effectiveTenant(r, req.Tenant)
@@ -212,12 +213,12 @@ func (h *Handler) renderUPP(w http.ResponseWriter, r *http.Request) {
 	)
 	switch {
 	case req.Name != "" && req.Data != "":
-		writeJSON(w, http.StatusBadRequest, errorBody("invalid_request", "name and data are mutually exclusive"))
+		adminhttp.WriteJSON(w, http.StatusBadRequest, adminhttp.ErrorBody("invalid_request", "name and data are mutually exclusive"))
 		return
 	case req.Name != "":
 		tpl, err := h.UPP.GetForTenant(tenant, req.Name)
 		if err != nil {
-			writeErr(w, http.StatusNotFound, "unknown template "+req.Name)
+			adminhttp.WriteErr(w, http.StatusNotFound, "unknown template "+req.Name)
 			return
 		}
 		raw = tpl.Bytes
@@ -226,21 +227,21 @@ func (h *Handler) renderUPP(w http.ResponseWriter, r *http.Request) {
 	case req.Data != "":
 		raw, err = base64.StdEncoding.DecodeString(req.Data)
 		if err != nil {
-			writeErr(w, http.StatusBadRequest, "data must be base64-encoded DER")
+			adminhttp.WriteErr(w, http.StatusBadRequest, "data must be base64-encoded DER")
 			return
 		}
 	default:
-		writeJSON(w, http.StatusBadRequest, errorBody("invalid_request", "name or data is required"))
+		adminhttp.WriteJSON(w, http.StatusBadRequest, adminhttp.ErrorBody("invalid_request", "name or data is required"))
 		return
 	}
 	data, err := req.persoReq.toData("")
 	if err != nil {
-		writeErr(w, http.StatusBadRequest, err.Error())
+		adminhttp.WriteErr(w, http.StatusBadRequest, err.Error())
 		return
 	}
 	ins, encoded, err := service.RenderUPP(raw, data, &personalization.Engine{})
 	if err != nil {
-		writeJSON(w, http.StatusOK, map[string]any{"rendered": false, "error": err.Error()})
+		adminhttp.WriteJSON(w, http.StatusOK, map[string]any{"rendered": false, "error": err.Error()})
 		return
 	}
 	// The ad-hoc path never stores anything; the audit subject marks it.
@@ -259,7 +260,7 @@ func (h *Handler) renderUPP(w http.ResponseWriter, r *http.Request) {
 	} else {
 		resp["template"] = map[string]any{"name": "<ad-hoc>"}
 	}
-	writeJSON(w, http.StatusOK, resp)
+	adminhttp.WriteJSON(w, http.StatusOK, resp)
 }
 
 // cloneUPP derives a tenant template from a global one (G7).
@@ -269,7 +270,7 @@ func (h *Handler) cloneUPP(w http.ResponseWriter, r *http.Request) {
 		Tenant string `json:"tenant"`
 		Name   string `json:"name"`
 	}
-	if !readJSON(w, r, &req) {
+	if !adminhttp.ReadJSON(w, r, &req) {
 		return
 	}
 	tenant, err := h.effectiveTenant(r, req.Tenant)
@@ -278,12 +279,12 @@ func (h *Handler) cloneUPP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if tenant == "" {
-		writeErr(w, http.StatusBadRequest, "tenant is required for a clone (use promote to make a global template)")
+		adminhttp.WriteErr(w, http.StatusBadRequest, "tenant is required for a clone (use promote to make a global template)")
 		return
 	}
 	src, err := h.UPP.GetForTenant(tenant, source)
 	if err != nil {
-		writeErr(w, http.StatusNotFound, "unknown template "+source)
+		adminhttp.WriteErr(w, http.StatusNotFound, "unknown template "+source)
 		return
 	}
 	if rej := h.AllowedSAIP.CheckSAIPVersion(src.SAIPMajor, src.SAIPMinor); rej != nil {
@@ -303,12 +304,12 @@ func (h *Handler) cloneUPP(w http.ResponseWriter, r *http.Request) {
 		SHA256: src.SHA256, Bytes: src.Bytes, Active: true,
 	}
 	if err := h.UPP.Upsert(dst); err != nil {
-		writeErr(w, http.StatusInternalServerError, err.Error())
+		adminhttp.WriteErr(w, http.StatusInternalServerError, err.Error())
 		return
 	}
 	h.audit(r, "cloneUPP", name, "Executed-Success", map[string]any{"from": source, "tenant": tenant})
 	got, _ := h.UPP.GetScoped(tenant, name)
-	writeJSON(w, http.StatusCreated, toUPPView(got))
+	adminhttp.WriteJSON(w, http.StatusCreated, toUPPView(got))
 }
 
 // promoteUPP promotes a tenant template to the platform-global scope (G7).
@@ -316,12 +317,12 @@ func (h *Handler) promoteUPP(w http.ResponseWriter, r *http.Request) {
 	name := chi.URLParam(r, "name")
 	tenant := scopeTenantParam(r)
 	if tenant == "" {
-		writeErr(w, http.StatusBadRequest, "tenant is required (only a tenant template can be promoted)")
+		adminhttp.WriteErr(w, http.StatusBadRequest, "tenant is required (only a tenant template can be promoted)")
 		return
 	}
 	src, err := h.UPP.GetScoped(tenant, name)
 	if err != nil {
-		writeErr(w, http.StatusNotFound, "unknown template")
+		adminhttp.WriteErr(w, http.StatusNotFound, "unknown template")
 		return
 	}
 	if rej := h.AllowedSAIP.CheckSAIPVersion(src.SAIPMajor, src.SAIPMinor); rej != nil {
@@ -329,7 +330,7 @@ func (h *Handler) promoteUPP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if _, err := h.UPP.GetScoped("", name); err == nil && r.URL.Query().Get("overwrite") != "1" {
-		writeErr(w, http.StatusConflict, fmt.Sprintf("a global template named %q already exists (pass overwrite=1 to replace it)", name))
+		adminhttp.WriteErr(w, http.StatusConflict, fmt.Sprintf("a global template named %q already exists (pass overwrite=1 to replace it)", name))
 		return
 	}
 	dst := &store.UPPTemplate{
@@ -337,12 +338,12 @@ func (h *Handler) promoteUPP(w http.ResponseWriter, r *http.Request) {
 		SHA256: src.SHA256, Bytes: src.Bytes, Active: true,
 	}
 	if err := h.UPP.Upsert(dst); err != nil {
-		writeErr(w, http.StatusInternalServerError, err.Error())
+		adminhttp.WriteErr(w, http.StatusInternalServerError, err.Error())
 		return
 	}
 	h.audit(r, "promoteUPP", name, "Executed-Success", map[string]any{"tenant": tenant})
 	got, _ := h.UPP.GetScoped("", name)
-	writeJSON(w, http.StatusOK, toUPPView(got))
+	adminhttp.WriteJSON(w, http.StatusOK, toUPPView(got))
 }
 
 // uppVersionView is the API representation of an archived template revision.
@@ -364,7 +365,7 @@ func (h *Handler) listUPPVersions(w http.ResponseWriter, r *http.Request) {
 	name := chi.URLParam(r, "name")
 	items, err := h.UPP.ListVersions(tenant, name)
 	if err != nil {
-		writeErr(w, http.StatusInternalServerError, err.Error())
+		adminhttp.WriteErr(w, http.StatusInternalServerError, err.Error())
 		return
 	}
 	views := make([]uppVersionView, 0, len(items))
@@ -375,7 +376,7 @@ func (h *Handler) listUPPVersions(w http.ResponseWriter, r *http.Request) {
 			Size: len(v.Bytes), Note: v.Note, CreatedAt: v.CreatedAt,
 		})
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"items": views, "total": len(views)})
+	adminhttp.WriteJSON(w, http.StatusOK, map[string]any{"items": views, "total": len(views)})
 }
 
 // restoreUPP rolls a template back to an archived revision. The revision being
@@ -383,14 +384,14 @@ func (h *Handler) listUPPVersions(w http.ResponseWriter, r *http.Request) {
 func (h *Handler) restoreUPP(w http.ResponseWriter, r *http.Request) {
 	tenant := scopeTenantParam(r)
 	name := chi.URLParam(r, "name")
-	id, err := parseID(chi.URLParam(r, "version"))
+	id, err := adminhttp.ParseID(chi.URLParam(r, "version"))
 	if err != nil {
-		writeErr(w, http.StatusBadRequest, "invalid version id")
+		adminhttp.WriteErr(w, http.StatusBadRequest, "invalid version id")
 		return
 	}
 	v, err := h.UPP.GetVersion(tenant, name, id)
 	if err != nil {
-		writeErr(w, http.StatusNotFound, "unknown template version")
+		adminhttp.WriteErr(w, http.StatusNotFound, "unknown template version")
 		return
 	}
 	if rej := h.AllowedSAIP.CheckSAIPVersion(v.SAIPMajor, v.SAIPMinor); rej != nil {
@@ -402,10 +403,10 @@ func (h *Handler) restoreUPP(w http.ResponseWriter, r *http.Request) {
 		SHA256: v.SHA256, Bytes: v.Bytes, Active: true,
 	}
 	if err := h.UPP.UpsertArchived(tpl, "restore of version "+strconv.FormatInt(id, 10)); err != nil {
-		writeErr(w, http.StatusInternalServerError, err.Error())
+		adminhttp.WriteErr(w, http.StatusInternalServerError, err.Error())
 		return
 	}
 	h.audit(r, "restoreUPP", name, "Executed-Success", map[string]any{"tenant": tenant, "versionId": id})
 	got, _ := h.UPP.GetScoped(tenant, name)
-	writeJSON(w, http.StatusOK, toUPPView(got))
+	adminhttp.WriteJSON(w, http.StatusOK, toUPPView(got))
 }
