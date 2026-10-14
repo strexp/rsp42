@@ -1,6 +1,7 @@
 package rsp
 
 import (
+	"bytes"
 	"encoding/hex"
 	"fmt"
 
@@ -202,16 +203,43 @@ func ACRAvailable() []byte {
 	return acrVendorExtension([]byte{0x82, 0x01, 0xff})
 }
 
-// DecodeStoreMetadataRequest parses a BF25 StoreMetadataRequest.
+// storeMetadataKnownTags lists the BF25 members DecodeStoreMetadataRequest
+// recognises; any other child is collected as ServiceSpecificData. Keeping the
+// list next to the decoder makes the "raw tail" rule explicit.
+func isStoreMetadataTag(tag []byte) bool {
+	for _, known := range [][]byte{
+		asn1.App(26, false), asn1.Ctx(17, false), asn1.Ctx(18, false), asn1.Ctx(19, false),
+		asn1.Ctx(20, false), asn1.Ctx(21, false), asn1.Ctx(22, true), asn1.Ctx(23, false), asn1.Ctx(25, false),
+	} {
+		if bytes.Equal(tag, known) {
+			return true
+		}
+	}
+	return false
+}
+
+// DecodeStoreMetadataRequest parses a BF25 StoreMetadataRequest. It is the
+// inverse of Encode: every member Encode writes is recovered, and
+// ServiceSpecificData (which Encode appends as pre-encoded TLVs) is
+// reconstructed from the children that are not part of the BF25 schema.
 func DecodeStoreMetadataRequest(t asn1.TLV) (*StoreMetadataRequest, error) {
 	r := &StoreMetadataRequest{
 		ICCID:               childBytes(t, asn1.App(26, false)),
 		ServiceProviderName: childString(t, asn1.Ctx(17, false)),
 		ProfileName:         childString(t, asn1.Ctx(18, false)),
 	}
+	if v, ok := t.Find(asn1.Ctx(19, false)); ok {
+		if n, err := v.Int(); err == nil {
+			r.IconType = &n
+		}
+	}
+	if v, ok := t.Find(asn1.Ctx(20, false)); ok {
+		r.Icon = v.Value
+	}
 	if v, ok := t.Find(asn1.Ctx(21, false)); ok {
-		n, _ := v.Int()
-		r.ProfileClass = &n
+		if n, err := v.Int(); err == nil {
+			r.ProfileClass = &n
+		}
 	}
 	if v, ok := t.Find(asn1.Ctx(22, true)); ok {
 		kids, _ := v.Children()
@@ -225,6 +253,20 @@ func DecodeStoreMetadataRequest(t asn1.TLV) (*StoreMetadataRequest, error) {
 				Operation: mask,
 				Address:   childString(k, asn1.Ctx(1, false)),
 			})
+		}
+	}
+	if v, ok := t.Find(asn1.Ctx(23, false)); ok {
+		r.ProfileOwner = v.Value
+	}
+	if v, ok := t.Find(asn1.Ctx(25, false)); ok && len(v.Value) > 0 {
+		// Encode prefixes the BIT STRING content with its unused-bits byte.
+		r.PPRIds = v.Value[1:]
+	}
+	if kids, err := t.Children(); err == nil {
+		for _, k := range kids {
+			if !isStoreMetadataTag(k.Tag) {
+				r.ServiceSpecificData = append(r.ServiceSpecificData, k.Raw...)
+			}
 		}
 	}
 	return r, nil

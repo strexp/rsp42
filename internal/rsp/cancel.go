@@ -32,8 +32,12 @@ func DecodeCancelSessionResponse(raw []byte) (*CancelSessionResponseOk, int64, e
 	if hex.EncodeToString(t.Tag) != "bf41" {
 		return nil, 0, fmt.Errorf("rsp: CancelSessionResponse unexpected tag %X", t.Tag)
 	}
-	if ok, hasOK, e, hasErr := splitChoice(t); hasOK {
-		kids, err := ok.Children()
+	ch, err := splitChoice(t)
+	if err != nil {
+		return nil, 0, err
+	}
+	if ch.hasOK {
+		kids, err := ch.ok.Children()
 		if err != nil {
 			return nil, 0, err
 		}
@@ -51,8 +55,8 @@ func DecodeCancelSessionResponse(raw []byte) (*CancelSessionResponseOk, int64, e
 			}
 		}
 		return out, 0, nil
-	} else if hasErr {
-		if n, ok := choiceErrorCode(e); ok {
+	} else if ch.hasErr {
+		if n, ok := choiceErrorCode(ch.errAlt); ok {
 			return nil, n, nil
 		}
 	}
@@ -92,39 +96,48 @@ func DecodeCancelSessionRequestEs9(raw []byte) (*CancelSessionRequestEs9, error)
 	out := &CancelSessionRequestEs9{TransactionID: childBytes(t, asn1.Ctx(0, false))}
 	if cs, ok := t.Find(asn1.Ctx(1, true)); ok {
 		if resp, ok := cs.Find([]byte{0xbf, 0x41}); ok {
-			inner := CancelSessionResponseFromTLV(resp)
-			out.Reason = inner
+			if reason, found := CancelSessionResponseFromTLV(resp); found {
+				out.Reason = reason
+			}
 		}
 	}
 	return out, nil
 }
 
-func CancelSessionResponseFromTLV(t asn1.TLV) int64 {
-	if ok, found := t.Find(asn1.Ctx(0, true)); found {
-		kids, err := ok.Children()
-		if err == nil {
+// CancelSessionResponseFromTLV extracts the reason carried by an ES10b
+// CancelSessionResponse: the reason field of the ok alternative, or the error
+// code of the error alternative. found is false when the response carries
+// neither, so callers do not have to treat a magic value as "missing" (the
+// previous signature returned -1 for that case).
+func CancelSessionResponseFromTLV(t asn1.TLV) (reason int64, found bool) {
+	ch, err := splitChoice(t)
+	if err != nil {
+		return 0, false
+	}
+	if ch.hasOK {
+		if kids, err := ch.ok.Children(); err == nil {
 			for _, k := range kids {
-				if len(k.Tag) == 1 && k.Tag[0] == 0x30 {
+				if isSequence(k) {
 					if s, err := DecodeEuiccCancelSessionSigned(k); err == nil {
-						return s.Reason
+						return s.Reason, true
 					}
 				}
 			}
 		}
 	}
-	// Error alternative: the error code occupies the reason slot for callers
-	// that only need a value.
-	if e, found := t.Find(asn1.Ctx(1, false)); found {
-		if n, err := e.Int(); err == nil {
-			return n
+	// Some peers place the code directly in [1] one level up instead of nesting
+	// it in the error alternative.
+	if v, ok := t.Find(asn1.Ctx(1, false)); ok {
+		if n, err := v.Int(); err == nil {
+			return n, true
 		}
 	}
-	if e, found := t.Find(asn1.Ctx(1, true)); found {
-		if v, ok := e.Find(asn1.Ctx(1, false)); ok {
+	if ch.hasErr {
+		if v, ok := ch.errAlt.Find(asn1.Ctx(1, false)); ok {
 			if n, err := v.Int(); err == nil {
-				return n
+				return n, true
 			}
 		}
 	}
-	return -1
+	return 0, false
 }

@@ -27,11 +27,12 @@ func TestSplitChoice(t *testing.T) {
 	errAlt := asn1.New(asn1.Ctx(1, true), asn1.Prim(asn1.TagInteger, []byte{0x07}))
 
 	t.Run("ok present", func(t *testing.T) {
-		ok, hasOK, _, hasErr := splitChoice(choiceEnvelope(t, okAlt))
-		require.True(t, hasOK)
-		require.False(t, hasErr)
-		require.NotEmpty(t, ok.Raw)
-		kids, err := ok.Children()
+		ch, err := splitChoice(choiceEnvelope(t, okAlt))
+		require.NoError(t, err)
+		require.True(t, ch.hasOK)
+		require.False(t, ch.hasErr)
+		require.NotEmpty(t, ch.ok.Raw)
+		kids, err := ch.ok.Children()
 		require.NoError(t, err)
 		require.Len(t, kids, 2)
 		require.True(t, isSequence(kids[0]))
@@ -39,18 +40,33 @@ func TestSplitChoice(t *testing.T) {
 	})
 
 	t.Run("error present", func(t *testing.T) {
-		_, hasOK, e, hasErr := splitChoice(choiceEnvelope(t, errAlt))
-		require.False(t, hasOK)
-		require.True(t, hasErr)
-		code, found := choiceErrorCode(e)
+		ch, err := splitChoice(choiceEnvelope(t, errAlt))
+		require.NoError(t, err)
+		require.False(t, ch.hasOK)
+		require.True(t, ch.hasErr)
+		code, found := choiceErrorCode(ch.errAlt)
 		require.True(t, found)
 		require.EqualValues(t, 7, code)
 	})
 
 	t.Run("neither present", func(t *testing.T) {
-		_, hasOK, _, hasErr := splitChoice(choiceEnvelope(t, asn1.New(asn1.Ctx(3, true))))
-		require.False(t, hasOK)
-		require.False(t, hasErr)
+		ch, err := splitChoice(choiceEnvelope(t, asn1.New(asn1.Ctx(3, true))))
+		require.NoError(t, err)
+		require.False(t, ch.hasOK)
+		require.False(t, ch.hasErr)
+	})
+
+	t.Run("malformed content is reported", func(t *testing.T) {
+		// BF38 with a consistent outer length whose content is a truncated child
+		// (an OCTET STRING declaring 3 bytes but carrying 2). ReadTLV accepts the
+		// outer element; Children cannot parse its value. Find would report "no
+		// alternative"; splitChoice reports the parse failure.
+		raw := []byte{0xBF, 0x38, 0x04, 0x04, 0x03, 0x01, 0x02}
+		tlv, rest, err := asn1.ReadTLV(raw)
+		require.NoError(t, err)
+		require.Empty(t, rest)
+		_, err = splitChoice(tlv)
+		require.Error(t, err)
 	})
 }
 

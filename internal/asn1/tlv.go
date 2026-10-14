@@ -69,6 +69,13 @@ func (t TLV) Children() ([]TLV, error) {
 }
 
 // Find returns the first child whose tag matches, comparing full tag bytes.
+//
+// A constructed value whose content cannot be parsed is reported as "absent",
+// exactly like a missing tag. Callers that must tell the two apart use FindErr
+// (or Children directly). Every decoder in this repository treats a malformed
+// element as a failure further down the pipeline (a signature check, a required
+// field check), so the distinction is only needed where a precise diagnostic
+// matters.
 func (t TLV) Find(tag []byte) (TLV, bool) {
 	kids, err := t.Children()
 	if err != nil {
@@ -82,7 +89,23 @@ func (t TLV) Find(tag []byte) (TLV, bool) {
 	return TLV{}, false
 }
 
-// FindAll returns every child whose tag matches.
+// FindErr is Find with the child-parse error preserved: ok is false and err is
+// non-nil when the content is malformed, which Find cannot express.
+func (t TLV) FindErr(tag []byte) (child TLV, ok bool, err error) {
+	kids, err := t.Children()
+	if err != nil {
+		return TLV{}, false, err
+	}
+	for _, k := range kids {
+		if bytes.Equal(k.Tag, tag) {
+			return k, true, nil
+		}
+	}
+	return TLV{}, false, nil
+}
+
+// FindAll returns every child whose tag matches. Like Find it reports an
+// unparsable constructed value as an empty result.
 func (t TLV) FindAll(tag []byte) []TLV {
 	kids, err := t.Children()
 	if err != nil {
@@ -97,7 +120,8 @@ func (t TLV) FindAll(tag []byte) []TLV {
 	return out
 }
 
-// First returns the first child, or false when there are none.
+// First returns the first child, or false when there are none. Like Find it
+// reports an unparsable constructed value as "no child".
 func (t TLV) First() (TLV, bool) {
 	kids, err := t.Children()
 	if err != nil || len(kids) == 0 {

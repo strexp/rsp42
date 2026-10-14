@@ -350,8 +350,12 @@ func DecodePrepareDownloadResponse(raw []byte) (*PrepareDownloadResponseOk, *Pre
 	if hex.EncodeToString(t.Tag) != "bf21" {
 		return nil, nil, fmt.Errorf("rsp: PrepareDownloadResponse unexpected tag %X", t.Tag)
 	}
-	if ok, hasOK, e, hasErr := splitChoice(t); hasOK {
-		kids, err := ok.Children()
+	ch, err := splitChoice(t)
+	if err != nil {
+		return nil, nil, err
+	}
+	if ch.hasOK {
+		kids, err := ch.ok.Children()
 		if err != nil {
 			return nil, nil, err
 		}
@@ -369,9 +373,9 @@ func DecodePrepareDownloadResponse(raw []byte) (*PrepareDownloadResponseOk, *Pre
 			}
 		}
 		return out, nil, nil
-	} else if hasErr {
-		errResp := &PrepareDownloadResponseError{TransactionID: childBytes(e, asn1.Ctx(0, false))}
-		errResp.DownloadErrorCode, _ = choiceErrorCode(e)
+	} else if ch.hasErr {
+		errResp := &PrepareDownloadResponseError{TransactionID: childBytes(ch.errAlt, asn1.Ctx(0, false))}
+		errResp.DownloadErrorCode, _ = choiceErrorCode(ch.errAlt)
 		return nil, errResp, nil
 	}
 	return nil, nil, fmt.Errorf("rsp: PrepareDownloadResponse has no recognised alternative")
@@ -405,8 +409,12 @@ func DecodeAuthenticateServerResponse(raw []byte) (*AuthenticateResponseOk, *Aut
 	if hex.EncodeToString(t.Tag) != "bf38" {
 		return nil, nil, fmt.Errorf("rsp: AuthenticateServerResponse unexpected tag %X", t.Tag)
 	}
-	if ok, hasOK, e, hasErr := splitChoice(t); hasOK {
-		kids, err := ok.Children()
+	ch, err := splitChoice(t)
+	if err != nil {
+		return nil, nil, err
+	}
+	if ch.hasOK {
+		kids, err := ch.ok.Children()
 		if err != nil {
 			return nil, nil, err
 		}
@@ -435,9 +443,9 @@ func DecodeAuthenticateServerResponse(raw []byte) (*AuthenticateResponseOk, *Aut
 			out.OtherCertsInChain = certs[2:]
 		}
 		return out, nil, nil
-	} else if hasErr {
-		errResp := &AuthenticateResponseError{TransactionID: childBytes(e, asn1.Ctx(0, false))}
-		errResp.AuthenticateErrorCode, _ = choiceErrorCode(e)
+	} else if ch.hasErr {
+		errResp := &AuthenticateResponseError{TransactionID: childBytes(ch.errAlt, asn1.Ctx(0, false))}
+		errResp.AuthenticateErrorCode, _ = choiceErrorCode(ch.errAlt)
 		return nil, errResp, nil
 	}
 	return nil, nil, fmt.Errorf("rsp: AuthenticateServerResponse has no recognised alternative")

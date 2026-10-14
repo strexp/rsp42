@@ -24,11 +24,14 @@ func ExtractEuiccSigned1(authenticateServerResponse []byte) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	a0, hasOK, _, _ := splitChoice(t)
-	if !hasOK {
+	ch, err := splitChoice(t)
+	if err != nil {
+		return nil, err
+	}
+	if !ch.hasOK {
 		return nil, fmt.Errorf("rsp: no authenticateResponseOk")
 	}
-	kids, err := a0.Children()
+	kids, err := ch.ok.Children()
 	if err != nil {
 		return nil, err
 	}
