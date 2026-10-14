@@ -16,6 +16,12 @@ import (
 	"time"
 )
 
+// Actor is the fixed audit actor recorded for the management API: it is
+// unauthenticated by design (the security boundary is the calling backend, see
+// docs/esim42-integration-gaps.md §8.1 decision 5), so every entry carries the
+// same internal identity.
+const Actor = "esim42-backend"
+
 // List paging defaults and bounds, mirrored by openapi.json.
 const (
 	DefaultPageSize = 50

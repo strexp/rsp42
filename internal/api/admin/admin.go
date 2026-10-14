@@ -13,16 +13,13 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
+	"rsp42/internal/api/admin/openapi"
 	"rsp42/internal/api/adminhttp"
 	"rsp42/internal/api/common"
 	"rsp42/internal/api/middleware"
 	"rsp42/internal/service"
 	"rsp42/internal/store"
 )
-
-// adminActor is the fixed audit actor for the (unauthenticated, internal)
-// management API.
-const adminActor = "esim42-backend"
 
 // Handler holds the management API dependencies.
 type Handler struct {
@@ -205,7 +202,7 @@ func (h *Handler) audit(r *http.Request, fn, subject, outcome string, detail any
 			dj = string(b)
 		}
 	}
-	actor, tenant := adminActor, ""
+	actor, tenant := adminhttp.Actor, ""
 	if s := common.ScopeFrom(r.Context()); s != nil {
 		if s.Actor != "" {
 			actor = s.Actor
@@ -244,7 +241,7 @@ func (h *Handler) recordOrder(tenant, iccid, eid, matchingID, action string, req
 
 // openapi returns the complete OpenAPI 3.0 description of the management API.
 func (h *Handler) openapi(w http.ResponseWriter, _ *http.Request) {
-	adminhttp.WriteJSON(w, http.StatusOK, openAPIDoc())
+	adminhttp.WriteJSON(w, http.StatusOK, openapi.Doc())
 }
 
 func op(summary string, params ...string) map[string]any {

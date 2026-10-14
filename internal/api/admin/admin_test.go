@@ -1,13 +1,10 @@
 package admin
 
 import (
-	"bytes"
 	"encoding/base64"
 	"encoding/json"
 	"errors"
-	"io"
 	"log/slog"
-	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
@@ -22,6 +19,7 @@ import (
 	"rsp42/internal/kms"
 	"rsp42/internal/service"
 	"rsp42/internal/store"
+	"rsp42/internal/testutil"
 )
 
 func newTestServer(t *testing.T, opts ...func(*Handler)) (*httptest.Server, *store.Store) {
@@ -69,41 +67,20 @@ func newTestServer(t *testing.T, opts ...func(*Handler)) (*httptest.Server, *sto
 	return srv, st
 }
 
-func do(t *testing.T, method, url string, body any) (int, []byte) {
-	t.Helper()
-	var rdr io.Reader
-	if body != nil {
-		b, err := json.Marshal(body)
-		require.NoError(t, err)
-		rdr = bytes.NewReader(b)
-	}
-	req, err := http.NewRequest(method, url, rdr)
-	require.NoError(t, err)
-	if body != nil {
-		req.Header.Set("Content-Type", "application/json")
-	}
-	resp, err := http.DefaultClient.Do(req)
-	require.NoError(t, err)
-	defer func() { _ = resp.Body.Close() }()
-	raw, err := io.ReadAll(resp.Body)
-	require.NoError(t, err)
-	return resp.StatusCode, raw
-}
-
 func TestAdminProfilesCRUD(t *testing.T) {
 	srv, _ := newTestServer(t)
 	base := srv.URL + "/admin/api/v1"
 
 	// Create (downloadOrder).
 	var created map[string]any
-	status, raw := do(t, "POST", base+"/profiles", map[string]any{"profileType": "operational"})
+	status, raw := testutil.DoJSON(t, "POST", base+"/profiles", map[string]any{"profileType": "operational"})
 	require.Equal(t, 201, status)
 	require.NoError(t, json.Unmarshal(raw, &created))
 	iccid, _ := created["iccid"].(string)
 	require.NotEmpty(t, iccid)
 
 	// List + filter.
-	status, raw = do(t, "GET", base+"/profiles?state=Allocated&size=10", nil)
+	status, raw = testutil.DoJSON(t, "GET", base+"/profiles?state=Allocated&size=10", nil)
 	require.Equal(t, 200, status)
 	var list struct {
 		Items []map[string]any `json:"items"`
@@ -113,31 +90,31 @@ func TestAdminProfilesCRUD(t *testing.T) {
 	require.Equal(t, 1, list.Total)
 
 	// Get.
-	status, _ = do(t, "GET", base+"/profiles/"+iccid, nil)
+	status, _ = testutil.DoJSON(t, "GET", base+"/profiles/"+iccid, nil)
 	require.Equal(t, 200, status)
 
 	// Patch (set matchingId).
-	status, _ = do(t, "PATCH", base+"/profiles/"+iccid, map[string]any{"matchingId": "ADMIN-1"})
+	status, _ = testutil.DoJSON(t, "PATCH", base+"/profiles/"+iccid, map[string]any{"matchingId": "ADMIN-1"})
 	require.Equal(t, 200, status)
 
 	// Confirm (release) then activation code.
-	status, _ = do(t, "POST", base+"/profiles/"+iccid+"/confirm", map[string]any{"release": true})
+	status, _ = testutil.DoJSON(t, "POST", base+"/profiles/"+iccid+"/confirm", map[string]any{"release": true})
 	require.Equal(t, 200, status)
-	status, raw = do(t, "POST", base+"/profiles/"+iccid+"/activation-code", nil)
+	status, raw = testutil.DoJSON(t, "POST", base+"/profiles/"+iccid+"/activation-code", nil)
 	require.Equal(t, 200, status)
 	var ac map[string]any
 	require.NoError(t, json.Unmarshal(raw, &ac))
 	require.Contains(t, ac["activationCode"], "ADMIN-1")
 
 	// Timeline contains the order events.
-	status, raw = do(t, "GET", base+"/profiles/"+iccid+"/timeline", nil)
+	status, raw = testutil.DoJSON(t, "GET", base+"/profiles/"+iccid+"/timeline", nil)
 	require.Equal(t, 200, status)
 	require.Contains(t, string(raw), `"kind":"order"`)
 
 	// Delete.
-	status, _ = do(t, "DELETE", base+"/profiles/"+iccid, nil)
+	status, _ = testutil.DoJSON(t, "DELETE", base+"/profiles/"+iccid, nil)
 	require.Equal(t, 204, status)
-	status, _ = do(t, "GET", base+"/profiles/"+iccid, nil)
+	status, _ = testutil.DoJSON(t, "GET", base+"/profiles/"+iccid, nil)
 	require.Equal(t, 404, status)
 }
 
@@ -148,7 +125,7 @@ func TestAdminUPPAndPersonalization(t *testing.T) {
 	// Upload a UPP (base64) and check the parsed SAIP version.
 	der, err := os.ReadFile("../../../testdata/upp/TS48v1_A.der")
 	require.NoError(t, err)
-	status, raw := do(t, "POST", base+"/upp", map[string]any{
+	status, raw := testutil.DoJSON(t, "POST", base+"/upp", map[string]any{
 		"name": "TS48v1_A.der", "data": base64.StdEncoding.EncodeToString(der),
 	})
 	require.Equal(t, 200, status)
@@ -157,23 +134,23 @@ func TestAdminUPPAndPersonalization(t *testing.T) {
 	require.Equal(t, "2.1", view["saip"])
 
 	// List / bytes / deactivate / delete.
-	status, raw = do(t, "GET", base+"/upp", nil)
+	status, raw = testutil.DoJSON(t, "GET", base+"/upp", nil)
 	require.Equal(t, 200, status)
 	require.Contains(t, string(raw), "TS48v1_A.der")
-	status, _ = do(t, "GET", base+"/upp/TS48v1_A.der/bytes", nil)
+	status, _ = testutil.DoJSON(t, "GET", base+"/upp/TS48v1_A.der/bytes", nil)
 	require.Equal(t, 200, status)
-	status, _ = do(t, "POST", base+"/upp/TS48v1_A.der/deactivate", nil)
+	status, _ = testutil.DoJSON(t, "POST", base+"/upp/TS48v1_A.der/deactivate", nil)
 	require.Equal(t, 200, status)
-	status, _ = do(t, "DELETE", base+"/upp/TS48v1_A.der", nil)
+	status, _ = testutil.DoJSON(t, "DELETE", base+"/upp/TS48v1_A.der", nil)
 	require.Equal(t, 204, status)
 
 	// Personalization: put then reveal.
 	k := "465B5CE8B199B49FAA5F0A2EE238A6BC"
-	status, _ = do(t, "PUT", base+"/personalization/89000123456789012341", map[string]any{
+	status, _ = testutil.DoJSON(t, "PUT", base+"/personalization/89000123456789012341", map[string]any{
 		"imsi": "001010123456063", "k": k, "algorithm": "milenage",
 	})
 	require.Equal(t, 200, status)
-	status, raw = do(t, "GET", base+"/personalization/89000123456789012341?reveal=1", nil)
+	status, raw = testutil.DoJSON(t, "GET", base+"/personalization/89000123456789012341?reveal=1", nil)
 	require.Equal(t, 200, status)
 	var pv map[string]any
 	require.NoError(t, json.Unmarshal(raw, &pv))
@@ -181,17 +158,17 @@ func TestAdminUPPAndPersonalization(t *testing.T) {
 	require.Equal(t, true, pv["hasK"])
 
 	// Bulk import.
-	status, raw = do(t, "POST", base+"/personalization/import", map[string]any{
+	status, raw = testutil.DoJSON(t, "POST", base+"/personalization/import", map[string]any{
 		"records": []map[string]any{{"iccid": "89000123456789012342", "imsi": "001010123456064", "spn": "BULK"}},
 	})
 	require.Equal(t, 200, status)
 	require.Contains(t, string(raw), `"imported":1`)
 
 	// List + delete.
-	status, raw = do(t, "GET", base+"/personalization?size=10", nil)
+	status, raw = testutil.DoJSON(t, "GET", base+"/personalization?size=10", nil)
 	require.Equal(t, 200, status)
 	require.Contains(t, string(raw), `"total":2`)
-	status, _ = do(t, "DELETE", base+"/personalization/89000123456789012342", nil)
+	status, _ = testutil.DoJSON(t, "DELETE", base+"/personalization/89000123456789012342", nil)
 	require.Equal(t, 204, status)
 }
 
@@ -199,7 +176,7 @@ func TestAdminBatchesAndBulk(t *testing.T) {
 	srv, _ := newTestServer(t)
 	base := srv.URL + "/admin/api/v1"
 
-	status, raw := do(t, "POST", base+"/batches", map[string]any{"name": "B1", "count": 3, "profileType": "operational"})
+	status, raw := testutil.DoJSON(t, "POST", base+"/batches", map[string]any{"name": "B1", "count": 3, "profileType": "operational"})
 	require.Equal(t, 201, status)
 	var created struct {
 		ID int64 `json:"id"`
@@ -209,7 +186,7 @@ func TestAdminBatchesAndBulk(t *testing.T) {
 	idStr := strconv.FormatInt(created.ID, 10)
 
 	// Items.
-	status, raw = do(t, "GET", base+"/batches/"+idStr+"/items?size=10", nil)
+	status, raw = testutil.DoJSON(t, "GET", base+"/batches/"+idStr+"/items?size=10", nil)
 	require.Equal(t, 200, status)
 	var items struct {
 		Items []struct {
@@ -222,12 +199,12 @@ func TestAdminBatchesAndBulk(t *testing.T) {
 	require.Equal(t, 3, items.Total)
 
 	// State breakdown.
-	status, raw = do(t, "GET", base+"/batches/"+idStr, nil)
+	status, raw = testutil.DoJSON(t, "GET", base+"/batches/"+idStr, nil)
 	require.Equal(t, 200, status)
 	require.Contains(t, string(raw), "Allocated")
 
 	// Confirm the whole batch (release=true).
-	status, raw = do(t, "POST", base+"/batches/"+idStr+"/confirm", map[string]any{"release": true})
+	status, raw = testutil.DoJSON(t, "POST", base+"/batches/"+idStr+"/confirm", map[string]any{"release": true})
 	require.Equal(t, 200, status)
 	require.Contains(t, string(raw), `"applied":3`)
 
@@ -236,12 +213,12 @@ func TestAdminBatchesAndBulk(t *testing.T) {
 	for _, it := range items.Items {
 		iccids = append(iccids, it.ICCID)
 	}
-	status, raw = do(t, "POST", base+"/profiles/bulk", map[string]any{"action": "cancel", "iccids": iccids, "finalStatus": "Available"})
+	status, raw = testutil.DoJSON(t, "POST", base+"/profiles/bulk", map[string]any{"action": "cancel", "iccids": iccids, "finalStatus": "Available"})
 	require.Equal(t, 200, status)
 	require.Contains(t, string(raw), `"ok":true`)
 
 	// Delete the batch.
-	status, _ = do(t, "DELETE", base+"/batches/"+idStr, nil)
+	status, _ = testutil.DoJSON(t, "DELETE", base+"/batches/"+idStr, nil)
 	require.Equal(t, 204, status)
 }
 
@@ -250,7 +227,7 @@ func TestAdminICCIDPoolAndDecoded(t *testing.T) {
 	base := srv.URL + "/admin/api/v1"
 
 	// Import a range.
-	status, raw := do(t, "POST", base+"/iccid-ranges", map[string]any{
+	status, raw := testutil.DoJSON(t, "POST", base+"/iccid-ranges", map[string]any{
 		"start": "8900012000000000000", "end": "8900012000000000199", "note": "test",
 	})
 	require.Equal(t, 201, status)
@@ -262,11 +239,11 @@ func TestAdminICCIDPoolAndDecoded(t *testing.T) {
 	require.Greater(t, imp.Inserted, 0)
 
 	// Stats + reserve.
-	status, raw = do(t, "GET", base+"/iccid-pool/stats", nil)
+	status, raw = testutil.DoJSON(t, "GET", base+"/iccid-pool/stats", nil)
 	require.Equal(t, 200, status)
 	require.Contains(t, string(raw), "available")
 
-	status, raw = do(t, "POST", base+"/iccid-pool/reserve", map[string]any{"eid": "EID-X"})
+	status, raw = testutil.DoJSON(t, "POST", base+"/iccid-pool/reserve", map[string]any{"eid": "EID-X"})
 	require.Equal(t, 200, status)
 	var reserved struct {
 		ICCID string `json:"iccid"`
@@ -275,7 +252,7 @@ func TestAdminICCIDPoolAndDecoded(t *testing.T) {
 	require.NotEmpty(t, reserved.ICCID)
 
 	// Allocation now prefers the pool: a new profile consumes one pool ICCID.
-	status, raw = do(t, "POST", base+"/profiles", map[string]any{"profileType": "operational"})
+	status, raw = testutil.DoJSON(t, "POST", base+"/profiles", map[string]any{"profileType": "operational"})
 	require.Equal(t, 201, status)
 	var created struct {
 		ICCID string `json:"iccid"`
@@ -284,18 +261,18 @@ func TestAdminICCIDPoolAndDecoded(t *testing.T) {
 	require.True(t, strings.HasPrefix(created.ICCID, "89000120"), "expected a pool ICCID, got %s", created.ICCID)
 
 	// Release the reserved one.
-	status, _ = do(t, "POST", base+"/iccid-pool/release", map[string]any{"iccid": reserved.ICCID})
+	status, _ = testutil.DoJSON(t, "POST", base+"/iccid-pool/release", map[string]any{"iccid": reserved.ICCID})
 	require.Equal(t, 200, status)
 
 	// Delete the range.
-	status, _ = do(t, "DELETE", base+"/iccid-ranges/"+strconv.FormatInt(imp.RangeID, 10), nil)
+	status, _ = testutil.DoJSON(t, "DELETE", base+"/iccid-ranges/"+strconv.FormatInt(imp.RangeID, 10), nil)
 	require.Equal(t, 200, status)
 
 	// UPP decoded view.
 	der, err := os.ReadFile("../../../testdata/upp/TS48v1_A.der")
 	require.NoError(t, err)
-	do(t, "POST", base+"/upp", map[string]any{"name": "u.der", "data": base64.StdEncoding.EncodeToString(der)})
-	status, raw = do(t, "GET", base+"/upp/u.der/decoded", nil)
+	testutil.DoJSON(t, "POST", base+"/upp", map[string]any{"name": "u.der", "data": base64.StdEncoding.EncodeToString(der)})
+	status, raw = testutil.DoJSON(t, "GET", base+"/upp/u.der/decoded", nil)
 	require.Equal(t, 200, status)
 	require.Contains(t, string(raw), `"name":"header"`)
 	require.Contains(t, string(raw), `"services"`)
@@ -305,15 +282,15 @@ func TestAdminExportImport(t *testing.T) {
 	srv, _ := newTestServer(t)
 	base := srv.URL + "/admin/api/v1"
 
-	do(t, "POST", base+"/profiles", map[string]any{"profileType": "operational", "matchingId": "M-EXP"})
+	testutil.DoJSON(t, "POST", base+"/profiles", map[string]any{"profileType": "operational", "matchingId": "M-EXP"})
 
 	// Export CSV.
-	status, raw := do(t, "GET", base+"/profiles/export?format=csv", nil)
+	status, raw := testutil.DoJSON(t, "GET", base+"/profiles/export?format=csv", nil)
 	require.Equal(t, 200, status)
 	require.Contains(t, string(raw), "iccid,tenant,externalRef,imsi,profileType")
 
 	// Export JSON + re-import one record.
-	status, raw = do(t, "GET", base+"/profiles/export?format=json", nil)
+	status, raw = testutil.DoJSON(t, "GET", base+"/profiles/export?format=json", nil)
 	require.Equal(t, 200, status)
 	var exp struct {
 		Items []map[string]any `json:"items"`
@@ -321,15 +298,15 @@ func TestAdminExportImport(t *testing.T) {
 	require.NoError(t, json.Unmarshal(raw, &exp))
 	require.NotEmpty(t, exp.Items)
 
-	status, raw = do(t, "POST", base+"/profiles/import", map[string]any{
+	status, raw = testutil.DoJSON(t, "POST", base+"/profiles/import", map[string]any{
 		"records": []map[string]any{{"iccid": "89000123456789012341", "profileType": "operational"}},
 	})
 	require.Equal(t, 200, status)
 	require.Contains(t, string(raw), `"imported":1`)
 
 	// Personalization export.
-	do(t, "PUT", base+"/personalization/89000123456789012341", map[string]any{"imsi": "001010123456063", "k": "465B5CE8B199B49FAA5F0A2EE238A6BC"})
-	status, raw = do(t, "GET", base+"/personalization/export?format=csv", nil)
+	testutil.DoJSON(t, "PUT", base+"/personalization/89000123456789012341", map[string]any{"imsi": "001010123456063", "k": "465B5CE8B199B49FAA5F0A2EE238A6BC"})
+	status, raw = testutil.DoJSON(t, "GET", base+"/personalization/export?format=csv", nil)
 	require.Equal(t, 200, status)
 	require.Contains(t, string(raw), "iccid,imsi,k,opc")
 }
@@ -338,12 +315,12 @@ func TestAdminOpenAPIAndAudit(t *testing.T) {
 	srv, st := newTestServer(t)
 	base := srv.URL + "/admin/api/v1"
 
-	status, raw := do(t, "GET", base+"/openapi.json", nil)
+	status, raw := testutil.DoJSON(t, "GET", base+"/openapi.json", nil)
 	require.Equal(t, 200, status)
 	require.Contains(t, string(raw), "/admin/api/v1/profiles")
 
 	// Mutations are audited.
-	do(t, "POST", base+"/profiles", map[string]any{"profileType": "operational"})
+	testutil.DoJSON(t, "POST", base+"/profiles", map[string]any{"profileType": "operational"})
 	entries, err := st.Audit.List(10)
 	require.NoError(t, err)
 	require.NotEmpty(t, entries)
@@ -351,7 +328,7 @@ func TestAdminOpenAPIAndAudit(t *testing.T) {
 	require.Equal(t, "createProfile", entries[0].Function)
 
 	// ... and queryable through the management API.
-	status, raw = do(t, "GET", base+"/audit?interface=admin&size=10", nil)
+	status, raw = testutil.DoJSON(t, "GET", base+"/audit?interface=admin&size=10", nil)
 	require.Equal(t, 200, status)
 	require.Contains(t, string(raw), "createProfile")
 	require.Contains(t, string(raw), `"total":`)

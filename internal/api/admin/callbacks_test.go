@@ -2,6 +2,7 @@ package admin
 
 import (
 	"encoding/json"
+	"rsp42/internal/testutil"
 	"strconv"
 	"testing"
 
@@ -23,7 +24,7 @@ func TestAdminCallbacksQueue(t *testing.T) {
 	require.NoError(t, err)
 
 	// List with a tenant filter; the payload comes back as an object.
-	status, raw := do(t, "GET", base+"/callbacks?tenant=carrier-a", nil)
+	status, raw := testutil.DoJSON(t, "GET", base+"/callbacks?tenant=carrier-a", nil)
 	require.Equal(t, 200, status, string(raw))
 	var list struct {
 		Items []struct {
@@ -40,22 +41,22 @@ func TestAdminCallbacksQueue(t *testing.T) {
 	require.EqualValues(t, 3, list.Items[0].Payload["notificationPointId"])
 
 	// Re-queueing a live callback is refused.
-	status, raw = do(t, "POST", base+"/callbacks/"+strconv.FormatInt(idA, 10)+"/retry", nil)
+	status, raw = testutil.DoJSON(t, "POST", base+"/callbacks/"+strconv.FormatInt(idA, 10)+"/retry", nil)
 	require.Equal(t, 409, status, string(raw))
 
 	// An unknown id is a 404.
-	status, _ = do(t, "POST", base+"/callbacks/99999/retry", nil)
+	status, _ = testutil.DoJSON(t, "POST", base+"/callbacks/99999/retry", nil)
 	require.Equal(t, 404, status)
 
 	// Dead-letter both, then re-drive one by id.
 	require.NoError(t, st.Callbacks.MarkFailed(idA, "boom"))
 	require.NoError(t, st.Callbacks.MarkFailed(idB, "boom"))
-	status, raw = do(t, "GET", base+"/callbacks?state=dead", nil)
+	status, raw = testutil.DoJSON(t, "GET", base+"/callbacks?state=dead", nil)
 	require.Equal(t, 200, status, string(raw))
 	require.NoError(t, json.Unmarshal(raw, &list))
 	require.Equal(t, 2, list.Total)
 
-	status, raw = do(t, "POST", base+"/callbacks/"+strconv.FormatInt(idA, 10)+"/retry", nil)
+	status, raw = testutil.DoJSON(t, "POST", base+"/callbacks/"+strconv.FormatInt(idA, 10)+"/retry", nil)
 	require.Equal(t, 200, status, string(raw))
 	var one struct {
 		ID       int64  `json:"id"`
@@ -68,7 +69,7 @@ func TestAdminCallbacksQueue(t *testing.T) {
 	require.Zero(t, one.Attempts)
 
 	// Batch re-drive the remaining dead letter.
-	status, raw = do(t, "POST", base+"/callbacks/retry-dead", map[string]any{"limit": 10})
+	status, raw = testutil.DoJSON(t, "POST", base+"/callbacks/retry-dead", map[string]any{"limit": 10})
 	require.Equal(t, 200, status, string(raw))
 	var batch struct {
 		Requeued int `json:"requeued"`

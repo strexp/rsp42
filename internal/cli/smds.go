@@ -9,7 +9,7 @@ import (
 	"github.com/go-chi/chi/v5"
 
 	"rsp42/internal/api"
-	adminapi "rsp42/internal/api/admin"
+	"rsp42/internal/api/dsadmin"
 	"rsp42/internal/api/es11"
 	"rsp42/internal/api/es12"
 	"rsp42/internal/audit"
@@ -110,7 +110,7 @@ func cmdSMDS(prog string, args []string) int {
 	}
 	admin, err := buildServer(log, "admin", cfg.SMDS.Server.Bind, cfg.SMDS.Server.Admin,
 		api.NewAdminRouter(log, func() bool { return true }, func(r chi.Router) {
-			adminapi.MountDS(r, adminapi.DSAdminConfig{
+			dsadmin.Mount(r, dsadmin.Config{
 				Events: st.Events, Audit: st.Audit, DefaultTTL: cfg.SMDS.EventTTL.Duration(),
 			})
 			r.Get("/metrics", metrics.Handler(reg, eventCollector(st.Events)))

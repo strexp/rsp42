@@ -1,4 +1,11 @@
-package admin
+// Package dsadmin implements the SM-DS management API: read access to the ES12
+// event records plus the N8 write endpoints (event writes otherwise travel the
+// ES12 machine interface).
+//
+// It is separate from the SM-DP+ admin package because the two are served on
+// different listeners by different roles and share only the HTTP conventions in
+// internal/api/adminhttp and the OpenAPI document.
+package dsadmin
 
 import (
 	"encoding/json"
@@ -8,29 +15,45 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
+	"rsp42/internal/api/admin/openapi"
 	"rsp42/internal/api/adminhttp"
 	"rsp42/internal/iccid"
 	"rsp42/internal/service"
 	"rsp42/internal/store"
 )
 
-// DSAdminConfig holds the SM-DS management API dependencies.
-type DSAdminConfig struct {
-	Events *store.EventRepo
+// EventStore is the persistence the DS admin API needs. It is defined by the
+// consumer so the concrete SQLite repository stays a detail;
+// *store.EventRepo satisfies it.
+type EventStore interface {
+	ListFiltered(f store.EventFilter, limit, offset int, now time.Time) ([]*store.EventRecord, int, error)
+	Insert(e *store.EventRecord) (int64, error)
+	SoftDelete(id int64) (bool, error)
+}
+
+// AuditSink records admin event writes (N8).
+type AuditSink interface {
+	Insert(e *store.AuditEntry) error
+}
+
+// Config holds the SM-DS management API dependencies.
+type Config struct {
+	Events EventStore
 	// Audit, when set, records admin event writes (N8).
-	Audit *store.AuditRepo
+	Audit AuditSink
 	// DefaultTTL bounds the lifetime of admin-registered events; 0 means the
 	// event never expires (the ES12 path uses smds.event_ttl).
 	DefaultTTL time.Duration
 }
 
-// MountDS registers the SM-DS management API: read access to the event records
-// plus the N8 write endpoints (event writes otherwise travel the ES12 machine
-// interface).
-func MountDS(r chi.Router, cfg DSAdminConfig) {
+// Mount registers the SM-DS management API on r.
+func Mount(r chi.Router, cfg Config) {
 	r.Route("/admin/api/v1", func(r chi.Router) {
 		r.Get("/openapi.json", func(w http.ResponseWriter, _ *http.Request) {
-			adminhttp.WriteJSON(w, http.StatusOK, openAPIDoc())
+			adminhttp.WriteJSON(w, http.StatusOK, openapi.FilteredDoc(
+				"rsp42 SM-DS management API",
+				"SM-DS event management API (ES12 event records). It is served on the SM-DS admin listener and exposes only the endpoints mounted there; the SM-DP+ resources are described by the SM-DP+ admin listener.",
+				"/admin/api/v1/events"))
 		})
 		r.Get("/events", func(w http.ResponseWriter, req *http.Request) {
 			listDSEvents(w, req, cfg.Events)
@@ -63,7 +86,7 @@ type eventView struct {
 
 // listDSEvents exposes the SM-DS event records with tenant, time-range and
 // lifecycle filters (G20).
-func listDSEvents(w http.ResponseWriter, r *http.Request, events *store.EventRepo) {
+func listDSEvents(w http.ResponseWriter, r *http.Request, events EventStore) {
 	q := r.URL.Query()
 	page, size := adminhttp.ParsePage(r)
 
@@ -102,7 +125,7 @@ func listDSEvents(w http.ResponseWriter, r *http.Request, events *store.EventRep
 // for the edge cases where esim42 cannot use ES12 (no caller certificate), and
 // mirrors the ES12 registration semantics: an EventID is generated when
 // omitted, and re-using one is a 409.
-func createDSEvent(w http.ResponseWriter, r *http.Request, cfg DSAdminConfig) {
+func createDSEvent(w http.ResponseWriter, r *http.Request, cfg Config) {
 	if cfg.Events == nil {
 		adminhttp.WriteErr(w, http.StatusNotImplemented, "event store not configured")
 		return
@@ -136,7 +159,7 @@ func createDSEvent(w http.ResponseWriter, r *http.Request, cfg DSAdminConfig) {
 	}
 	rec := &store.EventRecord{
 		EID: req.EID, EventID: eventID, RSPServerAddress: req.RSPServerAddress,
-		CallerOID:           adminhttp.FirstNonEmpty(req.CallerOID, adminActor),
+		CallerOID:           adminhttp.FirstNonEmpty(req.CallerOID, adminhttp.Actor),
 		ForwardingIndicator: req.ForwardingIndicator,
 		TenantID:            tenant,
 		ICCID:               iccid.Normalize(req.ICCID),
@@ -177,7 +200,7 @@ func createDSEvent(w http.ResponseWriter, r *http.Request, cfg DSAdminConfig) {
 
 // deleteDSEvent soft-deletes an event (N8). The ES12 delete path keeps the
 // record for audit; this endpoint does the same.
-func deleteDSEvent(w http.ResponseWriter, r *http.Request, cfg DSAdminConfig) {
+func deleteDSEvent(w http.ResponseWriter, r *http.Request, cfg Config) {
 	if cfg.Events == nil {
 		adminhttp.WriteErr(w, http.StatusNotImplemented, "event store not configured")
 		return
@@ -201,7 +224,7 @@ func deleteDSEvent(w http.ResponseWriter, r *http.Request, cfg DSAdminConfig) {
 }
 
 // auditDS records an admin event write.
-func auditDS(cfg DSAdminConfig, r *http.Request, tenant, fn, subject string, detail any) {
+func auditDS(cfg Config, r *http.Request, tenant, fn, subject string, detail any) {
 	if cfg.Audit == nil {
 		return
 	}
@@ -212,7 +235,7 @@ func auditDS(cfg DSAdminConfig, r *http.Request, tenant, fn, subject string, det
 		}
 	}
 	_ = cfg.Audit.Insert(&store.AuditEntry{
-		TenantID: tenant, Actor: adminActor, Interface: "admin", Function: fn,
+		TenantID: tenant, Actor: adminhttp.Actor, Interface: "admin", Function: fn,
 		Subject: subject, Outcome: "Executed-Success", RemoteAddr: r.RemoteAddr, DetailJSON: dj,
 	})
 }

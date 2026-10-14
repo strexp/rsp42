@@ -7,6 +7,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"rsp42/internal/service"
+	"rsp42/internal/testutil"
 )
 
 // fieldByName returns the annotated schema entry for a field.
@@ -30,10 +31,10 @@ func TestAdminUPPSchemaAvailability(t *testing.T) {
 	base := srv.URL + "/admin/api/v1"
 
 	data := uppFixture(t, "TS48v2_SAIP2.3_BERTLV.der")
-	status, raw := do(t, "POST", base+"/upp", map[string]any{"name": "v23.der", "data": data})
+	status, raw := testutil.DoJSON(t, "POST", base+"/upp", map[string]any{"name": "v23.der", "data": data})
 	require.Equal(t, 200, status, string(raw))
 
-	status, raw = do(t, "GET", base+"/upp/v23.der/schema", nil)
+	status, raw = testutil.DoJSON(t, "GET", base+"/upp/v23.der/schema", nil)
 	require.Equal(t, 200, status, string(raw))
 	var body struct {
 		Fields []map[string]any `json:"fields"`
@@ -88,7 +89,7 @@ func TestAdminRenderAdHocTemplate(t *testing.T) {
 	data := uppFixture(t, "TS48v2_SAIP2.3_BERTLV.der")
 
 	// Ad-hoc: no registry entry exists, yet the render succeeds.
-	status, raw := do(t, "POST", base+"/upp/render", map[string]any{"data": data, "spn": "ADHOC"})
+	status, raw := testutil.DoJSON(t, "POST", base+"/upp/render", map[string]any{"data": data, "spn": "ADHOC"})
 	require.Equal(t, 200, status, string(raw))
 	var out struct {
 		Rendered bool           `json:"rendered"`
@@ -100,15 +101,15 @@ func TestAdminRenderAdHocTemplate(t *testing.T) {
 	require.Equal(t, "<ad-hoc>", out.Template["name"])
 
 	// Nothing was stored.
-	status, _ = do(t, "GET", base+"/upp/v23.der", nil)
+	status, _ = testutil.DoJSON(t, "GET", base+"/upp/v23.der", nil)
 	require.Equal(t, 404, status)
 
 	// name and data together, or neither, are invalid requests.
-	status, raw = do(t, "POST", base+"/upp/render", map[string]any{"name": "x", "data": data})
+	status, raw = testutil.DoJSON(t, "POST", base+"/upp/render", map[string]any{"name": "x", "data": data})
 	require.Equal(t, 400, status, string(raw))
 	require.Contains(t, string(raw), "invalid_request")
 
-	status, raw = do(t, "POST", base+"/upp/render", map[string]any{"spn": "X"})
+	status, raw = testutil.DoJSON(t, "POST", base+"/upp/render", map[string]any{"spn": "X"})
 	require.Equal(t, 400, status, string(raw))
 	require.Contains(t, string(raw), "invalid_request")
 }
@@ -120,23 +121,23 @@ func TestAdminStatsAndSortContract(t *testing.T) {
 	srv, _ := newTestServer(t)
 	base := srv.URL + "/admin/api/v1"
 
-	do(t, "POST", base+"/profiles", map[string]any{"tenant": "", "profileType": "operational"})
-	do(t, "POST", base+"/profiles", map[string]any{"profileType": "test"})
+	testutil.DoJSON(t, "POST", base+"/profiles", map[string]any{"tenant": "", "profileType": "operational"})
+	testutil.DoJSON(t, "POST", base+"/profiles", map[string]any{"profileType": "test"})
 
-	status, raw := do(t, "GET", base+"/profiles/stats?groupBy=profile_type", nil)
+	status, raw := testutil.DoJSON(t, "GET", base+"/profiles/stats?groupBy=profile_type", nil)
 	require.Equal(t, 200, status, string(raw))
 	require.Contains(t, string(raw), `"buckets"`)
 	require.Contains(t, string(raw), `"groupBy":"profile_type"`)
 
-	status, raw = do(t, "GET", base+"/profiles?sort=tenant", nil)
+	status, raw = testutil.DoJSON(t, "GET", base+"/profiles?sort=tenant", nil)
 	require.Equal(t, 200, status, string(raw))
 	require.Contains(t, string(raw), `"items"`)
 
-	status, raw = do(t, "GET", base+"/profiles?sort=-tenant", nil)
+	status, raw = testutil.DoJSON(t, "GET", base+"/profiles?sort=-tenant", nil)
 	require.Equal(t, 200, status, string(raw))
 
 	// An unsupported groupBy is still an invalid_request (stable code).
-	status, raw = do(t, "GET", base+"/profiles/stats?groupBy=nonsense", nil)
+	status, raw = testutil.DoJSON(t, "GET", base+"/profiles/stats?groupBy=nonsense", nil)
 	require.Equal(t, 400, status, string(raw))
 	require.Contains(t, string(raw), `"code":"invalid_request"`)
 }

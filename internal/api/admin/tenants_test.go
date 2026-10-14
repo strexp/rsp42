@@ -6,6 +6,7 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"rsp42/internal/testutil"
 	"strconv"
 	"strings"
 	"testing"
@@ -22,11 +23,11 @@ func TestAdminTenantsCRUDAndTenantFilters(t *testing.T) {
 		{"id": "carrier-a", "name": "Carrier A", "defaultUpp": "tpl-a"},
 		{"id": "carrier-b", "name": "Carrier B"},
 	} {
-		status, _ := do(t, "POST", base+"/tenants", tenant)
+		status, _ := testutil.DoJSON(t, "POST", base+"/tenants", tenant)
 		require.Equal(t, 200, status)
 	}
 
-	status, raw := do(t, "GET", base+"/tenants", nil)
+	status, raw := testutil.DoJSON(t, "GET", base+"/tenants", nil)
 	require.Equal(t, 200, status)
 	var list struct {
 		Items []map[string]any `json:"items"`
@@ -35,9 +36,9 @@ func TestAdminTenantsCRUDAndTenantFilters(t *testing.T) {
 	require.Len(t, list.Items, 2)
 
 	// A PATCH keeps omitted fields.
-	status, _ = do(t, "PATCH", base+"/tenants/carrier-a", map[string]any{"name": "Carrier A (renamed)"})
+	status, _ = testutil.DoJSON(t, "PATCH", base+"/tenants/carrier-a", map[string]any{"name": "Carrier A (renamed)"})
 	require.Equal(t, 200, status)
-	status, raw = do(t, "GET", base+"/tenants/carrier-a", nil)
+	status, raw = testutil.DoJSON(t, "GET", base+"/tenants/carrier-a", nil)
 	require.Equal(t, 200, status)
 	var got map[string]any
 	require.NoError(t, json.Unmarshal(raw, &got))
@@ -45,12 +46,12 @@ func TestAdminTenantsCRUDAndTenantFilters(t *testing.T) {
 	require.Equal(t, "tpl-a", got["defaultUpp"])
 
 	// Profiles are attributable to a tenant and filterable by it.
-	status, _ = do(t, "POST", base+"/profiles", map[string]any{"tenant": "carrier-a", "externalRef": "order-1"})
+	status, _ = testutil.DoJSON(t, "POST", base+"/profiles", map[string]any{"tenant": "carrier-a", "externalRef": "order-1"})
 	require.Equal(t, 201, status)
-	status, _ = do(t, "POST", base+"/profiles", map[string]any{"tenant": "carrier-b"})
+	status, _ = testutil.DoJSON(t, "POST", base+"/profiles", map[string]any{"tenant": "carrier-b"})
 	require.Equal(t, 201, status)
 
-	status, raw = do(t, "GET", base+"/profiles?tenant=carrier-a", nil)
+	status, raw = testutil.DoJSON(t, "GET", base+"/profiles?tenant=carrier-a", nil)
 	require.Equal(t, 200, status)
 	var profiles struct {
 		Items []map[string]any `json:"items"`
@@ -61,17 +62,17 @@ func TestAdminTenantsCRUDAndTenantFilters(t *testing.T) {
 	require.Equal(t, "order-1", profiles.Items[0]["externalRef"])
 
 	// externalRef is a supported filter.
-	status, raw = do(t, "GET", base+"/profiles?externalRef=order-1", nil)
+	status, raw = testutil.DoJSON(t, "GET", base+"/profiles?externalRef=order-1", nil)
 	require.Equal(t, 200, status)
 	require.Contains(t, string(raw), `"total":1`)
 
 	// An unregistered tenant is refused on a write.
-	status, _ = do(t, "POST", base+"/profiles", map[string]any{"tenant": "nobody"})
+	status, _ = testutil.DoJSON(t, "POST", base+"/profiles", map[string]any{"tenant": "nobody"})
 	require.Equal(t, 400, status)
 
 	// N3: deleting a tenant that still owns resources is refused and reports
 	// the usage counts for a pre-delete warning.
-	status, raw = do(t, "DELETE", base+"/tenants/carrier-b", nil)
+	status, raw = testutil.DoJSON(t, "DELETE", base+"/tenants/carrier-b", nil)
 	require.Equal(t, 409, status, string(raw))
 	var inUse struct {
 		Code  string `json:"code"`
@@ -83,27 +84,27 @@ func TestAdminTenantsCRUDAndTenantFilters(t *testing.T) {
 	require.Equal(t, "tenant_in_use", inUse.Code)
 	require.Equal(t, 1, inUse.Usage.Profiles)
 
-	status, raw = do(t, "GET", base+"/tenants/carrier-b", nil)
+	status, raw = testutil.DoJSON(t, "GET", base+"/tenants/carrier-b", nil)
 	require.Equal(t, 200, status)
 	require.Contains(t, string(raw), `"profiles":1`)
 
 	// force + reassignTo= (the platform-default scope) migrates then deletes.
-	status, _ = do(t, "DELETE", base+"/tenants/carrier-b?force=true&reassignTo=", nil)
+	status, _ = testutil.DoJSON(t, "DELETE", base+"/tenants/carrier-b?force=true&reassignTo=", nil)
 	require.Equal(t, 204, status)
-	status, raw = do(t, "GET", base+"/profiles?tenant=carrier-b", nil)
+	status, raw = testutil.DoJSON(t, "GET", base+"/profiles?tenant=carrier-b", nil)
 	require.Equal(t, 200, status)
 	require.Contains(t, string(raw), `"total":0`)
 
 	// The profile survived under the platform-default scope.
-	status, raw = do(t, "GET", base+"/profiles?tenant=", nil)
+	status, raw = testutil.DoJSON(t, "GET", base+"/profiles?tenant=", nil)
 	require.Equal(t, 200, status)
 	require.Contains(t, string(raw), `"total":1`)
 
 	// force with an unregistered reassignTo target is refused.
-	status, _ = do(t, "DELETE", base+"/tenants/carrier-a?force=true&reassignTo=nobody", nil)
+	status, _ = testutil.DoJSON(t, "DELETE", base+"/tenants/carrier-a?force=true&reassignTo=nobody", nil)
 	require.Equal(t, 400, status)
 	// A tenant cannot be reassigned to itself.
-	status, _ = do(t, "DELETE", base+"/tenants/carrier-a?force=true&reassignTo=carrier-a", nil)
+	status, _ = testutil.DoJSON(t, "DELETE", base+"/tenants/carrier-a?force=true&reassignTo=carrier-a", nil)
 	require.Equal(t, 400, status)
 }
 
@@ -111,36 +112,36 @@ func TestAdminPoolTenantIsolation(t *testing.T) {
 	srv, _ := newTestServer(t)
 	base := srv.URL + "/admin/api/v1"
 
-	do(t, "POST", base+"/tenants", map[string]any{"id": "carrier-a"})
-	do(t, "POST", base+"/tenants", map[string]any{"id": "carrier-b"})
+	testutil.DoJSON(t, "POST", base+"/tenants", map[string]any{"id": "carrier-a"})
+	testutil.DoJSON(t, "POST", base+"/tenants", map[string]any{"id": "carrier-b"})
 
 	for _, imp := range []map[string]any{
 		{"tenant": "carrier-a", "start": "8900012000000000000", "end": "8900012000000000099"},
 		{"tenant": "carrier-b", "start": "8900022000000000000", "end": "8900022000000000099"},
 	} {
-		status, _ := do(t, "POST", base+"/iccid-ranges", imp)
+		status, _ := testutil.DoJSON(t, "POST", base+"/iccid-ranges", imp)
 		require.Equal(t, 201, status)
 	}
 
 	// A reservation never crosses tenant boundaries.
-	status, raw := do(t, "POST", base+"/iccid-pool/reserve", map[string]any{"tenant": "carrier-a", "eid": "EID-A"})
+	status, raw := testutil.DoJSON(t, "POST", base+"/iccid-pool/reserve", map[string]any{"tenant": "carrier-a", "eid": "EID-A"})
 	require.Equal(t, 200, status)
 	var reserved map[string]any
 	require.NoError(t, json.Unmarshal(raw, &reserved))
 	require.True(t, strings.HasPrefix(reserved["iccid"].(string), "8900012"), "got %v", reserved)
 
-	status, raw = do(t, "GET", base+"/iccid-pool?tenant=carrier-a", nil)
+	status, raw = testutil.DoJSON(t, "GET", base+"/iccid-pool?tenant=carrier-a", nil)
 	require.Equal(t, 200, status)
 	require.Contains(t, string(raw), "8900012")
 	require.NotContains(t, string(raw), "8900022")
 
 	// Stats are scoped too.
-	status, raw = do(t, "GET", base+"/iccid-pool/stats?tenant=carrier-b", nil)
+	status, raw = testutil.DoJSON(t, "GET", base+"/iccid-pool/stats?tenant=carrier-b", nil)
 	require.Equal(t, 200, status)
 	require.Contains(t, string(raw), `"ranges":1`)
 
 	// The profile created for carrier-a draws from carrier-a's range.
-	status, raw = do(t, "POST", base+"/profiles", map[string]any{"tenant": "carrier-a"})
+	status, raw = testutil.DoJSON(t, "POST", base+"/profiles", map[string]any{"tenant": "carrier-a"})
 	require.Equal(t, 201, status)
 	var created map[string]any
 	require.NoError(t, json.Unmarshal(raw, &created))
@@ -156,55 +157,55 @@ func TestAdminUPPTools(t *testing.T) {
 	data := base64.StdEncoding.EncodeToString(der)
 
 	// validate: structural inspection without storing.
-	status, raw := do(t, "POST", base+"/upp/validate", map[string]any{"data": data})
+	status, raw := testutil.DoJSON(t, "POST", base+"/upp/validate", map[string]any{"data": data})
 	require.Equal(t, 200, status)
 	require.Contains(t, string(raw), `"valid":true`)
 	require.Contains(t, string(raw), `"saip":"2.1"`)
 
-	status, raw = do(t, "POST", base+"/upp/validate", map[string]any{"data": base64.StdEncoding.EncodeToString([]byte("not a upp"))})
+	status, raw = testutil.DoJSON(t, "POST", base+"/upp/validate", map[string]any{"data": base64.StdEncoding.EncodeToString([]byte("not a upp"))})
 	require.Equal(t, 200, status)
 	require.Contains(t, string(raw), `"valid":false`)
 
 	// Store a global template.
-	status, _ = do(t, "POST", base+"/upp", map[string]any{"name": "u.der", "data": data})
+	status, _ = testutil.DoJSON(t, "POST", base+"/upp", map[string]any{"name": "u.der", "data": data})
 	require.Equal(t, 200, status)
 
 	// schema: the field catalog for the visual editor.
-	status, raw = do(t, "GET", base+"/upp/u.der/schema", nil)
+	status, raw = testutil.DoJSON(t, "GET", base+"/upp/u.der/schema", nil)
 	require.Equal(t, 200, status)
 	require.Contains(t, string(raw), `"name":"plmn"`)
 	require.Contains(t, string(raw), `"name":"imsi"`)
 
 	// render: dry-run, allocates nothing.
-	status, raw = do(t, "POST", base+"/upp/render", map[string]any{
+	status, raw = testutil.DoJSON(t, "POST", base+"/upp/render", map[string]any{
 		"name": "u.der", "iccid": "89000123456789012341", "imsi": "001010123456063",
 	})
 	require.Equal(t, 200, status)
 	require.Contains(t, string(raw), `"rendered":true`)
-	status, raw = do(t, "GET", base+"/profiles", nil)
+	status, raw = testutil.DoJSON(t, "GET", base+"/profiles", nil)
 	require.Equal(t, 200, status)
 	require.Contains(t, string(raw), `"total":0`)
 
 	// clone a global template into a tenant.
-	status, _ = do(t, "POST", base+"/tenants", map[string]any{"id": "carrier-a"})
+	status, _ = testutil.DoJSON(t, "POST", base+"/tenants", map[string]any{"id": "carrier-a"})
 	require.Equal(t, 200, status)
-	status, raw = do(t, "POST", base+"/upp/u.der/clone", map[string]any{"tenant": "carrier-a", "name": "u-a"})
+	status, raw = testutil.DoJSON(t, "POST", base+"/upp/u.der/clone", map[string]any{"tenant": "carrier-a", "name": "u-a"})
 	require.Equal(t, 201, status)
 	require.Contains(t, string(raw), `"tenant":"carrier-a"`)
 
-	status, raw = do(t, "GET", base+"/upp?tenant=carrier-a", nil)
+	status, raw = testutil.DoJSON(t, "GET", base+"/upp?tenant=carrier-a", nil)
 	require.Equal(t, 200, status)
 	require.Contains(t, string(raw), "u-a")
 	require.Contains(t, string(raw), "u.der")
 
 	// promote the tenant template to global.
-	status, _ = do(t, "POST", base+"/upp/u-a/promote?tenant=carrier-a", nil)
+	status, _ = testutil.DoJSON(t, "POST", base+"/upp/u-a/promote?tenant=carrier-a", nil)
 	require.Equal(t, 200, status)
 	// A second promote without overwrite conflicts.
-	do(t, "POST", base+"/upp", map[string]any{"name": "u-a", "data": data})
-	status, _ = do(t, "POST", base+"/upp/u-a/promote?tenant=carrier-a", nil)
+	testutil.DoJSON(t, "POST", base+"/upp", map[string]any{"name": "u-a", "data": data})
+	status, _ = testutil.DoJSON(t, "POST", base+"/upp/u-a/promote?tenant=carrier-a", nil)
 	require.Equal(t, 409, status)
-	status, _ = do(t, "POST", base+"/upp/u-a/promote?tenant=carrier-a&overwrite=1", nil)
+	status, _ = testutil.DoJSON(t, "POST", base+"/upp/u-a/promote?tenant=carrier-a&overwrite=1", nil)
 	require.Equal(t, 200, status)
 }
 
@@ -234,7 +235,7 @@ func TestAdminIdempotentCreateProfile(t *testing.T) {
 	require.JSONEq(t, firstRaw, secondRaw)
 	require.Equal(t, "true", second.Header.Get("Idempotency-Replayed"))
 
-	status, raw := do(t, "GET", base+"/profiles", nil)
+	status, raw := testutil.DoJSON(t, "GET", base+"/profiles", nil)
 	require.Equal(t, 200, status)
 	require.Contains(t, string(raw), `"total":1`)
 }
@@ -243,27 +244,27 @@ func TestAdminStatsAndNotifications(t *testing.T) {
 	srv, _ := newTestServer(t)
 	base := srv.URL + "/admin/api/v1"
 
-	do(t, "POST", base+"/profiles", map[string]any{"profileType": "operational"})
-	do(t, "POST", base+"/profiles", map[string]any{"profileType": "operational"})
+	testutil.DoJSON(t, "POST", base+"/profiles", map[string]any{"profileType": "operational"})
+	testutil.DoJSON(t, "POST", base+"/profiles", map[string]any{"profileType": "operational"})
 
-	status, raw := do(t, "GET", base+"/profiles/stats?groupBy=state", nil)
+	status, raw := testutil.DoJSON(t, "GET", base+"/profiles/stats?groupBy=state", nil)
 	require.Equal(t, 200, status)
 	require.Contains(t, string(raw), `"groupBy":"state"`)
 	require.Contains(t, string(raw), "Allocated")
 
-	status, raw = do(t, "GET", base+"/profiles/stats?groupBy=bogus", nil)
+	status, raw = testutil.DoJSON(t, "GET", base+"/profiles/stats?groupBy=bogus", nil)
 	require.Equal(t, 400, status)
 
-	status, raw = do(t, "GET", base+"/audit/stats?groupBy=interface", nil)
+	status, raw = testutil.DoJSON(t, "GET", base+"/audit/stats?groupBy=interface", nil)
 	require.Equal(t, 200, status)
 	require.Contains(t, string(raw), "admin")
 
 	// Audit rows are attributed to the internal backend and the tenant.
-	status, raw = do(t, "GET", base+"/audit?interface=admin", nil)
+	status, raw = testutil.DoJSON(t, "GET", base+"/audit?interface=admin", nil)
 	require.Equal(t, 200, status)
 	require.Contains(t, string(raw), `"actor":"esim42-backend"`)
 
-	status, raw = do(t, "GET", base+"/notifications", nil)
+	status, raw = testutil.DoJSON(t, "GET", base+"/notifications", nil)
 	require.Equal(t, 200, status)
 	require.Contains(t, string(raw), `"total":0`)
 }
@@ -273,13 +274,13 @@ func TestAdminTimelineIncludesAudit(t *testing.T) {
 	base := srv.URL + "/admin/api/v1"
 
 	var created map[string]any
-	_, raw := do(t, "POST", base+"/profiles", map[string]any{"profileType": "operational"})
+	_, raw := testutil.DoJSON(t, "POST", base+"/profiles", map[string]any{"profileType": "operational"})
 	require.NoError(t, json.Unmarshal(raw, &created))
 	iccid := created["iccid"].(string)
 
-	do(t, "POST", base+"/profiles/"+iccid+"/confirm", map[string]any{"release": true})
+	testutil.DoJSON(t, "POST", base+"/profiles/"+iccid+"/confirm", map[string]any{"release": true})
 
-	status, raw := do(t, "GET", base+"/profiles/"+iccid+"/timeline", nil)
+	status, raw := testutil.DoJSON(t, "GET", base+"/profiles/"+iccid+"/timeline", nil)
 	require.Equal(t, 200, status)
 	require.Contains(t, string(raw), `"kind":"order"`)
 	require.Contains(t, string(raw), `"kind":"audit"`)
@@ -304,7 +305,7 @@ func readAll(t *testing.T, resp *http.Response) string {
 // well-formed and covers every mounted area (G10).
 func TestAdminOpenAPIDocIsValid(t *testing.T) {
 	srv, _ := newTestServer(t)
-	status, raw := do(t, "GET", srv.URL+"/admin/api/v1/openapi.json", nil)
+	status, raw := testutil.DoJSON(t, "GET", srv.URL+"/admin/api/v1/openapi.json", nil)
 	require.Equal(t, 200, status)
 
 	var doc map[string]any
@@ -358,13 +359,13 @@ func TestAdminPersonalizationPoolPairing(t *testing.T) {
 	srv, _ := newTestServer(t)
 	base := srv.URL + "/admin/api/v1"
 
-	do(t, "POST", base+"/tenants", map[string]any{"id": "carrier-a"})
-	status, _ := do(t, "POST", base+"/iccid-ranges", map[string]any{
+	testutil.DoJSON(t, "POST", base+"/tenants", map[string]any{"id": "carrier-a"})
+	status, _ := testutil.DoJSON(t, "POST", base+"/iccid-ranges", map[string]any{
 		"tenant": "carrier-a", "start": "8900012000000000000", "end": "8900012000000000099",
 	})
 	require.Equal(t, 201, status)
 
-	status, raw := do(t, "POST", base+"/personalization/pool/import", map[string]any{
+	status, raw := testutil.DoJSON(t, "POST", base+"/personalization/pool/import", map[string]any{
 		"tenant": "carrier-a",
 		"records": []map[string]any{
 			{"imsi": "001010000000001", "k": "465B5CE8B199B49FAA5F0A2EE238A6BC", "spn": "POOL"},
@@ -375,25 +376,25 @@ func TestAdminPersonalizationPoolPairing(t *testing.T) {
 	require.Contains(t, string(raw), `"imported":2`)
 
 	// A record without an ICCID is listed as a pool entry.
-	status, raw = do(t, "GET", base+"/personalization?tenant=carrier-a", nil)
+	status, raw = testutil.DoJSON(t, "GET", base+"/personalization?tenant=carrier-a", nil)
 	require.Equal(t, 200, status)
 	require.Contains(t, string(raw), `"pool":true`)
 
 	// Reserving an ICCID pairs it with the next unbound IMSI.
-	status, raw = do(t, "POST", base+"/iccid-pool/reserve", map[string]any{"tenant": "carrier-a"})
+	status, raw = testutil.DoJSON(t, "POST", base+"/iccid-pool/reserve", map[string]any{"tenant": "carrier-a"})
 	require.Equal(t, 200, status)
 	var reserved map[string]any
 	require.NoError(t, json.Unmarshal(raw, &reserved))
 	require.Equal(t, "001010000000001", reserved["imsi"])
 
 	// The pairing is persisted: the credentials are now bound to that ICCID.
-	status, raw = do(t, "GET", base+"/personalization/"+reserved["iccid"].(string)+"?tenant=carrier-a", nil)
+	status, raw = testutil.DoJSON(t, "GET", base+"/personalization/"+reserved["iccid"].(string)+"?tenant=carrier-a", nil)
 	require.Equal(t, 200, status)
 	require.Contains(t, string(raw), "001010000000001")
 	require.NotContains(t, string(raw), `"pool":true`)
 
 	// Stats expose the remaining unbound credentials.
-	status, raw = do(t, "GET", base+"/iccid-pool/stats?tenant=carrier-a", nil)
+	status, raw = testutil.DoJSON(t, "GET", base+"/iccid-pool/stats?tenant=carrier-a", nil)
 	require.Equal(t, 200, status)
 	require.Contains(t, string(raw), `"credentials_unbound":1`)
 }
@@ -404,10 +405,10 @@ func TestAdminStableErrorCodes(t *testing.T) {
 	srv, _ := newTestServer(t)
 	base := srv.URL + "/admin/api/v1"
 
-	do(t, "POST", base+"/tenants", map[string]any{"id": "carrier-a", "templateQuota": 1})
+	testutil.DoJSON(t, "POST", base+"/tenants", map[string]any{"id": "carrier-a", "templateQuota": 1})
 
 	// Unknown tenant.
-	status, raw := do(t, "POST", base+"/profiles", map[string]any{"tenant": "nope"})
+	status, raw := testutil.DoJSON(t, "POST", base+"/profiles", map[string]any{"tenant": "nope"})
 	require.Equal(t, 400, status)
 	require.Contains(t, string(raw), `"code":"unknown_tenant"`)
 
@@ -415,23 +416,23 @@ func TestAdminStableErrorCodes(t *testing.T) {
 	der, err := os.ReadFile("../../../testdata/upp/TS48v1_A.der")
 	require.NoError(t, err)
 	data := base64.StdEncoding.EncodeToString(der)
-	status, _ = do(t, "POST", base+"/upp", map[string]any{"name": "t1", "tenant": "carrier-a", "data": data})
+	status, _ = testutil.DoJSON(t, "POST", base+"/upp", map[string]any{"name": "t1", "tenant": "carrier-a", "data": data})
 	require.Equal(t, 200, status)
-	status, raw = do(t, "POST", base+"/upp", map[string]any{"name": "t2", "tenant": "carrier-a", "data": data})
+	status, raw = testutil.DoJSON(t, "POST", base+"/upp", map[string]any{"name": "t2", "tenant": "carrier-a", "data": data})
 	require.Equal(t, 409, status)
 	require.Contains(t, string(raw), `"code":"quota_exceeded"`)
 
 	// Replacing an existing template is always allowed.
-	status, _ = do(t, "POST", base+"/upp", map[string]any{"name": "t1", "tenant": "carrier-a", "data": data})
+	status, _ = testutil.DoJSON(t, "POST", base+"/upp", map[string]any{"name": "t1", "tenant": "carrier-a", "data": data})
 	require.Equal(t, 200, status)
 
 	// Unknown ICCID on a read.
-	status, raw = do(t, "GET", base+"/profiles/8900012345678901234", nil)
+	status, raw = testutil.DoJSON(t, "GET", base+"/profiles/8900012345678901234", nil)
 	require.Equal(t, 404, status)
 	require.Contains(t, string(raw), `"code":"not_found"`)
 
 	// Bad query parameter.
-	status, raw = do(t, "GET", base+"/profiles/stats?groupBy=nonsense", nil)
+	status, raw = testutil.DoJSON(t, "GET", base+"/profiles/stats?groupBy=nonsense", nil)
 	require.Equal(t, 400, status)
 	require.Contains(t, string(raw), `"code":"invalid_request"`)
 }
@@ -442,29 +443,29 @@ func TestAdminProfileQuota(t *testing.T) {
 	srv, _ := newTestServer(t)
 	base := srv.URL + "/admin/api/v1"
 
-	do(t, "POST", base+"/tenants", map[string]any{"id": "carrier-a", "profileQuota": 2})
+	testutil.DoJSON(t, "POST", base+"/tenants", map[string]any{"id": "carrier-a", "profileQuota": 2})
 	for i := 0; i < 2; i++ {
-		status, _ := do(t, "POST", base+"/profiles", map[string]any{"tenant": "carrier-a"})
+		status, _ := testutil.DoJSON(t, "POST", base+"/profiles", map[string]any{"tenant": "carrier-a"})
 		require.Equal(t, 201, status)
 	}
-	status, raw := do(t, "POST", base+"/profiles", map[string]any{"tenant": "carrier-a"})
+	status, raw := testutil.DoJSON(t, "POST", base+"/profiles", map[string]any{"tenant": "carrier-a"})
 	require.Equal(t, 409, status)
 	require.Contains(t, string(raw), `"code":"quota_exceeded"`)
 
 	// Other tenants are unaffected by carrier-a's quota.
-	status, _ = do(t, "POST", base+"/profiles", map[string]any{})
+	status, _ = testutil.DoJSON(t, "POST", base+"/profiles", map[string]any{})
 	require.Equal(t, 201, status)
 
 	// Deleting a profile frees a slot.
-	status, raw = do(t, "GET", base+"/profiles?tenant=carrier-a&size=1", nil)
+	status, raw = testutil.DoJSON(t, "GET", base+"/profiles?tenant=carrier-a&size=1", nil)
 	require.Equal(t, 200, status)
 	var list struct {
 		Items []map[string]any `json:"items"`
 	}
 	require.NoError(t, json.Unmarshal(raw, &list))
-	status, _ = do(t, "DELETE", base+"/profiles/"+list.Items[0]["iccid"].(string), nil)
+	status, _ = testutil.DoJSON(t, "DELETE", base+"/profiles/"+list.Items[0]["iccid"].(string), nil)
 	require.Equal(t, 204, status)
-	status, _ = do(t, "POST", base+"/profiles", map[string]any{"tenant": "carrier-a"})
+	status, _ = testutil.DoJSON(t, "POST", base+"/profiles", map[string]any{"tenant": "carrier-a"})
 	require.Equal(t, 201, status)
 }
 
@@ -475,12 +476,12 @@ func TestAdminEIDAggregationAndCSVImport(t *testing.T) {
 	base := srv.URL + "/admin/api/v1"
 
 	eid := "89049032123451234512345678901235"
-	status, _ := do(t, "POST", base+"/profiles", map[string]any{"eid": eid, "externalRef": "r1"})
+	status, _ := testutil.DoJSON(t, "POST", base+"/profiles", map[string]any{"eid": eid, "externalRef": "r1"})
 	require.Equal(t, 201, status)
-	status, _ = do(t, "POST", base+"/profiles", map[string]any{"eid": eid, "externalRef": "r2"})
+	status, _ = testutil.DoJSON(t, "POST", base+"/profiles", map[string]any{"eid": eid, "externalRef": "r2"})
 	require.Equal(t, 201, status)
 
-	status, raw := do(t, "GET", base+"/eids", nil)
+	status, raw := testutil.DoJSON(t, "GET", base+"/eids", nil)
 	require.Equal(t, 200, status)
 	var agg struct {
 		Items []struct {
@@ -510,7 +511,7 @@ func TestAdminEIDAggregationAndCSVImport(t *testing.T) {
 	require.Contains(t, body, `"ok":false`)
 
 	// The CSV and JSON paths accept the same records.
-	status, _ = do(t, "POST", base+"/profiles/import", map[string]any{
+	status, _ = testutil.DoJSON(t, "POST", base+"/profiles/import", map[string]any{
 		"records": []map[string]any{{"iccid": "89000123456789012343", "profileType": "operational"}},
 	})
 	require.Equal(t, 200, status)
@@ -527,26 +528,26 @@ func TestAdminUPPVersionHistory(t *testing.T) {
 	data := base64.StdEncoding.EncodeToString(der)
 
 	// First upload: nothing to archive yet.
-	status, raw := do(t, "POST", base+"/upp", map[string]any{"name": "hist", "data": data})
+	status, raw := testutil.DoJSON(t, "POST", base+"/upp", map[string]any{"name": "hist", "data": data})
 	require.Equal(t, 200, status)
 	var first map[string]any
 	require.NoError(t, json.Unmarshal(raw, &first))
 	firstSha := first["sha256"].(string)
 
-	status, raw = do(t, "GET", base+"/upp/hist/versions", nil)
+	status, raw = testutil.DoJSON(t, "GET", base+"/upp/hist/versions", nil)
 	require.Equal(t, 200, status)
 	require.Contains(t, string(raw), `"total":0`)
 
 	// Re-upload different bytes: the original revision is archived.
 	other, err := os.ReadFile("../../../testdata/upp/TS48v1_B.der")
 	require.NoError(t, err)
-	status, raw = do(t, "POST", base+"/upp", map[string]any{"name": "hist", "data": base64.StdEncoding.EncodeToString(other)})
+	status, raw = testutil.DoJSON(t, "POST", base+"/upp", map[string]any{"name": "hist", "data": base64.StdEncoding.EncodeToString(other)})
 	require.Equal(t, 200, status)
 	var second map[string]any
 	require.NoError(t, json.Unmarshal(raw, &second))
 	require.NotEqual(t, firstSha, second["sha256"])
 
-	status, raw = do(t, "GET", base+"/upp/hist/versions", nil)
+	status, raw = testutil.DoJSON(t, "GET", base+"/upp/hist/versions", nil)
 	require.Equal(t, 200, status)
 	var versions struct {
 		Items []struct {
@@ -562,18 +563,18 @@ func TestAdminUPPVersionHistory(t *testing.T) {
 	require.Equal(t, firstSha, versions.Items[0].SHA256)
 
 	// Roll back to it.
-	status, raw = do(t, "POST", base+"/upp/hist/versions/"+strconv.FormatInt(versions.Items[0].ID, 10)+"/restore", nil)
+	status, raw = testutil.DoJSON(t, "POST", base+"/upp/hist/versions/"+strconv.FormatInt(versions.Items[0].ID, 10)+"/restore", nil)
 	require.Equal(t, 200, status)
 	var restored map[string]any
 	require.NoError(t, json.Unmarshal(raw, &restored))
 	require.Equal(t, firstSha, restored["sha256"])
 
 	// The rollback archived what it replaced, so the history now has two rows.
-	status, raw = do(t, "GET", base+"/upp/hist/versions", nil)
+	status, raw = testutil.DoJSON(t, "GET", base+"/upp/hist/versions", nil)
 	require.Equal(t, 200, status)
 	require.Contains(t, string(raw), `"total":2`)
 
 	// Unknown versions are a 404.
-	status, _ = do(t, "POST", base+"/upp/hist/versions/9999/restore", nil)
+	status, _ = testutil.DoJSON(t, "POST", base+"/upp/hist/versions/9999/restore", nil)
 	require.Equal(t, 404, status)
 }

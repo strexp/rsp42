@@ -10,6 +10,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"rsp42/internal/service"
+	"rsp42/internal/testutil"
 )
 
 // uppFixture loads a non-UNIQUE testdata UPP fixture and returns it base64
@@ -30,10 +31,10 @@ func TestUPPVersionLimitAtBaseline(t *testing.T) {
 	base := srv.URL + "/admin/api/v1"
 
 	data := uppFixture(t, "TS48v2_SAIP2.3_BERTLV.der")
-	status, raw := do(t, "POST", base+"/upp", map[string]any{"name": "v23.der", "data": data})
+	status, raw := testutil.DoJSON(t, "POST", base+"/upp", map[string]any{"name": "v23.der", "data": data})
 	require.Equal(t, 200, status, string(raw))
 
-	status, raw = do(t, "POST", base+"/upp/validate", map[string]any{"data": data})
+	status, raw = testutil.DoJSON(t, "POST", base+"/upp/validate", map[string]any{"data": data})
 	require.Equal(t, 200, status, string(raw))
 	var v struct {
 		Valid    bool     `json:"valid"`
@@ -57,7 +58,7 @@ func TestUPPVersionLimitRejectsAboveBaseline(t *testing.T) {
 	base := srv.URL + "/admin/api/v1"
 
 	data := uppFixture(t, "TS48v2_SAIP2.3_BERTLV.der")
-	status, raw := do(t, "POST", base+"/upp", map[string]any{"name": "v23.der", "data": data})
+	status, raw := testutil.DoJSON(t, "POST", base+"/upp", map[string]any{"name": "v23.der", "data": data})
 	require.Equal(t, 409, status, string(raw))
 	var body struct {
 		Code    string         `json:"code"`
@@ -68,7 +69,7 @@ func TestUPPVersionLimitRejectsAboveBaseline(t *testing.T) {
 	require.Equal(t, "2.3", body.Details["templateVersion"])
 	require.Equal(t, "2.1", body.Details["maxSupported"])
 
-	status, raw = do(t, "POST", base+"/upp/validate", map[string]any{"data": data})
+	status, raw = testutil.DoJSON(t, "POST", base+"/upp/validate", map[string]any{"data": data})
 	require.Equal(t, 200, status, string(raw))
 	var v struct {
 		Valid    bool     `json:"valid"`
@@ -79,7 +80,7 @@ func TestUPPVersionLimitRejectsAboveBaseline(t *testing.T) {
 	require.NotEmpty(t, v.Warnings)
 
 	// The refused upload stored nothing.
-	status, raw = do(t, "GET", base+"/upp/v23.der", nil)
+	status, raw = testutil.DoJSON(t, "GET", base+"/upp/v23.der", nil)
 	require.Equal(t, 404, status, string(raw))
 }
 
@@ -96,7 +97,7 @@ func TestUPPValidateConstraintErrors(t *testing.T) {
 	raw := []byte{0xa0, 0x06, 0x80, 0x01, 0x02, 0x81, 0x01, 0x03, 0xb0, 0x00}
 	data := base64.StdEncoding.EncodeToString(raw)
 
-	status, body := do(t, "POST", base+"/upp/validate", map[string]any{"data": data})
+	status, body := testutil.DoJSON(t, "POST", base+"/upp/validate", map[string]any{"data": data})
 	require.Equal(t, 200, status, string(body))
 	var v struct {
 		Valid  bool     `json:"valid"`
@@ -106,12 +107,12 @@ func TestUPPValidateConstraintErrors(t *testing.T) {
 	require.False(t, v.Valid)
 	require.NotEmpty(t, v.Errors)
 
-	status, body = do(t, "POST", base+"/upp", map[string]any{"name": "bad.der", "data": data})
+	status, body = testutil.DoJSON(t, "POST", base+"/upp", map[string]any{"name": "bad.der", "data": data})
 	require.Equal(t, 400, status, string(body))
 	require.Contains(t, string(body), "invalid_upp")
 
 	// The refused template was not stored.
-	status, _ = do(t, "GET", base+"/upp/bad.der", nil)
+	status, _ = testutil.DoJSON(t, "GET", base+"/upp/bad.der", nil)
 	require.Equal(t, 404, status)
 }
 
@@ -124,10 +125,10 @@ func TestAdminRenderSdKeysAndMncLen(t *testing.T) {
 	base := srv.URL + "/admin/api/v1"
 
 	data := uppFixture(t, "TS48v2_SAIP2.3_BERTLV.der")
-	status, raw := do(t, "POST", base+"/upp", map[string]any{"name": "v23.der", "data": data})
+	status, raw := testutil.DoJSON(t, "POST", base+"/upp", map[string]any{"name": "v23.der", "data": data})
 	require.Equal(t, 200, status, string(raw))
 
-	status, raw = do(t, "POST", base+"/upp/render", map[string]any{
+	status, raw = testutil.DoJSON(t, "POST", base+"/upp/render", map[string]any{
 		"name":   "v23.der",
 		"mncLen": 3,
 		"sdKeys": []map[string]any{{

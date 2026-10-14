@@ -6,7 +6,11 @@
 package testutil
 
 import (
+	"bytes"
 	"encoding/hex"
+	"encoding/json"
+	"io"
+	"net/http"
 	"testing"
 )
 
@@ -42,3 +46,34 @@ func TLV(tag, content []byte) []byte {
 
 // HexTag renders a tag as lowercase hex.
 func HexTag(tag []byte) string { return hex.EncodeToString(tag) }
+
+// DoJSON performs an HTTP request with an optional JSON body and returns the
+// status code and the raw response body.
+func DoJSON(t testing.TB, method, url string, body any) (int, []byte) {
+	t.Helper()
+	var rdr io.Reader
+	if body != nil {
+		b, err := json.Marshal(body)
+		if err != nil {
+			t.Fatalf("testutil: marshal body: %v", err)
+		}
+		rdr = bytes.NewReader(b)
+	}
+	req, err := http.NewRequest(method, url, rdr)
+	if err != nil {
+		t.Fatalf("testutil: new request: %v", err)
+	}
+	if body != nil {
+		req.Header.Set("Content-Type", "application/json")
+	}
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("testutil: do request: %v", err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+	raw, err := io.ReadAll(resp.Body)
+	if err != nil {
+		t.Fatalf("testutil: read body: %v", err)
+	}
+	return resp.StatusCode, raw
+}
