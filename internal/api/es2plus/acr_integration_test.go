@@ -11,7 +11,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"rsp42/internal/api/es2plus"
+	"rsp42/internal/client/es2p"
 	"rsp42/internal/rsp"
 	"rsp42/internal/service"
 	"rsp42/internal/store"
@@ -32,7 +32,7 @@ func TestACRCheckerAgainstMockOperator(t *testing.T) {
 	t.Cleanup(func() { _ = st.Close() })
 	reg := newES2PMetricsRegistry()
 
-	client := es2plus.NewCallbackClient("", "2.999.10", nil)
+	client := es2p.NewCallbackClient("", "2.999.10", nil)
 	client.ACRURL = srv.URL + "/gsma/rsp2/es2plus/handleAcrRequest"
 	checker := &service.ACRChecker{
 		Operator: client,
@@ -98,7 +98,7 @@ func TestACRCheckerTimeoutAgainstBlackholeOperator(t *testing.T) {
 	t.Cleanup(srv.Close)
 	t.Cleanup(func() { close(release) })
 
-	client := es2plus.NewCallbackClient("", "2.999.10", nil)
+	client := es2p.NewCallbackClient("", "2.999.10", nil)
 	client.ACRURL = srv.URL
 	client.MaxAttempts = 1
 	checker := &service.ACRChecker{Operator: client, Timeout: 100 * time.Millisecond}

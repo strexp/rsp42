@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"os"
 
-	"rsp42/internal/api/es2plus"
+	"rsp42/internal/client/es2p"
 )
 
 func cmdES2P(prog string, args []string) int {
@@ -29,7 +29,7 @@ func cmdES2P(prog string, args []string) int {
 	if err := fs.Parse(args[1:]); err != nil {
 		return 2
 	}
-	client := es2plus.NewClient(*url, *requester, nil)
+	client := es2p.NewClient(*url, *requester, nil)
 	ctx := context.Background()
 	switch sub {
 	case "downloadOrder":
@@ -40,7 +40,7 @@ func cmdES2P(prog string, args []string) int {
 		}
 		fmt.Println(res.ICCID)
 	case "confirmOrder":
-		res, err := client.ConfirmOrder(ctx, es2plus.ConfirmOrderRequest{
+		res, err := client.ConfirmOrder(ctx, es2p.ConfirmOrderRequest{
 			ICCID: *iccid, EID: *eid, MatchingID: *matchingID, ConfirmationCode: *cc,
 			SMDSAddress: *smds, ReleaseFlag: *release,
 		})

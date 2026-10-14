@@ -1,4 +1,4 @@
-package es2plus
+package es2p
 
 import (
 	"bytes"

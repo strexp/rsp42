@@ -14,6 +14,7 @@ import (
 	"rsp42/internal/api/es2plus"
 	"rsp42/internal/api/es9plus"
 	"rsp42/internal/audit"
+	"rsp42/internal/client/es2p"
 	"rsp42/internal/config"
 	"rsp42/internal/logging"
 	"rsp42/internal/metrics"
@@ -245,7 +246,7 @@ func wireOperatorES2P(
 	st *store.Store,
 	reg *metrics.Registry,
 	log *slog.Logger,
-) (*es2plus.CallbackQueue, error) {
+) (*es2p.CallbackQueue, error) {
 	wantCallbacks := cbCfg.Enabled && cbCfg.URL != ""
 	wantACR := cbCfg.ACRURL != ""
 	if !wantCallbacks && !wantACR {
@@ -265,7 +266,7 @@ func wireOperatorES2P(
 		hc = client
 	}
 
-	cb := es2plus.NewCallbackClient(cbCfg.URL, oid, hc)
+	cb := es2p.NewCallbackClient(cbCfg.URL, oid, hc)
 	cb.ACRURL = cbCfg.ACRURL
 	if n := cbCfg.MaxAttempts; n > 0 {
 		cb.MaxAttempts = n
@@ -287,7 +288,7 @@ func wireOperatorES2P(
 	if !wantCallbacks {
 		return nil, nil
 	}
-	queue := es2plus.NewCallbackQueue(st.Callbacks, cb, log)
+	queue := es2p.NewCallbackQueue(st.Callbacks, cb, log)
 	queue.Metrics = reg
 	queue.URLForTenant = func(tenant string) string {
 		url, err := st.Tenants.CallbackURLForTenant(tenant)

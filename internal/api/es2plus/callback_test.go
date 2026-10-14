@@ -12,7 +12,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"rsp42/internal/api/es2plus"
+	"rsp42/internal/client/es2p"
 	"rsp42/internal/service"
 	"rsp42/internal/store"
 )
@@ -37,8 +37,8 @@ func TestCallbackQueueRetriesThenSucceeds(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	cb := es2plus.NewCallbackClient(srv.URL, "2.999.10", nil)
-	q := es2plus.NewCallbackQueue(st.Callbacks, cb, slog.Default())
+	cb := es2p.NewCallbackClient(srv.URL, "2.999.10", nil)
+	q := es2p.NewCallbackQueue(st.Callbacks, cb, slog.Default())
 	q.Backoff = func(int) time.Duration { return 0 } // retry immediately
 
 	// The first delivery fails and is persisted as pending.
@@ -69,8 +69,8 @@ func TestCallbackQueueDeadLetter(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	cb := es2plus.NewCallbackClient(srv.URL, "2.999.10", nil)
-	q := es2plus.NewCallbackQueue(st.Callbacks, cb, slog.Default())
+	cb := es2p.NewCallbackClient(srv.URL, "2.999.10", nil)
+	q := es2p.NewCallbackQueue(st.Callbacks, cb, slog.Default())
 	q.MaxAttempts = 2
 	q.Backoff = func(int) time.Duration { return 0 }
 

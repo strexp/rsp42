@@ -13,7 +13,7 @@ import (
 
 // ProgressInfo is the payload of ES2+.HandleDownloadProgressInfo (SGP.22
 // §5.3.5). It is the single DTO for this outbound notification: callers fill the
-// domain fields and the delivery transport (es2plus.CallbackQueue) fills Header
+// domain fields and the delivery transport (client/es2p.CallbackQueue) fills Header
 // and Timestamp. TenantID/ExternalRef/MatchingID are rsp42 additions (the
 // function is rsp42 -> Operator, so it is not bound by the ES2+ input schema).
 //

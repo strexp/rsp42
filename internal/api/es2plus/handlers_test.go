@@ -13,6 +13,7 @@ import (
 	"rsp42/internal/api"
 	"rsp42/internal/api/es12"
 	"rsp42/internal/api/es2plus"
+	"rsp42/internal/client/es2p"
 	"rsp42/internal/iccid"
 	"rsp42/internal/service"
 	"rsp42/internal/store"
@@ -20,14 +21,14 @@ import (
 	"time"
 )
 
-func newServer(t *testing.T) (*es2plus.Client, *store.Store) {
+func newServer(t *testing.T) (*es2p.Client, *store.Store) {
 	t.Helper()
 	return newServerWith(t, nil)
 }
 
 // newServerWith builds an ES2+ test server; configure may adjust the handler
 // (e.g. install a tenant mapping or the idempotency repository).
-func newServerWith(t *testing.T, configure func(h *es2plus.Handler, st *store.Store)) (*es2plus.Client, *store.Store) {
+func newServerWith(t *testing.T, configure func(h *es2plus.Handler, st *store.Store)) (*es2p.Client, *store.Store) {
 	t.Helper()
 	st, err := store.Open("file:" + filepath.Join(t.TempDir(), "es2p.db"))
 	require.NoError(t, err)
@@ -55,7 +56,7 @@ func newServerWith(t *testing.T, configure func(h *es2plus.Handler, st *store.St
 
 	srv := httptest.NewServer(api.NewES2PRouter(slog.Default(), h, api.Options{}))
 	t.Cleanup(srv.Close)
-	return es2plus.NewClient(srv.URL, "test-operator", nil), st
+	return es2p.NewClient(srv.URL, "test-operator", nil), st
 }
 
 func TestES2PlusOrderFlow(t *testing.T) {
@@ -71,7 +72,7 @@ func TestES2PlusOrderFlow(t *testing.T) {
 	require.Equal(t, store.StateLinked, p.State)
 	require.Equal(t, "89049032123451234512345678901235", p.EID)
 
-	co, err := client.ConfirmOrder(ctx, es2plus.ConfirmOrderRequest{
+	co, err := client.ConfirmOrder(ctx, es2p.ConfirmOrderRequest{
 		ICCID:            dl.ICCID,
 		ConfirmationCode: "1234",
 		ReleaseFlag:      true,
@@ -101,7 +102,7 @@ func TestConfirmOrderRegistersEvent(t *testing.T) {
 	eid := "89049032123451234512345678901235"
 	dl, err := client.DownloadOrder(ctx, eid, "", "operational")
 	require.NoError(t, err)
-	co, err := client.ConfirmOrder(ctx, es2plus.ConfirmOrderRequest{
+	co, err := client.ConfirmOrder(ctx, es2p.ConfirmOrderRequest{
 		ICCID: dl.ICCID, SMDSAddress: "testrootsmds.example.com",
 	})
 	require.NoError(t, err)
@@ -136,12 +137,12 @@ func TestMockOperatorCallback(t *testing.T) {
 	defer srv.Close()
 
 	st := newCallbackStore(t)
-	cb := es2plus.NewCallbackClient(srv.URL+"/gsma/rsp2/es2plus/handleDownloadProgressInfo", "smdpp", nil)
-	q := es2plus.NewCallbackQueue(st.Callbacks, cb, slog.Default())
+	cb := es2p.NewCallbackClient(srv.URL+"/gsma/rsp2/es2plus/handleDownloadProgressInfo", "smdpp", nil)
+	q := es2p.NewCallbackQueue(st.Callbacks, cb, slog.Default())
 
 	err := q.Deliver(context.Background(), service.ProgressInfo{
 		ICCID:                   "8900012345678901234F",
-		NotificationPointID:     es2plus.NotificationPointDownload,
+		NotificationPointID:     es2p.NotificationPointDownload,
 		NotificationPointStatus: service.PointStatus{Status: "Executed-Success"},
 	})
 	require.NoError(t, err)
@@ -153,7 +154,7 @@ func TestMockOperatorCallback(t *testing.T) {
 	var body map[string]any
 	require.NoError(t, json.Unmarshal(op.Progress[0], &body))
 	require.Equal(t, "8900012345678901234F", body["iccid"])
-	require.EqualValues(t, es2plus.NotificationPointDownload, body["notificationPointId"])
+	require.EqualValues(t, es2p.NotificationPointDownload, body["notificationPointId"])
 	require.Equal(t, map[string]any{"status": "Executed-Success"}, body["notificationPointStatus"])
 	require.Contains(t, body, "profileType")
 	require.NotContains(t, body, "resultData")
