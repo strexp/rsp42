@@ -30,7 +30,7 @@ type ACRChecker struct {
 	// disables the extra bound (the caller's context still applies).
 	Timeout time.Duration
 	Metrics *metrics.Registry
-	Audit   *store.AuditRepo
+	Audit   AuditSink
 	Log     *slog.Logger
 }
 

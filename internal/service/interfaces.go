@@ -71,3 +71,9 @@ type CascadeClient interface {
 	// during cascaded deletion).
 	IsNotFound(err error) bool
 }
+
+// AuditSink records an audit row. It is defined by the consumer so the SQLite
+// repository stays a detail; *store.AuditRepo satisfies it.
+type AuditSink interface {
+	Insert(e *store.AuditEntry) error
+}

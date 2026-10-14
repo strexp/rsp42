@@ -34,14 +34,29 @@ type QueueOptions struct {
 	Now         func() time.Time
 }
 
+// QueueStore is the persistence the durable callback queue needs. It is defined
+// by the consumer so the SQLite repository stays a detail; *store.CallbackRepo
+// satisfies it.
+type QueueStore interface {
+	Enqueue(url, payload string, pointID int) (int64, error)
+	Get(id int64) (*store.Callback, error)
+	Due(now time.Time, limit int) ([]*store.Callback, error)
+	MarkSent(id int64, response string) error
+	MarkFailed(id int64, response string) error
+	MarkRetry(id int64, next time.Time, response string) error
+}
+
 type CallbackQueue struct {
-	Repo   *store.CallbackRepo
+	Repo   QueueStore
 	Client *CallbackClient
 	QueueOptions
 }
 
+// The SQLite repository must keep satisfying the seam.
+var _ QueueStore = (*store.CallbackRepo)(nil)
+
 // NewCallbackQueue builds a queue with sane defaults.
-func NewCallbackQueue(repo *store.CallbackRepo, client *CallbackClient, opts QueueOptions) *CallbackQueue {
+func NewCallbackQueue(repo QueueStore, client *CallbackClient, opts QueueOptions) *CallbackQueue {
 	if opts.MaxAttempts < 1 {
 		opts.MaxAttempts = 5
 	}

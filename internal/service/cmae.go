@@ -55,7 +55,7 @@ type CMAEDeps struct {
 	Tenants TenantLookup
 	// Audit, when set, records eUICC-capability failures that the HTTP audit
 	// middleware cannot observe (ES9+ answers HTTP 200 with an RSP status).
-	Audit *store.AuditRepo
+	Audit AuditSink
 	// Metrics, when set, counts V3-capable eUICCs and version failures (N11/N12).
 	Metrics *metrics.Registry
 }
