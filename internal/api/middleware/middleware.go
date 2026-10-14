@@ -64,6 +64,41 @@ func (s *statusWriter) Write(b []byte) (int, error) {
 	return n, err
 }
 
+// CORS enables browser cross-origin access for the listed origins. A `*` entry
+// allows any origin. When the list is empty CORS is disabled. It answers
+// preflight OPTIONS requests itself (chi has no OPTIONS routes).
+func CORS(allowedOrigins []string) func(http.Handler) http.Handler {
+	allowAll := false
+	allowed := map[string]bool{}
+	for _, o := range allowedOrigins {
+		if o == "*" {
+			allowAll = true
+		}
+		allowed[o] = true
+	}
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			origin := r.Header.Get("Origin")
+			if origin != "" && (allowAll || allowed[origin]) {
+				if allowAll {
+					w.Header().Set("Access-Control-Allow-Origin", "*")
+				} else {
+					w.Header().Set("Access-Control-Allow-Origin", origin)
+					w.Header().Add("Vary", "Origin")
+				}
+				w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, PATCH, DELETE, OPTIONS")
+				w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Idempotency-Key, X-Request-ID, X-Admin-Protocol")
+				w.Header().Set("Access-Control-Max-Age", "600")
+			}
+			if r.Method == http.MethodOptions && origin != "" {
+				w.WriteHeader(http.StatusNoContent)
+				return
+			}
+			next.ServeHTTP(w, r)
+		})
+	}
+}
+
 // Recover converts panics into 500 responses and logs them.
 func Recover(log *slog.Logger) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {

@@ -56,6 +56,21 @@ docker run -v $PWD/config/config.yaml:/etc/rsp42/config.yaml rsp42 smdpp
 shutdown (15s grace). Request bodies are capped (1 MiB control plane, 4 MiB
 ES9+).
 
+## CORS
+
+The LPA-facing and admin listeners send no CORS headers by default, so a browser
+page served from another origin cannot call them. Enable it per process:
+
+```yaml
+server: # or smds.server for the SM-DS
+  cors:
+    allowed_origins: ["https://ops.example.com"]   # or ["*"] (dev only)
+```
+
+An empty list disables CORS. `deploy/demo.html` is a single-file front-end for
+the management API; serve it from an origin listed here (or use `["*"]` in a
+test config).
+
 ## UPP templates
 
 UPP templates live in the `upp_templates` table and are selected by the eUICC's

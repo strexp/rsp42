@@ -33,6 +33,13 @@ type ServerConfig struct {
 	ES9P  ListenerCfg `mapstructure:"es9p"`
 	ES2P  ListenerCfg `mapstructure:"es2p"`
 	Admin ListenerCfg `mapstructure:"admin"`
+	CORS  CORSConfig  `mapstructure:"cors"`
+}
+
+// CORSConfig enables browser cross-origin access to the HTTP listeners. An empty
+// AllowedOrigins disables CORS; a `*` entry allows any origin.
+type CORSConfig struct {
+	AllowedOrigins []string `mapstructure:"allowed_origins"`
 }
 
 // ListenerCfg is a single HTTP listener (port + optional TLS).
@@ -174,6 +181,7 @@ type SMDSServer struct {
 	ES11  ListenerCfg `mapstructure:"es11"`
 	ES12  ListenerCfg `mapstructure:"es12"`
 	Admin ListenerCfg `mapstructure:"admin"`
+	CORS  CORSConfig  `mapstructure:"cors"`
 }
 
 // KMSConfig configures the key management service.

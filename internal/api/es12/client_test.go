@@ -21,7 +21,7 @@ func TestES12RegisterDeleteRoundTrip(t *testing.T) {
 	t.Cleanup(func() { _ = st.Close() })
 
 	events := service.NewEventService(st.Events, "root", "testrootsmds.example.com", time.Hour)
-	srv := httptest.NewServer(api.NewES12Router(slog.Default(), es12.New(slog.Default(), events)))
+	srv := httptest.NewServer(api.NewES12Router(slog.Default(), es12.New(slog.Default(), events), api.Options{}))
 	defer srv.Close()
 
 	client := service.NewSMDSCClient(srv.URL, "2.999.10", nil)

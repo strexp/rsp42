@@ -93,18 +93,19 @@ func cmdSMDS(prog string, args []string) int {
 		return middleware.Chain(h, middleware.Audit(auditLog, iface))
 	}
 
-	es11, err := buildServer(log, "es11", cfg.SMDS.Server.Bind, cfg.SMDS.Server.ES11, wrap(api.NewES11Router(log, es11Handler), "es11"))
+	apiOpts := api.Options{CORS: cfg.SMDS.Server.CORS.AllowedOrigins}
+	es11, err := buildServer(log, "es11", cfg.SMDS.Server.Bind, cfg.SMDS.Server.ES11, wrap(api.NewES11Router(log, es11Handler, apiOpts), "es11"))
 	if err != nil {
 		log.Error("es11 listener", "err", err)
 		return 1
 	}
-	es12, err := buildServer(log, "es12", cfg.SMDS.Server.Bind, cfg.SMDS.Server.ES12, wrap(api.NewES12Router(log, es12Handler), "es12"))
+	es12, err := buildServer(log, "es12", cfg.SMDS.Server.Bind, cfg.SMDS.Server.ES12, wrap(api.NewES12Router(log, es12Handler, apiOpts), "es12"))
 	if err != nil {
 		log.Error("es12 listener", "err", err)
 		return 1
 	}
 	admin, err := buildServer(log, "admin", cfg.SMDS.Server.Bind, cfg.SMDS.Server.Admin,
-		api.NewAdminRouter(log, func() bool { return true }, func(r chi.Router) { adminapi.MountDS(r, st.Events) }))
+		api.NewAdminRouter(log, func() bool { return true }, func(r chi.Router) { adminapi.MountDS(r, st.Events) }, apiOpts))
 	if err != nil {
 		log.Error("admin listener", "err", err)
 		return 1

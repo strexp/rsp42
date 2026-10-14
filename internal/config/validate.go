@@ -48,6 +48,22 @@ func (c *Config) validateCommon() error {
 	default:
 		return fmt.Errorf("kms.provider %q invalid (want file)", c.KMS.Provider)
 	}
+	if err := validateCORS(c.Server.CORS); err != nil {
+		return fmt.Errorf("server.cors: %w", err)
+	}
+	if err := validateCORS(c.SMDS.Server.CORS); err != nil {
+		return fmt.Errorf("smds.server.cors: %w", err)
+	}
+	return nil
+}
+
+// validateCORS rejects empty origin entries.
+func validateCORS(c CORSConfig) error {
+	for i, o := range c.AllowedOrigins {
+		if strings.TrimSpace(o) == "" {
+			return fmt.Errorf("allowed_origins[%d] must not be empty", i)
+		}
+	}
 	return nil
 }
 

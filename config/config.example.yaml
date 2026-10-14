@@ -9,6 +9,11 @@
 
 server:
   bind: "0.0.0.0"
+  # Cross-origin access for browser clients (e.g. deploy/demo.html). An empty
+  # list disables CORS; "*" allows any origin (test/dev only — restrict it in
+  # production).
+  cors:
+    allowed_origins: ["*"]
   es9p:
     port: 8443
     tls:
@@ -122,6 +127,8 @@ smds:
       ca_file: ""
   server:
     bind: "0.0.0.0"
+    cors:
+      allowed_origins: ["*"]
     es11:
       port: 9443
       tls:

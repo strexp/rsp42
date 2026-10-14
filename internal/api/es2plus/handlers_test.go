@@ -32,7 +32,7 @@ func newServer(t *testing.T) (*es2plus.Client, *store.Store) {
 
 	// ES12 server (Root SM-DS) + registrar so ConfirmOrder registers events.
 	events := service.NewEventService(st.Events, "root", "testrootsmds.example.com", time.Hour)
-	es12srv := httptest.NewServer(api.NewES12Router(slog.Default(), es12.New(slog.Default(), events)))
+	es12srv := httptest.NewServer(api.NewES12Router(slog.Default(), es12.New(slog.Default(), events), api.Options{}))
 	t.Cleanup(es12srv.Close)
 	h.Registrar = &service.Registrar{
 		Repo:        st.Regs,
@@ -41,7 +41,7 @@ func newServer(t *testing.T) (*es2plus.Client, *store.Store) {
 		Forwarding:  true,
 	}
 
-	srv := httptest.NewServer(api.NewES2PRouter(slog.Default(), h))
+	srv := httptest.NewServer(api.NewES2PRouter(slog.Default(), h, api.Options{}))
 	t.Cleanup(srv.Close)
 	return es2plus.NewClient(srv.URL, "test-operator", nil), st
 }
