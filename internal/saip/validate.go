@@ -195,9 +195,9 @@ func (s *Sequence) ValidateV231() *Validation {
 	}
 
 	// --- files -------------------------------------------------------------
-	// A File is an untagged SEQUENCE OF CHOICE, so only the universal SEQUENCE
-	// fields of a file-bearing PE are files; the PEHeader (0xa0) and
-	// templateID (0x06) fields must not be inspected as files.
+	// A File member of a file-bearing PE carries the File CHOICE alternatives
+	// directly (fileDescriptor, doNotCreate, fillFileOffset, fillFileContent).
+	// The PEHeader ([0]) and templateID ([1]) members are not files.
 	for _, e := range s.Elements {
 		if !isFileBearing(e.Tag) {
 			continue
@@ -205,7 +205,7 @@ func (s *Sequence) ValidateV231() *Validation {
 		pe := PEName(e.Tag)
 		n := 0
 		for _, field := range e.Children {
-			if !bytesEq(field.Tag, tagFileSequence) {
+			if !isFileField(field) {
 				continue
 			}
 			validateFileEntry(v, pe, n, field)
@@ -287,9 +287,18 @@ var tagInteger = []byte{0x02}
 // tagDoNotCreate is the File CHOICE alternative [0] (NULL).
 var tagDoNotCreate = []byte{0x80}
 
-// tagFileSequence is the universal SEQUENCE tag of an untagged File
-// (File ::= SEQUENCE OF CHOICE).
+// tagFileSequence is the universal SEQUENCE tag used when a File is built by
+// hand in tests.
 var tagFileSequence = []byte{0x30}
+
+// isFileField reports whether a member of a file-bearing PE is a File: it
+// carries a fileDescriptor, or it is a bare doNotCreate.
+func isFileField(n *asn1.Node) bool {
+	if n.Find(tagFcp) != nil {
+		return true
+	}
+	return len(n.Children) == 1 && bytesEq(n.Children[0].Tag, tagDoNotCreate)
+}
 
 // peLabel renders a PE name for an error message.
 func peLabel(name string) string {

@@ -264,3 +264,68 @@ func hexDigit(n byte) byte {
 	}
 	return 'A' + (n - 10)
 }
+
+// TestApplySdKeysAndMncLen pins N17: the GP key set is written to
+// PE-SecurityDomain and the MNC length to EF.AD (FID 6FAD).
+func TestApplySdKeysAndMncLen(t *testing.T) {
+	seq, _ := loadUPP(t, "TS48v2_SAIP2.3_BERTLV.der")
+
+	// EF.AD exists and defaults to 00 00 00 02 (two-digit MNC).
+	ad := seq.FindFile(saip.FIDEFAD)
+	require.NotNil(t, ad, "the SAIP 2.3 test profile carries EF.AD (6FAD)")
+	require.Equal(t, byte(0x02), ad.Body()[3]&0x0F)
+
+	macLen := 8
+	eng := &Engine{}
+	err := eng.Apply(seq, &Data{
+		MncLen: intPtr(3),
+		SdKeys: []SdKey{{
+			KeyUsageQualifier: "38",
+			KeyIdentifier:     "01",
+			KeyVersionNumber:  "30",
+			Components: []SdKeyComponent{
+				{KeyType: "88", KeyData: "11223344556677889900AABBCCDDEEFF", MacLength: &macLen},
+			},
+		}},
+	})
+	require.NoError(t, err)
+
+	// EF.AD byte 4 now declares a three-digit MNC and keeps the high nibble.
+	body := ad.Body()
+	require.Equal(t, byte(0x03), body[3]&0x0F)
+	require.Equal(t, byte(0x00), body[3]&0xF0)
+
+	// The re-encoded profile carries the injected key object.
+	reparsed, err := saip.ParseUPP(seq.Encode())
+	require.NoError(t, err)
+	sd := reparsed.Find(saip.TagSecurityDomain)
+	require.NotNil(t, sd)
+	keyList := findKeyList(sd)
+	require.NotNil(t, keyList, "PE-SecurityDomain must carry a keyList")
+	require.Len(t, keyList.Children, 1)
+	obj := keyList.Children[0]
+	require.Equal(t, []byte{0x95}, obj.Children[0].Tag)
+	require.Equal(t, []byte{0x38}, obj.Children[0].Value)
+	require.Equal(t, []byte{0x30}, obj.Children[lastComponentIndex(obj)].Tag)
+}
+
+func findKeyList(sd *asn1.Node) *asn1.Node {
+	for _, c := range sd.Children {
+		if len(c.Children) > 0 && len(c.Children[0].Tag) == 1 && c.Children[0].Tag[0] == 0x30 {
+			return c
+		}
+	}
+	return nil
+}
+
+func lastComponentIndex(obj *asn1.Node) int {
+	return len(obj.Children) - 1
+}
+
+func intPtr(v int) *int { return &v }
+
+func TestApplyMncLenRejectsBadInput(t *testing.T) {
+	seq, _ := loadUPP(t, "TS48v2_SAIP2.3_BERTLV.der")
+	require.Error(t, (&Engine{}).Apply(seq, &Data{MncLen: intPtr(4)}))
+	require.Error(t, (&Engine{}).Apply(seq, &Data{MncLen: intPtr(0)}))
+}

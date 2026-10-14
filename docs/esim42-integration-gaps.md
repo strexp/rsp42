@@ -498,7 +498,7 @@
 
 **现状（实测）**：`TODO.md` §2 记为未实现；`internal/saip/personalization/personalization.go` 与 `internal/saip/personalization/csv.go` 中无对应字段（当前只覆盖 ICCID/IMSI/K/OPc/算法/PIN/PUK/ADM/SPN/PLMN/MSISDN/ACC/`filePatches`）。
 
-**建议改动**：新增 `SdKey*`（SD/MNO-SD 密钥集、KVN、key usage qualifier，落在 `PE-SecurityDomain`）与 `MncLen`（`EF.AD` bit 4，FID `6F3A`）；同步 `/upp/{name}/schema` 的字段目录（与 N4 一起解决“目录 ≠ 模板可绑定字段”）；更新 `docs/coverage.md` 的 SAIP 个性化行。
+**建议改动**：新增 `SdKey*`（SD/MNO-SD 密钥集、KVN、key usage qualifier，落在 `PE-SecurityDomain`）与 `MncLen`（`EF.AD` 的 MNC 长度；**FID 为 `6FAD`，非 `6F3A`**——V2.3.1 §9 与 TS 31.102 §4.2.23 均为 `6FAD`，`6F3A` 是 EF.LI。字段为 byte-4 低半字节，非单 bit）；同步 `/upp/{name}/schema` 的字段目录（与 N4 一起解决“目录 ≠ 模板可绑定字段”）；更新 `docs/coverage.md` 的 SAIP 个性化行。
 
 **验收**：含 `PE-SecurityDomain` 的模板可注入 SD 密钥集；`EF.AD` 的 MNC 长度可个性化。
 
@@ -851,7 +851,7 @@ esim42 `02` §7.2 与 `06` §13.1 给出的顺序，与第一轮的 M1–M4 **�
 | N11 | `additionalEuiccProfilePackageVersions` | `[x]` | `internal/rsp/types.go`（`EUICCInfo2` 解析 `[15]`、`SupportedVersions()`、`IsV3Capable()`）+ `internal/rsp/version.go`（`Version`）；`store.SelectBestFor` 改版本集合入参并移除 `major<=0 → AnyForTenant()` 回退；会话持久化 `euicc_profile_version`/`euicc_supported_versions`/`uicc_capability`（迁移 `00011`）；`v3-capable-euicc` 指标 |
 | N15 | `ServicesList` 24 项 | `[x]` | `internal/saip/header.go`：补 `dfLink`(19)/`cat-tp`(20)/`get-identity`(21)/`profile-a-x25519`(22)/`profile-b-p256`(23) + `svcMax` 作为 `Services()` 上界；`bertlv` → 规范拼写 `ber-tlv`（对外契约变更，C7）；TUAK-256 修复（按 `PE-AKAParameter` 的 K 长度 16/32 置 `tuak128`/`tuak256`，新增 `AKAKeyLength`）；`internal/saip/services_test.go` |
 | N13 | Annex A/B 模板表 + 约束 + 向量 | `[x]` | `internal/saip/templates.go`（**V2.3.1 Annex B 权威表 = 14 个模板 OID**，`2.23.143.1.2.1`–`.2.14` + spec-version `2.23.143.1.1.2`；无版本化子弧）、`internal/saip/validate.go`（结构/单例/可选顺序/mandatory-services↔PE/AKA↔服务位/identification 唯一/File `doNotCreate`·`fileDescriptor`/GFSTE ⊆ 14 模板且拒绝带版本子弧/非 V2.3.1 PE 带 `mandated` → warning）、`internal/saip/files.go` 修 `Body()` 的 `fillFileOffset`；`service.UPPInspection.Errors` + `/upp/validate`（`valid:false`+`errors[]`）+ `/upp` 拒绝入库（`400 invalid_upp`）；测试 `internal/saip/validate_test.go`（含 TS.48 回归门禁） |
-| N17 | `SdKey*` / `MncLen` | `[ ]` | `TODO.md` §2 |
+| N17 | `SdKey*` / `MncLen` | `[x]` | `internal/saip/personalization/personalization.go`：`Data.SdKeys`（`KeyObject` 全字段：keyUsageQualifier/keyAccess/keyIdentifier/keyVersionNumber/keyCounterValue/keyCompontents，含 keyType/keyData/macLength）注入 `PE-SecurityDomain` 的 `keyList[2]`；`Data.MncLen` 写 **EF.AD = FID 6FAD**（TS 31.102 §4.2.23，byte-4 低半字节；**文档原写 6F3A 是 EF.LI，已更正**）；`csv.go` 增 `mnclen`/`sdkeys` 列；`api/admin/personalization.go` 与 `uppFieldSchema` 同步；测试 `personalization_test.go`、`api/admin/upp_version_test.go` |
 | N4 | schema 模板级字段可用性 | `[ ]` | `internal/api/admin/upp_tools.go:20-29` 为全局静态目录 |
 | N5 | `/upp/render` 未入库模板 | `[ ]` | `internal/api/admin/upp_tools.go:98-121` 强制 `name` |
 | N7 | 统计 / 排序契约补全 | `[~]` | `profiles/stats` 的 enum 缺 `profile_type`；`sort` 缺 `tenant`/`-tenant`；catch-all `"error"` 仍在（`internal/api/admin/admin.go:181`）；`/iccid-pool/stats` 的 `tenant` **已列** |
@@ -942,7 +942,7 @@ esim42 `02` §7.2 与 `06` §13.1 给出的顺序，与第一轮的 M1–M4 **�
 - **理由**：管理 API 无鉴权已是既定部署前提（§0.1-4、§8.1 决策 5），安全边界完全由 esim42 承担；esim42 必须保证该 API 不被反向代理、网关或前端暴露。
 - **遗留提示（不构成待办）**：若将来重启该项，护栏应覆盖 `GET /personalization?reveal=1`（`internal/api/admin/personalization.go` 的 `reveal=1` 分支同样能回明文 K/OPc），而不只是 `/export`。
 
-### 10.4 批 3（P1，SAIP 能力）—— N15/N13 已落地；N17 待实施
+### 10.4 批 3（P1，SAIP 能力）—— **全部落地**（N15 / N13 / N17）
 
 > **N13 偏差已解决（2026-10-14 复核）**：计划写“V2.3.1 Annex B 的 **13** 个模板 OID”，但把规范原文（`refs/Profile interoperability technical specification_V2.3.1 Final.pdf`）放入 refs 后核实，Annex B 实际分配 **14** 个模板 OID（`2.23.143.1.2.1`–`.2.14`，含 MF `.2.1` 与 DF.CD `.2.2`）+ spec-version OID `2.23.143.1.1.2`，与 pysim 的 `oid.py` 一致；`refs/YggdraSIM/.../\_naa.py` 的冲突表**不采用**。实现按权威的 14 项进行（`internal/saip/templates.go`），计划中的“13”为笔误。
 

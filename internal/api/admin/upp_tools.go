@@ -44,6 +44,8 @@ var personalizationSchema = []uppFieldSchema{
 	{Name: "msisdn", Type: "string", Required: false, Pattern: "^[0-9]{1,15}$", Description: "Written to EF.MSISDN (international format)."},
 	{Name: "acc", Type: "integer", Required: false, Description: "EF.ACC value (2 bytes, 0-65535)."},
 	{Name: "filePatches", Type: "array", Required: false, Description: "Raw EF overrides; each entry {fid (0x....), hex}. The FID must exist in the template."},
+	{Name: "sdKeys", Type: "array", Required: false, Description: "GP key set written to PE-SecurityDomain (N17); each entry {keyUsageQualifier, keyAccess?, keyIdentifier, keyVersionNumber, keyCounterValue?, components:[{keyType, keyData, macLength?}]}, all byte values hex. Key material is supplied by esim42; rsp42 never generates it."},
+	{Name: "mncLen", Type: "integer", Required: false, Enum: []string{"2", "3"}, Description: "MNC length written to EF.AD (FID 6FAD, byte-4 low nibble; TS 31.102 §4.2.23). N17."},
 	{Name: "rotation", Type: "string", Required: false, Description: "Hex Milenage/TUAK rotation constants (5 bytes)."},
 	{Name: "xoring", Type: "string", Required: false, Description: "Hex Milenage/TUAK xoring constants (80 bytes)."},
 	{Name: "numberOfKeccak", Type: "integer", Required: false},

@@ -114,3 +114,36 @@ func TestUPPValidateConstraintErrors(t *testing.T) {
 	status, _ = do(t, "GET", base+"/upp/bad.der", nil)
 	require.Equal(t, 404, status)
 }
+
+// TestAdminRenderSdKeysAndMncLen pins N17's request wiring: the SD key set and
+// the EF.AD MNC length travel through the management API into the engine.
+func TestAdminRenderSdKeysAndMncLen(t *testing.T) {
+	policy, err := service.NewSAIPVersionPolicy([]string{"2.3"})
+	require.NoError(t, err)
+	srv, _ := newTestServer(t, func(h *Handler) { h.AllowedSAIP = policy })
+	base := srv.URL + "/admin/api/v1"
+
+	data := uppFixture(t, "TS48v2_SAIP2.3_BERTLV.der")
+	status, raw := do(t, "POST", base+"/upp", map[string]any{"name": "v23.der", "data": data})
+	require.Equal(t, 200, status, string(raw))
+
+	status, raw = do(t, "POST", base+"/upp/render", map[string]any{
+		"name":   "v23.der",
+		"mncLen": 3,
+		"sdKeys": []map[string]any{{
+			"keyUsageQualifier": "38",
+			"keyIdentifier":     "01",
+			"keyVersionNumber":  "30",
+			"components": []map[string]any{
+				{"keyType": "88", "keyData": "11223344556677889900AABBCCDDEEFF"},
+			},
+		}},
+	})
+	require.Equal(t, 200, status, string(raw))
+	var out struct {
+		Rendered bool   `json:"rendered"`
+		Error    string `json:"error"`
+	}
+	require.NoError(t, json.Unmarshal(raw, &out))
+	require.True(t, out.Rendered, string(raw))
+}

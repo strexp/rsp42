@@ -3,8 +3,10 @@ package personalization
 import (
 	"encoding/csv"
 	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"os"
+	"strconv"
 	"strings"
 )
 
@@ -92,6 +94,19 @@ func (s *CSVSource) load() error {
 			d.XoringConstants, err = hex.DecodeString(v)
 			if err != nil {
 				return fmt.Errorf("personalization: bad xoring %q: %w", v, err)
+			}
+		}
+		// N17 fields.
+		if v := get(rec, "mnclen"); v != "" {
+			n, err := strconv.Atoi(v)
+			if err != nil || (n != 2 && n != 3) {
+				return fmt.Errorf("personalization: bad mncLen %q (want 2 or 3)", v)
+			}
+			d.MncLen = &n
+		}
+		if v := get(rec, "sdkeys"); v != "" {
+			if err := json.Unmarshal([]byte(v), &d.SdKeys); err != nil {
+				return fmt.Errorf("personalization: bad sdKeys JSON: %w", err)
 			}
 		}
 		s.rows = append(s.rows, d)

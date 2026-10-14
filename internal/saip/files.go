@@ -115,6 +115,9 @@ const (
 	FIDOPLMNwAcT = 0x6F61
 	FIDACC       = 0x6F78
 	FIDMSISDN    = 0x6F40
+	// FIDEFAD is EF.AD (Administrative Data, TS 31.102 §4.2.23), whose byte-4
+	// low nibble carries the MNC length (N17). Note: 6F3A is EF.LI, not EF.AD.
+	FIDEFAD = 0x6FAD
 )
 
 // ErrFileNotFound is returned when a required file is absent.

@@ -41,9 +41,10 @@ scope. §5.3.6/§5.3.7 are VOID in v2.7.
 | Notification handling (install/enable/disable/delete) | §3.5 | ✅ (euiccSignPIR / euiccNotificationSignature verified; unauthenticated notifications are recorded but not acted on) |
 | Certificate chain, role OIDs, EUM nameConstraints/EIN | §4.5.2 | ✅ (expiry checked; CRL out of scope) |
 | Multiple CI identities (SGP.26 variants) | §4.5.2 | ✅ (`certs.identities`; selected by `euiccCiPKIdToBeUsed`) |
-| SAIP personalization (ICCID/IMSI/K/OPc/PIN/PUK/ADM/SPN/…) | §5.5.3 / SAIP | ✅ per-ICCID (DB-backed, K/OPc encrypted at rest); mandatory-services + GFSTE list recomputed |
-| UPP template registry (DB, hot-updatable) | — | ✅ (`upp_templates`; import via `admin upp import`) |
-| UPP template selection by eUICC profile version | §5.5.3 | ✅ (registry lookup by `euiccInfo2.profileVersion`; order override wins) |
+| SAIP personalization (ICCID/IMSI/K/OPc/PIN/PUK/ADM/SPN/PLMN/MSISDN/ACC/SdKey*/MncLen/EF patches) | §5.5.3 / SAIP | ✅ per-ICCID (DB-backed, K/OPc encrypted at rest); GP key set written to `PE-SecurityDomain`, MNC length to `EF.AD` (6FAD); mandatory-services + GFSTE list recomputed |
+| UPP template registry (DB, hot-updatable) | — | ✅ (`upp_templates`; import via `admin upp import`; `profiles.allowed_saip_versions` caps the accepted SAIP baseline) |
+| UPP template selection by eUICC profile version | §5.5.3 | ✅ (registry lookup by the eUICC's supported version set — `profileVersion` plus `additionalEuiccProfilePackageVersions`; order override wins; no compatible template fails cleanly with `8.2.6/3.8`) |
+| SAIP profile package validation (V2.3.1 constraints) | SAIP Annex A/B, §9 | ✅ (`/upp/validate` + `/upp`: structure/order, mandatory services, AKA/service bits, PE identification, File `doNotCreate`/`fileDescriptor`, GFSTE subset of the 14 Annex B template OIDs) |
 | Activation Code Retrieval (ACR) | §4.9 / §5.3.8 | ✅ response metadata (both ACR types) + caller-side Operator confirmation through `ES2+.HandleAcrRequest` (`acr_url`), refusal `8.2.1/1.2` |
 | Profile Policy Rules (pprIds) | §5.3 | ✅ populated from order `pprIds` / `profiles.ppr_ids` |
 | `otherCertsInChain` | §6.5.2 | ✅ parsed and chained between EUM and CI |

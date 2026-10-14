@@ -106,6 +106,9 @@ type persoReq struct {
 	MSISDN         string                       `json:"msisdn"`
 	ACC            *uint16                      `json:"acc"`
 	FilePatches    []personalization.FilePatch  `json:"filePatches"`
+	// N17: GP key set for PE-SecurityDomain and the EF.AD MNC length.
+	SdKeys []personalization.SdKey `json:"sdKeys"`
+	MncLen *int                    `json:"mncLen"`
 }
 
 func (req *persoReq) toData(iccid string) (*personalization.Data, error) {
@@ -114,6 +117,7 @@ func (req *persoReq) toData(iccid string) (*personalization.Data, error) {
 		ADM1: req.ADM1, ADM2: req.ADM2, SPN: req.SPN, Algorithm: req.Algorithm,
 		NumberOfKeccak: req.NumberOfKeccak, PLMN: req.PLMN, MSISDN: req.MSISDN,
 		ACC: req.ACC, FilePatches: req.FilePatches,
+		SdKeys: req.SdKeys, MncLen: req.MncLen,
 	}
 	var err error
 	if d.K, err = hexField(req.K, "k"); err != nil {
