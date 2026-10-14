@@ -11,12 +11,12 @@ import (
 // rest with the KMS key-encryption key.
 type SessionService struct {
 	Repo SessionStore
-	KMS  kms.Provider
+	KMS  kms.Sealer
 	TTL  time.Duration
 }
 
 // NewSessionService builds a SessionService.
-func NewSessionService(repo SessionStore, provider kms.Provider, ttl time.Duration) *SessionService {
+func NewSessionService(repo SessionStore, provider kms.Sealer, ttl time.Duration) *SessionService {
 	if ttl <= 0 {
 		ttl = 30 * time.Minute
 	}

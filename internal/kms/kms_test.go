@@ -67,3 +67,25 @@ func TestKEKSources(t *testing.T) {
 	_, err = NewFileProviderFromKEK(make([]byte, 32))
 	require.NoError(t, err)
 }
+
+// TestProviderInterfaceSplit pins the intended seam: a certificate manager only
+// needs a SignerLoader and the session/personalization stores only need a
+// Sealer, so a future non-file provider (HSM, vault) does not have to implement
+// path-based key loading to provide at-rest encryption, or vice versa.
+func TestProviderInterfaceSplit(t *testing.T) {
+	provider, err := NewFileProviderFromHex("000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f")
+	require.NoError(t, err)
+
+	var signerOnly SignerLoader = provider
+	var sealerOnly Sealer = provider
+	var both Provider = provider
+	require.NotNil(t, signerOnly)
+	require.NotNil(t, sealerOnly)
+	require.NotNil(t, both)
+
+	sealed, err := sealerOnly.Encrypt([]byte("secret"))
+	require.NoError(t, err)
+	opened, err := sealerOnly.Decrypt(sealed)
+	require.NoError(t, err)
+	require.Equal(t, []byte("secret"), opened)
+}

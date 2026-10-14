@@ -34,11 +34,11 @@ type PersonalizationResolver interface {
 // at rest with the KMS key-encryption key.
 type PersonalizationService struct {
 	Repo PersonalizationStore
-	KMS  kms.Provider
+	KMS  kms.Sealer
 }
 
 // NewPersonalizationService builds a PersonalizationService.
-func NewPersonalizationService(repo PersonalizationStore, provider kms.Provider) *PersonalizationService {
+func NewPersonalizationService(repo PersonalizationStore, provider kms.Sealer) *PersonalizationService {
 	return &PersonalizationService{Repo: repo, KMS: provider}
 }
 

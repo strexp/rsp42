@@ -76,14 +76,14 @@ type Manager struct {
 
 // Load reads and validates the configured certificate material (a single
 // identity).
-func Load(opts Options, provider kms.Provider) (*Manager, error) {
+func Load(opts Options, provider kms.SignerLoader) (*Manager, error) {
 	return LoadSets([]Options{opts}, provider)
 }
 
 // LoadSets loads the primary identity plus any additional identities. Selecting
 // the matching identity at runtime lets one deployment serve eUICCs whose
 // proposed CI differs.
-func LoadSets(optsList []Options, provider kms.Provider) (*Manager, error) {
+func LoadSets(optsList []Options, provider kms.SignerLoader) (*Manager, error) {
 	if len(optsList) == 0 {
 		return nil, fmt.Errorf("cert: no certificate configuration")
 	}
@@ -98,7 +98,7 @@ func LoadSets(optsList []Options, provider kms.Provider) (*Manager, error) {
 	return m, nil
 }
 
-func (m *Manager) loadIdentity(opts Options, provider kms.Provider, primary bool) (*Identity, error) {
+func (m *Manager) loadIdentity(opts Options, provider kms.SignerLoader, primary bool) (*Identity, error) {
 	id := &Identity{}
 
 	ci, err := m.loadCert(opts, opts.CI, "CERT_CI")

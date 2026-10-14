@@ -17,16 +17,32 @@ var (
 	TagSequence   = encodeTag(0, 1, 16)
 )
 
-// Tag is re-exported for callers that build tags directly.
-type Tag = bertlv.Tag
+// Tag is a BER identifier octet sequence (one or more bytes; the high-tag-number
+// form for values >= 31). It is a plain byte slice so callers can use App/Ctx or
+// write a tag literally, and so this package's API names no third-party type.
+type Tag = []byte
 
-// Builder is the mutable BER-TLV value produced by the construction helpers in
-// this file (New, Seq, Prim, Octet, ...) and serialized by Marshal. It is an
-// alias for the low-level bertlv type, exported so that callers outside this
-// package never have to import github.com/euicc-go/bertlv themselves. It is a
-// different type from Node, which is the editable tree used for SAIP
-// ProfileElements.
-type Builder = bertlv.TLV
+// Builder is the BER-TLV value produced by the construction helpers in this file
+// (New, Seq, Prim, Octet, ...) and serialized by Marshal. It wraps the
+// low-level TLV type so that no caller outside this package has to name it, and
+// so the underlying library can be replaced without changing this API. Node is
+// the editable tree used for SAIP ProfileElements.
+type Builder struct{ tlv *bertlv.TLV }
+
+func wrap(t *bertlv.TLV) *Builder { return &Builder{tlv: t} }
+
+// unwrap converts a Builder list to the underlying library's children. The
+// values are created by this package, so a nil entry is a programming error.
+func unwrap(children []*Builder) []*bertlv.TLV {
+	out := make([]*bertlv.TLV, len(children))
+	for i, c := range children {
+		out[i] = c.tlv
+	}
+	return out
+}
+
+// MarshalBinary returns the DER/BER encoding of the builder.
+func (b *Builder) MarshalBinary() ([]byte, error) { return b.tlv.MarshalBinary() }
 
 // BER tag classes and forms.
 const (
@@ -56,7 +72,7 @@ func encodeTag(class, form byte, value uint64) []byte {
 }
 
 // App returns an APPLICATION-class tag.
-func App(n uint64, constructed bool) bertlv.Tag {
+func App(n uint64, constructed bool) Tag {
 	if constructed {
 		return encodeTag(classApplication, formConstructed, n)
 	}
@@ -64,7 +80,7 @@ func App(n uint64, constructed bool) bertlv.Tag {
 }
 
 // Ctx returns a CONTEXT-SPECIFIC-class tag.
-func Ctx(n uint64, constructed bool) bertlv.Tag {
+func Ctx(n uint64, constructed bool) Tag {
 	if constructed {
 		return encodeTag(classContext, formConstructed, n)
 	}
@@ -72,32 +88,34 @@ func Ctx(n uint64, constructed bool) bertlv.Tag {
 }
 
 // Seq builds a universal SEQUENCE.
-func Seq(children ...*Builder) *Builder { return bertlv.NewChildren(TagSequence, children...) }
+func Seq(children ...*Builder) *Builder {
+	return wrap(bertlv.NewChildren(TagSequence, unwrap(children)...))
+}
 
 // New builds a constructed TLV with an arbitrary tag.
-func New(tag bertlv.Tag, children ...*Builder) *Builder {
-	return bertlv.NewChildren(tag, children...)
+func New(tag Tag, children ...*Builder) *Builder {
+	return wrap(bertlv.NewChildren(bertlv.Tag(tag), unwrap(children)...))
 }
 
 // Prim builds a primitive TLV with an arbitrary tag.
-func Prim(tag bertlv.Tag, value []byte) *Builder { return bertlv.NewValue(tag, value) }
+func Prim(tag Tag, value []byte) *Builder { return wrap(bertlv.NewValue(bertlv.Tag(tag), value)) }
 
 // Octet builds an OCTET STRING.
-func Octet(b []byte) *Builder { return bertlv.NewValue(TagOctetStr, b) }
+func Octet(b []byte) *Builder { return wrap(bertlv.NewValue(TagOctetStr, b)) }
 
 // Bool builds a BOOLEAN.
 func Bool(v bool) *Builder {
 	if v {
-		return bertlv.NewValue(TagBoolean, []byte{0xff})
+		return wrap(bertlv.NewValue(TagBoolean, []byte{0xff}))
 	}
-	return bertlv.NewValue(TagBoolean, []byte{0x00})
+	return wrap(bertlv.NewValue(TagBoolean, []byte{0x00}))
 }
 
 // UTF8 builds a UTF8String.
-func UTF8(s string) *Builder { return bertlv.NewValue(TagUTF8String, []byte(s)) }
+func UTF8(s string) *Builder { return wrap(bertlv.NewValue(TagUTF8String, []byte(s))) }
 
 // Int builds an INTEGER from the minimal two's-complement encoding.
-func Int(v int64) *Builder { return bertlv.NewValue(TagInteger, encodeInt(v)) }
+func Int(v int64) *Builder { return wrap(bertlv.NewValue(TagInteger, encodeInt(v))) }
 
 // IntBytes returns the minimal two's-complement content of an INTEGER value.
 func IntBytes(v int64) []byte { return encodeInt(v) }
@@ -106,7 +124,7 @@ func IntBytes(v int64) []byte { return encodeInt(v) }
 // zeroed; unused is the number of unused trailing bits (0..7).
 func BitString(unused uint8, bits []byte) *Builder {
 	value := append([]byte{unused}, bits...)
-	return bertlv.NewValue(TagBitString, value)
+	return wrap(bertlv.NewValue(TagBitString, value))
 }
 
 // Marshal encodes a Builder and returns the bytes. It panics when the value
