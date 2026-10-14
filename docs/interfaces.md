@@ -50,10 +50,22 @@ using another tenant's Profile Type/template answers `8.2.5/1.2`.
 Operator" (§6.5.2.1). rsp42 interprets `"<tenant>/<template>"` as a
 tenant-local template selector; any other value stays opaque and template
 resolution falls back to the eUICC's advertised SAIP version, then the tenant
-default, then `profiles.default_upp`. A caller may never select another
-tenant's template. At download time the resolution order is: template pinned on
-the order, session template (eUICC version), tenant default, global default;
-there is no "any template" fallback.
+default, then `profiles.default_upp`. An opaque value is not silent: it
+increments `rsp42_es2p_profile_type_unparsed_total` and is audited with
+`warning=profileType-unparsed` (C2). A caller may never select another tenant's
+template. At download time the resolution order is: template pinned on the
+order, session template (eUICC version), tenant default, global default; a
+pinned template is authoritative and there is no "any template" fallback.
+
+The `downloadOrder` body is the closed Table 22 set: `eid`, `iccid`,
+`profileType`. There is no private body extension (the former `pprIds` member
+was removed, C1); Profile Policy Rules travel through `profiles.ppr_ids` on the
+management API.
+
+A failed allocation is reported with a specific code: no Profile of the
+requested type is available (pool/quota exhausted) is `8.2.5/3.7`, an unusable
+ICCID (already in use, blocked) is `8.2.1/3.3`, and any other allocation
+failure is `8.2/4.2` (C3).
 
 ### Resend semantics
 
@@ -160,6 +172,8 @@ branch correctly:
 | Profile Type / template (or ICCID) not allowed for the caller | `8.2.5/1.2` / `8.2.1/1.2` |
 | Mandatory request element missing (e.g. `iccid`) | `8.1.1/2.2` |
 | `confirmOrder.eid` disagrees with the download order | `8.1.1/3.10` |
+| No Profile of the requested type is available (quota/pool exhausted) | `8.2.5/3.7` |
+| The requested ICCID cannot be issued (in use / blocked) | `8.2.1/3.3` |
 | No template compatible with the eUICC's SAIP versions (N12) | `8.2.6/3.8` + readable message |
 
 **Template / eUICC version compatibility (N11/N12).** The eUICC advertises its
