@@ -538,7 +538,7 @@
 | C4 | `8.2.6/3.7` 语义错位 | `internal/rsp/errors.go:62`：`8.2.6` 是 Matching ID、`3.7` 是 Unavailable，用于“数据库更新失败”不贴切 | 换用更贴切的主体/原因 |
 | C5 | `internal/asn1/doc.go` 陈述过期 / 两层并行 ASN.1 抽象 | `internal/asn1/doc.go:1` 仍写 “wraps `github.com/euicc-go/bertlv`”，但该包实际自成一层，仅 `internal/asn1/construct.go:7` 还 import bertlv（`internal/rsp/types.go:15`、`internal/rsp/notification.go:6`、`internal/crypto/ecdsa.go:15` 亦直接 import） | 修 doc；与 `TODO.md` §3.1「收紧 `bertlv` 抽象」合并，并提到与 N11/N12 同批处理 |
 | C6 | `FileHandle.Body()` 忽略 `fillFileOffset` | `internal/saip/files.go:59-67` 只拼接 `fillFileContent`；`SetBody`（`:71-81`）会删除 offset 并线性化 | 补 offset 分片模板的定向回归测试（已并入 N13 第 4 条） |
-| C7 | `ServicesList` 命名 `bertlv` vs 规范 `ber-tlv` | `internal/saip/header.go:231` | 与 N15 同批修正；这是 `/upp/{name}/decoded` 的对外契约变更 |
+| C7 | `ServicesList` 命名 `bertlv` vs 规范 `ber-tlv` | `internal/saip/header.go:231` | **已修**（随 N15）：`serviceNames[SvcBERTLV] = "ber-tlv"`；这是 `/upp/{name}/decoded` 的对外契约变更 |
 | C8 | BER 不定长（indefinite length）被显式拒绝 | `internal/asn1/tlv.go:152`；长度字段 `> 4` 字节亦报错（`internal/asn1/tlv.go:155-157`）。esim42 `01` §4.1 称 SAIP 使用 `AUTOMATIC TAGS` + `EXTENSIBILITY IMPLIED`、多字节 high-tag-number，且实际数据会出现不定长编码 | 若采纳该结论则需支持；否则在 `TODO.md` 登记为「已知边界 + 影响面」，与 `TODO.md` §4.3 的 `bertlv` 多字节长度边界单测合并 |
 | C9 | V3.4/3.4.1 的 PE tag 常量缺失且未登记 | `bf1f`（df-5gprose）、`bf22`（ssim）在 `internal/saip` **零命中**，`TODO.md` 也无 V3 相关条目 → 能无损解析，但对 `PEName`/`isTemplatePE`/`RebuildMandatoryGFSTEList`/`/upp/{name}/decoded` 不可见 | 至少在 `TODO.md` 登记为**明确范围外**（对应 §0.4），避免后人当成遗漏缺陷 |
 | C10 | 无值域约束校验 | 树结构不查 schema，无 `SIZE(...)`/`INTEGER(0..n)` 校验，也没有 pySim `validation.py` 的对等物 | 归入 N13 的实现范围 |
@@ -849,7 +849,7 @@ esim42 `02` §7.2 与 `06` §13.1 给出的顺序，与第一轮的 M1–M4 **�
 | N3 | 租户删除引用保护 | `[x]` | `store.TenantUsage`/`Usage`/`DeleteWithReassign`（`internal/store/tenant.go`）；`api/admin/tenants.go`：无 `force` 且被引用 → `409 tenant_in_use` + 顶层 `usage`；`?force=true&reassignTo=<tenant\|"">`（未注册 → `400 unknown_tenant`，自指 → `400 invalid_request`）；`GET /tenants/{id}` 增 `usage`。esim42 侧 `credential_assignments` 仍需 esim42 自行计入 |
 | N6 | admin 监听面 / 密钥导出加固 | `—` | **范围外**（§8.4 决策 11、§10.3 步骤 2.4）；现状：`config/config.example.yaml:19,73` = `0.0.0.0`，无 reveal 头校验，**本轮不改** |
 | N11 | `additionalEuiccProfilePackageVersions` | `[x]` | `internal/rsp/types.go`（`EUICCInfo2` 解析 `[15]`、`SupportedVersions()`、`IsV3Capable()`）+ `internal/rsp/version.go`（`Version`）；`store.SelectBestFor` 改版本集合入参并移除 `major<=0 → AnyForTenant()` 回退；会话持久化 `euicc_profile_version`/`euicc_supported_versions`/`uicc_capability`（迁移 `00011`）；`v3-capable-euicc` 指标 |
-| N15 | `ServicesList` 24 项 | `[ ]` | `internal/saip/header.go:101-119`、`:237` 止于 18；`SvcTUAK256` 从未置位 |
+| N15 | `ServicesList` 24 项 | `[x]` | `internal/saip/header.go`：补 `dfLink`(19)/`cat-tp`(20)/`get-identity`(21)/`profile-a-x25519`(22)/`profile-b-p256`(23) + `svcMax` 作为 `Services()` 上界；`bertlv` → 规范拼写 `ber-tlv`（对外契约变更，C7）；TUAK-256 修复（按 `PE-AKAParameter` 的 K 长度 16/32 置 `tuak128`/`tuak256`，新增 `AKAKeyLength`）；`internal/saip/services_test.go` |
 | N13 | Annex A 模板表 + 约束 + 向量 | `[ ]` | `internal/saip/` 无 `templates.go`；`TODO.md` §2 |
 | N17 | `SdKey*` / `MncLen` | `[ ]` | `TODO.md` §2 |
 | N4 | schema 模板级字段可用性 | `[ ]` | `internal/api/admin/upp_tools.go:20-29` 为全局静态目录 |
@@ -942,7 +942,9 @@ esim42 `02` §7.2 与 `06` §13.1 给出的顺序，与第一轮的 M1–M4 **�
 - **理由**：管理 API 无鉴权已是既定部署前提（§0.1-4、§8.1 决策 5），安全边界完全由 esim42 承担；esim42 必须保证该 API 不被反向代理、网关或前端暴露。
 - **遗留提示（不构成待办）**：若将来重启该项，护栏应覆盖 `GET /personalization?reveal=1`（`internal/api/admin/personalization.go` 的 `reveal=1` 分支同样能回明文 K/OPc），而不只是 `/export`。
 
-### 10.4 批 3（P1，SAIP 能力）
+### 10.4 批 3（P1，SAIP 能力）—— N15 已落地；N13/N17 待实施
+
+> ⚠️ **N13 有一处待决策的偏差**：计划写“V2.3.1 Annex B 的 **13** 个模板 OID”，但本仓库 `refs/pysim/pySim/esim/saip/oid.py` 给出 **14** 个无版本维度的模板 OID（`2.23.143.1.2.1`–`.2.14`，含 MF `.2.1` 与 DF.CD `.2.2`），而 `refs/YggdraSIM/Tools/ProfilePackage/saip_pe_editors/_naa.py` 又给出**语义冲突**的另一张表（`.2.3`=ADF.USIM 等）。refs 中没有 TCA SAIP V2.3.1 规范原文，无法权威判定哪一项不属于 V2.3.1。N13 落地前需确认采用哪一张表（详见实施暂停说明）。
 
 #### 步骤 3.1 — N15：`ServicesList` 补到 V2.3.1 的 24 项 + TUAK256 修复
 

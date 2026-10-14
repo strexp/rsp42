@@ -97,6 +97,12 @@ func (h *Header) SetService(idx int, present bool) {
 }
 
 // Service indices in ServicesList (order of declaration).
+//
+// Indices 0-18 are the V2.3.1 list; 19-23 are the additions up to V2.3.1
+// (dfLink, cat-tp, get-identity, profile-a-x25519, profile-b-p256). The five
+// entries introduced by the V3.2 specification (suciCalculatorApi,
+// dns-resolution, scp11ac, scp11c-authorization-mechanism, s16mode) are
+// deliberately not reserved: SAIP V3.x is out of scope (docs/esim42-integration-gaps.md §0.4).
 const (
 	SvcContactless = iota
 	SvcUSIM
@@ -117,7 +123,16 @@ const (
 	SvcTUAK256
 	SvcUSIMTestAlgorithm
 	SvcBERTLV
+	SvcDFLink
+	SvcCATTp
+	SvcGetIdentity
+	SvcProfileAX25519
+	SvcProfileBP256
 )
+
+// svcMax is the highest ServicesList index this build understands; it is the
+// loop bound of Services().
+const svcMax = SvcProfileBP256
 
 // RebuildMandatoryServices derives the mandatory-services list from the PEs
 // actually present in the profile. It is a best-effort recomputation (the
@@ -141,7 +156,11 @@ func (s *Sequence) RebuildMandatoryServices() error {
 	h.SetService(SvcCSIM, csim)
 	h.SetService(SvcEAP, eap)
 	h.SetService(SvcMilenage, algo == 1)
-	h.SetService(SvcTUAK128, algo == 2)
+	// TUAK is one algorithm id (2) with two key lengths: a 32-byte K selects
+	// TUAK-256, everything else TUAK-128 (matching pySim's length-based rule).
+	// Without this, SvcTUAK256 was declared but never set.
+	h.SetService(SvcTUAK128, algo == 2 && AKAKeyLength(aka) != 32)
+	h.SetService(SvcTUAK256, algo == 2 && AKAKeyLength(aka) == 32)
 	h.SetService(SvcUSIMTestAlgorithm, algo == 3)
 	return nil
 }
@@ -221,20 +240,28 @@ func (s *Sequence) RebuildMandatoryGFSTEList() error {
 	return nil
 }
 
-// serviceNames maps ServicesList indices to their SGP.22 names.
+// serviceNames maps ServicesList indices to their SGP.22 / SAIP names.
 var serviceNames = map[int]string{
 	SvcContactless: "contactless", SvcUSIM: "usim", SvcISIM: "isim", SvcCSIM: "csim",
 	SvcMilenage: "milenage", SvcTUAK128: "tuak128", SvcCave: "cave",
 	SvcGBAUSIM: "gba-usim", SvcGBAISIM: "gba-isim", SvcMBMS: "mbms", SvcEAP: "eap",
 	SvcJavaCard: "javacard", SvcMultOS: "multos", SvcMultipleUSIM: "multiple-usim",
 	SvcMultipleISIM: "multiple-isim", SvcMultipleCSIM: "multiple-csim", SvcTUAK256: "tuak256",
-	SvcUSIMTestAlgorithm: "usim-test-algorithm", SvcBERTLV: "bertlv",
+	SvcUSIMTestAlgorithm: "usim-test-algorithm",
+	// SAIP V2.3.1 spells this "ber-tlv"; the previous "bertlv" value was a
+	// contract deviation for /upp/{name}/decoded (C7).
+	SvcBERTLV:         "ber-tlv",
+	SvcDFLink:         "dfLink",
+	SvcCATTp:          "cat-tp",
+	SvcGetIdentity:    "get-identity",
+	SvcProfileAX25519: "profile-a-x25519",
+	SvcProfileBP256:   "profile-b-p256",
 }
 
 // Services returns the mandatory services advertised by the header.
 func (h *Header) Services() []string {
 	var out []string
-	for i := SvcContactless; i <= SvcBERTLV; i++ {
+	for i := SvcContactless; i <= svcMax; i++ {
 		if h.HasService(i) {
 			out = append(out, serviceNames[i])
 		}
@@ -299,4 +326,26 @@ func AKAAlgorithmID(pe *asn1.Node) int {
 		return 0
 	}
 	return int(id.Value[len(id.Value)-1])
+}
+
+// AKAKeyLength returns the length in bytes of the K key inside a
+// PE-AKAParameter (algoConfiguration → algoParameter → key [2]), or 0 when it is
+// absent. It distinguishes TUAK-128 from TUAK-256, which share algorithm id 2.
+func AKAKeyLength(pe *asn1.Node) int {
+	if pe == nil {
+		return 0
+	}
+	cfg := pe.Find(asn1.Ctx(1, true))
+	if cfg == nil {
+		return 0
+	}
+	algo := cfg.Find(asn1.Ctx(1, true))
+	if algo == nil {
+		return 0
+	}
+	k := algo.Find(asn1.Ctx(2, false))
+	if k == nil {
+		return 0
+	}
+	return len(k.Value)
 }
