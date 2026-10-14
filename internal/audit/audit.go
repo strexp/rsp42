@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"reflect"
 	"sync"
 	"time"
 
@@ -24,15 +25,21 @@ type Entry struct {
 	Detail     map[string]any
 }
 
+// AuditSink persists audit rows. It is defined here (by the consumer) so that
+// the SQLite repository stays a detail; *store.AuditRepo satisfies it.
+type AuditSink interface {
+	Insert(e *store.AuditEntry) error
+}
+
 // Logger writes audit entries to the configured sink(s).
 type Logger struct {
-	repo *store.AuditRepo
+	repo AuditSink
 	file *os.File
 	mu   sync.Mutex
 }
 
 // New builds a Logger. sink is "db", "file" or "both".
-func New(repo *store.AuditRepo, sink, filePath string) (*Logger, error) {
+func New(repo AuditSink, sink, filePath string) (*Logger, error) {
 	l := &Logger{repo: repo}
 	if sink == "file" || sink == "both" {
 		f, err := os.OpenFile(filePath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o600)
@@ -41,7 +48,7 @@ func New(repo *store.AuditRepo, sink, filePath string) (*Logger, error) {
 		}
 		l.file = f
 	}
-	if sink == "db" && repo == nil {
+	if sink == "db" && sinkAbsent(repo) {
 		return nil, fmt.Errorf("audit: db sink requires a store")
 	}
 	return l, nil
@@ -53,6 +60,21 @@ func (l *Logger) Close() error {
 		return l.file.Close()
 	}
 	return nil
+}
+
+// sinkAbsent reports whether no repository was supplied, including a typed nil
+// pointer stored in the interface (which is not == nil).
+func sinkAbsent(repo AuditSink) bool {
+	if repo == nil {
+		return true
+	}
+	rv := reflect.ValueOf(repo)
+	switch rv.Kind() {
+	case reflect.Ptr, reflect.Interface, reflect.Map, reflect.Slice, reflect.Func, reflect.Chan:
+		return rv.IsNil()
+	default:
+		return false
+	}
 }
 
 // Log writes an entry to the enabled sinks.

@@ -17,6 +17,12 @@ import (
 	"rsp42/internal/store"
 )
 
+// AuditWriter records protocol-level ES12 failures. It is defined here so the
+// handler does not depend on the concrete SQLite repository.
+type AuditWriter interface {
+	Insert(e *store.AuditEntry) error
+}
+
 // Handler holds the ES12 handler dependencies.
 type Handler struct {
 	Log    *slog.Logger
@@ -26,7 +32,7 @@ type Handler struct {
 	Tenants *service.TenantResolver
 	// Audit, when set, records protocol-level ES12 failures (ES12 answers HTTP
 	// 200 with a Failed status, so the shared audit middleware cannot see them).
-	Audit *store.AuditRepo
+	Audit AuditWriter
 }
 
 // New returns a new ES12 handler.

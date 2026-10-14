@@ -9,11 +9,21 @@ import (
 	"errors"
 	"io"
 	"net/http"
+	"reflect"
 	"strings"
 
 	"rsp42/internal/api/common"
 	"rsp42/internal/store"
 )
+
+// IdempotencyStore is the persistence the replay middleware needs. It is
+// defined by the consumer so the SQLite repository stays a detail;
+// *store.IdempotencyRepo satisfies it.
+type IdempotencyStore interface {
+	Claim(key, endpoint, tenant, requestHash string) (rec *store.IdempotencyRecord, replay bool, err error)
+	Complete(key, endpoint, tenant string, status int, responseJSON string) error
+	Abort(key, endpoint string) error
+}
 
 // maxReplayBody is the fallback budget for the replay buffer when no
 // middleware.MaxBody ran ahead of it (i.e. the router's budget is unknown).
@@ -34,10 +44,10 @@ type replayResponse struct {
 // Semantics: same key + same path + same body replays the recorded response and
 // repeats no side effect; same key with a different body is a 409; a 5xx
 // response releases the key so the caller may retry.
-func Idempotency(repo *store.IdempotencyRepo) func(http.Handler) http.Handler {
+func Idempotency(repo IdempotencyStore) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			if repo == nil {
+			if nilStore(repo) {
 				next.ServeHTTP(w, r)
 				return
 			}
@@ -169,4 +179,20 @@ func (w *replayWriter) Write(b []byte) (int, error) {
 		}
 	}
 	return w.ResponseWriter.Write(b)
+}
+
+// nilStore reports whether a store dependency is absent. A typed nil pointer
+// stored in an interface is not == nil, so the plain comparison would let a
+// disabled store through and panic on first use.
+func nilStore(v any) bool {
+	if v == nil {
+		return true
+	}
+	rv := reflect.ValueOf(v)
+	switch rv.Kind() {
+	case reflect.Ptr, reflect.Interface, reflect.Map, reflect.Slice, reflect.Func, reflect.Chan:
+		return rv.IsNil()
+	default:
+		return false
+	}
 }
