@@ -13,27 +13,9 @@ import (
 	"rsp42/internal/rsp"
 )
 
-// ProgressInfo is the payload of ES2+.HandleDownloadProgressInfo (SGP.22 §5.3.5).
-// TenantID/ExternalRef/MatchingID are rsp42 additions on this outbound
-// notification (the function is SM-DP+ -> Operator, so it does not have to obey
-// the ES2+ input schema).
-type ProgressInfo struct {
-	Header                  map[string]string `json:"header"`
-	EID                     string            `json:"eid,omitempty"`
-	ICCID                   string            `json:"iccid"`
-	ProfileType             string            `json:"profileType"`
-	Timestamp               string            `json:"timestamp"`
-	NotificationPointID     int               `json:"notificationPointId"`
-	NotificationPointStatus any               `json:"notificationPointStatus"`
-	ResultData              string            `json:"resultData,omitempty"`
-	TenantID                string            `json:"tenantId,omitempty"`
-	ExternalRef             string            `json:"externalRef,omitempty"`
-	MatchingID              string            `json:"matchingId,omitempty"`
-}
-
 // Notification point identifiers (SGP.22 §5.3.5): 1 = eligibility/authorisation
 // check, 2 = confirmation code, 3 = download, 4 = installation result,
-// 17 = activation code retrieval.
+// 17 = activation code retrieval. The payload itself is service.ProgressInfo.
 const (
 	NotificationPointEligibilityCheck = 1
 	NotificationPointConfirmationCode = 2
@@ -164,41 +146,4 @@ func (c *CallbackClient) postACR(ctx context.Context, iccid string) error {
 		refused.SubjectCode, refused.ReasonCode, refused.Message = d.SubjectCode, d.ReasonCode, d.Message
 	}
 	return refused
-}
-
-// HandleDownloadProgressInfo posts a notification, retrying with backoff.
-func (c *CallbackClient) HandleDownloadProgressInfo(ctx context.Context, info ProgressInfo) error {
-	if c.URL == "" {
-		return fmt.Errorf("es2plus: no callback URL configured")
-	}
-	if info.Header == nil {
-		info.Header = map[string]string{
-			"functionRequesterIdentifier": c.RequesterID,
-			"functionCallIdentifier":      fmt.Sprintf("CB-%d", time.Now().UnixNano()),
-		}
-	}
-	raw, err := json.Marshal(info)
-	if err != nil {
-		return err
-	}
-	attempts := c.MaxAttempts
-	if attempts < 1 {
-		attempts = 1
-	}
-	var lastErr error
-	for i := 0; i < attempts; i++ {
-		if i > 0 && c.Backoff != nil {
-			select {
-			case <-ctx.Done():
-				return ctx.Err()
-			case <-time.After(c.Backoff(i - 1)):
-			}
-		}
-		if err := c.Post(ctx, c.URL, raw); err != nil {
-			lastErr = err
-			continue
-		}
-		return nil
-	}
-	return lastErr
 }

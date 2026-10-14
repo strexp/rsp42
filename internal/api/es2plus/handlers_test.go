@@ -2,6 +2,7 @@ package es2plus_test
 
 import (
 	"context"
+	"encoding/json"
 	"log/slog"
 	"net/http/httptest"
 	"path/filepath"
@@ -134,16 +135,32 @@ func TestMockOperatorCallback(t *testing.T) {
 	srv := httptest.NewServer(op.Handler())
 	defer srv.Close()
 
+	st := newCallbackStore(t)
 	cb := es2plus.NewCallbackClient(srv.URL+"/gsma/rsp2/es2plus/handleDownloadProgressInfo", "smdpp", nil)
-	err := cb.HandleDownloadProgressInfo(context.Background(), es2plus.ProgressInfo{
+	q := es2plus.NewCallbackQueue(st.Callbacks, cb, slog.Default())
+
+	err := q.Deliver(context.Background(), service.ProgressInfo{
 		ICCID:                   "8900012345678901234F",
-		ProfileType:             "operational",
-		Timestamp:               "2026-10-11T00:00:00Z",
 		NotificationPointID:     es2plus.NotificationPointDownload,
-		NotificationPointStatus: map[string]any{"status": "Executed-Success"},
+		NotificationPointStatus: service.PointStatus{Status: "Executed-Success"},
 	})
 	require.NoError(t, err)
 	require.Equal(t, 1, op.ProgressCount())
+
+	// The wire contract is the documented payload: field names, presence
+	// (profileType always present, resultData/eid omitted when empty) and the
+	// nested notificationPointStatus object.
+	var body map[string]any
+	require.NoError(t, json.Unmarshal(op.Progress[0], &body))
+	require.Equal(t, "8900012345678901234F", body["iccid"])
+	require.EqualValues(t, es2plus.NotificationPointDownload, body["notificationPointId"])
+	require.Equal(t, map[string]any{"status": "Executed-Success"}, body["notificationPointStatus"])
+	require.Contains(t, body, "profileType")
+	require.NotContains(t, body, "resultData")
+	require.NotContains(t, body, "eid")
+	header, ok := body["header"].(map[string]any)
+	require.True(t, ok)
+	require.Equal(t, "smdpp", header["functionRequesterIdentifier"])
 }
 
 // luhnICCID appends the Luhn check digit for an 18-digit body.

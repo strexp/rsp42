@@ -104,7 +104,7 @@ func (c *CMAE) pbFor(sess *store.Session) (*x509.Certificate, stdcrypto.Signer) 
 func (c *CMAE) notify(ctx context.Context, info ProgressInfo) {
 	if c.Notify != nil {
 		if err := c.Notify(ctx, info); err != nil && c.Log != nil {
-			c.Log.Warn("operator callback", "point", info.PointID, "err", err)
+			c.Log.Warn("operator callback", "point", info.NotificationPointID, "err", err)
 		}
 	}
 }

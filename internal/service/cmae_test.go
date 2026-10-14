@@ -315,7 +315,7 @@ func TestNotificationInstalled(t *testing.T) {
 	notifs.Sessions = ss
 	gotPoint := 0
 	notifs.Callback = func(_ context.Context, info ProgressInfo) error {
-		gotPoint = info.PointID
+		gotPoint = info.NotificationPointID
 		return nil
 	}
 

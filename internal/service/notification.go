@@ -14,17 +14,32 @@ import (
 	"rsp42/internal/store"
 )
 
-// ProgressInfo is one ES2+.HandleDownloadProgressInfo payload. The tenant and
-// correlation fields are rsp42 additions (the function is rsp42 -> Operator, so
-// it is not bound by the ES2+ input schema).
+// ProgressInfo is the payload of ES2+.HandleDownloadProgressInfo (SGP.22
+// §5.3.5). It is the single DTO for this outbound notification: callers fill the
+// domain fields and the delivery transport (es2plus.CallbackQueue) fills Header
+// and Timestamp. TenantID/ExternalRef/MatchingID are rsp42 additions (the
+// function is rsp42 -> Operator, so it is not bound by the ES2+ input schema).
+//
+// The JSON field names, omitempty flags and field order are the on-wire
+// contract (see docs/interfaces.md) and must not change.
 type ProgressInfo struct {
-	TenantID    string
-	ExternalRef string
-	MatchingID  string
-	EID         string
-	ICCID       string
-	PointID     int
-	Status      string
+	Header                  map[string]string `json:"header"`
+	EID                     string            `json:"eid,omitempty"`
+	ICCID                   string            `json:"iccid"`
+	ProfileType             string            `json:"profileType"`
+	Timestamp               string            `json:"timestamp"`
+	NotificationPointID     int               `json:"notificationPointId"`
+	NotificationPointStatus PointStatus       `json:"notificationPointStatus"`
+	ResultData              string            `json:"resultData,omitempty"`
+	TenantID                string            `json:"tenantId,omitempty"`
+	ExternalRef             string            `json:"externalRef,omitempty"`
+	MatchingID              string            `json:"matchingId,omitempty"`
+}
+
+// PointStatus is the notificationPointStatus object of a ProgressInfo payload.
+// rsp42 only emits its status member.
+type PointStatus struct {
+	Status string `json:"status"`
 }
 
 // OperatorCallback delivers an ES2+.HandleDownloadProgressInfo notification to
@@ -42,7 +57,11 @@ func progressMeta(p *store.Profile) EventMeta {
 // progressFor builds a ProgressInfo from a profile; eid overrides the stored
 // value when known from the session.
 func progressFor(p *store.Profile, eid string, pointID int, status string) ProgressInfo {
-	info := ProgressInfo{EID: eid, PointID: pointID, Status: status}
+	info := ProgressInfo{
+		EID:                     eid,
+		NotificationPointID:     pointID,
+		NotificationPointStatus: PointStatus{Status: status},
+	}
 	if p != nil {
 		info.TenantID = p.TenantID
 		info.ExternalRef = p.ExternalRef
@@ -278,7 +297,7 @@ func (n *NotificationService) notify(ctx context.Context, info ProgressInfo) {
 		return
 	}
 	if err := n.Callback(ctx, info); err != nil && n.Log != nil {
-		n.Log.Warn("operator callback failed", "point", info.PointID, "err", err)
+		n.Log.Warn("operator callback failed", "point", info.NotificationPointID, "err", err)
 	}
 }
 

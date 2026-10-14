@@ -51,8 +51,8 @@ func (q *CallbackQueue) Deliver(ctx context.Context, info service.ProgressInfo) 
 	if q.Metrics != nil {
 		q.Metrics.Inc("rsp42_progress_notifications_total", map[string]string{
 			"tenant": info.TenantID,
-			"point":  fmt.Sprintf("%d", info.PointID),
-			"status": info.Status,
+			"point":  fmt.Sprintf("%d", info.NotificationPointID),
+			"status": info.NotificationPointStatus.Status,
 		})
 	}
 	url := q.urlFor(info.TenantID)
@@ -63,7 +63,7 @@ func (q *CallbackQueue) Deliver(ctx context.Context, info service.ProgressInfo) 
 	if err != nil {
 		return err
 	}
-	id, err := q.Repo.Enqueue(url, string(payload), info.PointID)
+	id, err := q.Repo.Enqueue(url, string(payload), info.NotificationPointID)
 	if err != nil {
 		return err
 	}
@@ -116,21 +116,16 @@ func (q *CallbackQueue) Run(ctx context.Context, interval time.Duration) {
 	}
 }
 
+// encode fills the transport-owned fields of a notification and serializes the
+// single shared DTO (service.ProgressInfo). Callers must have set the domain
+// fields; Header and Timestamp are always regenerated here.
 func (q *CallbackQueue) encode(info service.ProgressInfo) ([]byte, error) {
-	return json.Marshal(ProgressInfo{
-		Header: map[string]string{
-			"functionRequesterIdentifier": q.Client.RequesterID,
-			"functionCallIdentifier":      fmt.Sprintf("CB-%d", q.Now().UnixNano()),
-		},
-		EID:                     info.EID,
-		ICCID:                   info.ICCID,
-		Timestamp:               q.Now().Format(time.RFC3339),
-		NotificationPointID:     info.PointID,
-		NotificationPointStatus: map[string]any{"status": info.Status},
-		TenantID:                info.TenantID,
-		ExternalRef:             info.ExternalRef,
-		MatchingID:              info.MatchingID,
-	})
+	info.Header = map[string]string{
+		"functionRequesterIdentifier": q.Client.RequesterID,
+		"functionCallIdentifier":      fmt.Sprintf("CB-%d", q.Now().UnixNano()),
+	}
+	info.Timestamp = q.Now().Format(time.RFC3339)
+	return json.Marshal(info)
 }
 
 func (q *CallbackQueue) attempt(ctx context.Context, id int64, url string, payload []byte) error {
