@@ -65,7 +65,7 @@ func (s *EventService) Register(eid, rspServerAddress, eventID string, forwardin
 	// Root SM-DS ignores the forwarding indicator.
 	if s.Role == "alternative" && forwardingIndicator {
 		rec.Cascaded = true
-		rootEventID := newEventID()
+		rootEventID := NewEventID()
 		rec.RootEventID = rootEventID
 		id, err := s.Repo.Insert(rec)
 		if err != nil {
@@ -129,6 +129,7 @@ func (s *EventService) LookupByEventID(eid, eventID string) ([]*store.EventRecor
 	return s.Repo.ListByEIDEventID(eid, eventID)
 }
 
-func newEventID() string {
+// NewEventID returns a fresh "EVT-<token>" event identifier.
+func NewEventID() string {
 	return "EVT-" + randomToken()
 }

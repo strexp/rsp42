@@ -194,22 +194,29 @@ func (h *Handler) writeSAIPVersionErr(w http.ResponseWriter, rej *service.SAIPVe
 }
 
 // errCode derives a stable machine-readable code from the HTTP status when a
-// handler has no more specific one.
+// handler has no more specific one. Every status a handler can produce maps to
+// a named code; there is deliberately no bare "error" code (N7).
 func errCode(status int, msg string) string {
 	switch status {
 	case http.StatusBadRequest:
 		return "invalid_request"
+	case http.StatusUnauthorized:
+		return "unauthorized"
+	case http.StatusForbidden:
+		return "forbidden"
 	case http.StatusNotFound:
 		return "not_found"
 	case http.StatusConflict:
 		return "conflict"
+	case http.StatusUnprocessableEntity:
+		return "unprocessable_entity"
 	case http.StatusNotImplemented:
 		return "not_implemented"
 	default:
 		if status >= 500 {
 			return "internal_error"
 		}
-		return "error"
+		return "request_failed"
 	}
 }
 

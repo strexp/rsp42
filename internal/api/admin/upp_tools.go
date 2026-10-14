@@ -16,16 +16,94 @@ import (
 )
 
 // uppFieldSchema describes one personalizable field for the visual template
-// editor (G7).
+// editor (G7). N4 adds the template-level availability metadata so the editor
+// only offers fields the template can actually bind.
 type uppFieldSchema struct {
 	Name        string   `json:"name"`
 	Type        string   `json:"type"`
 	Required    bool     `json:"required"`
+	Applicable  bool     `json:"applicable"`
+	Targets     []string `json:"targets"`
+	RequiredIn  []string `json:"requiredIn"`
+	Note        string   `json:"note,omitempty"`
 	Description string   `json:"description,omitempty"`
 	Pattern     string   `json:"pattern,omitempty"`
 	MinLength   int      `json:"minLength,omitempty"`
 	MaxLength   int      `json:"maxLength,omitempty"`
 	Enum        []string `json:"enum,omitempty"`
+}
+
+// personalizationTargets maps a field to the template artefacts it binds to:
+// an EF FID as reported by inspection.files[].fid, or a PE name as reported by
+// inspection.elements[].name. A field with no entry applies to any template.
+var personalizationTargets = map[string][]string{
+	"iccid":          {"header", "2FE2"},
+	"imsi":           {"6F07"},
+	"k":              {"akaParameter"},
+	"opc":            {"akaParameter"},
+	"algorithm":      {"akaParameter"},
+	"rotation":       {"akaParameter"},
+	"xoring":         {"akaParameter"},
+	"numberOfKeccak": {"akaParameter"},
+	"pin1":           {"pinCodes"},
+	"adm1":           {"pinCodes"},
+	"adm2":           {"pinCodes"},
+	"puk1":           {"pukCodes"},
+	"spn":            {"6F46"},
+	"plmn":           {"6F60", "6F31", "6F61"},
+	"msisdn":         {"6F40"},
+	"acc":            {"6F78"},
+	"sdKeys":         {"securityDomain"},
+	"mncLen":         {"6FAD"},
+}
+
+// personalizationRequiredIn maps a field to the flows that require a value.
+// The credential-pool flow intentionally does not require an ICCID (it is
+// assigned at download time), which the template-level availability metadata
+// now expresses explicitly instead of overloading `required`.
+var personalizationRequiredIn = map[string][]string{
+	"iccid": {"render"},
+}
+
+// annotateSchema resolves the static field catalog against one template.
+func annotateSchema(ins *service.UPPInspection) []uppFieldSchema {
+	present := map[string]bool{}
+	for _, f := range ins.Files {
+		present[strings.ToUpper(f.FID)] = true
+	}
+	if ins.Elements != nil {
+		for _, e := range ins.Elements {
+			if e.Name != "" {
+				present[e.Name] = true
+			}
+		}
+	}
+	out := make([]uppFieldSchema, 0, len(personalizationSchema))
+	for _, f := range personalizationSchema {
+		f.Applicable = true
+		f.Targets = []string{}
+		f.RequiredIn = []string{}
+		if tg, ok := personalizationTargets[f.Name]; ok && len(tg) > 0 {
+			for _, t := range tg {
+				if present[strings.ToUpper(t)] || present[t] {
+					f.Targets = append(f.Targets, t)
+				}
+			}
+			f.Applicable = len(f.Targets) > 0
+		}
+		if ri, ok := personalizationRequiredIn[f.Name]; ok {
+			f.RequiredIn = ri
+		}
+		f.Required = false
+		for _, flow := range f.RequiredIn {
+			if flow == "render" {
+				f.Required = true
+			}
+		}
+		f.Note = f.Description
+		out = append(out, f)
+	}
+	return out
 }
 
 // personalizationSchema is the field catalog esim42 renders as a dynamic form.
@@ -66,7 +144,7 @@ func (h *Handler) uppSchema(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{
 		"template":   toUPPView(t),
 		"inspection": ins,
-		"fields":     personalizationSchema,
+		"fields":     annotateSchema(ins),
 	})
 }
 
@@ -115,14 +193,12 @@ func (h *Handler) renderUPP(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		Name   string `json:"name"`
 		Tenant string `json:"tenant"`
+		// Data is an alternative to Name: a base64 DER template that is
+		// rendered ad hoc without being stored (N5, for the upload wizard).
+		Data string `json:"data"`
 		persoReq
 	}
 	if !readJSON(w, r, &req) {
-		return
-	}
-	name := req.Name
-	if name == "" {
-		writeErr(w, http.StatusBadRequest, "name is required")
 		return
 	}
 	tenant, err := h.effectiveTenant(r, req.Tenant)
@@ -130,9 +206,31 @@ func (h *Handler) renderUPP(w http.ResponseWriter, r *http.Request) {
 		writeTenantErr(w, err)
 		return
 	}
-	tpl, err := h.UPP.GetForTenant(tenant, name)
-	if err != nil {
-		writeErr(w, http.StatusNotFound, "unknown template "+name)
+	var (
+		raw     []byte
+		tplView *uppView
+	)
+	switch {
+	case req.Name != "" && req.Data != "":
+		writeJSON(w, http.StatusBadRequest, errorBody("invalid_request", "name and data are mutually exclusive"))
+		return
+	case req.Name != "":
+		tpl, err := h.UPP.GetForTenant(tenant, req.Name)
+		if err != nil {
+			writeErr(w, http.StatusNotFound, "unknown template "+req.Name)
+			return
+		}
+		raw = tpl.Bytes
+		v := toUPPView(tpl)
+		tplView = &v
+	case req.Data != "":
+		raw, err = base64.StdEncoding.DecodeString(req.Data)
+		if err != nil {
+			writeErr(w, http.StatusBadRequest, "data must be base64-encoded DER")
+			return
+		}
+	default:
+		writeJSON(w, http.StatusBadRequest, errorBody("invalid_request", "name or data is required"))
 		return
 	}
 	data, err := req.persoReq.toData("")
@@ -140,17 +238,28 @@ func (h *Handler) renderUPP(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	ins, encoded, err := service.RenderUPP(tpl.Bytes, data, &personalization.Engine{})
+	ins, encoded, err := service.RenderUPP(raw, data, &personalization.Engine{})
 	if err != nil {
 		writeJSON(w, http.StatusOK, map[string]any{"rendered": false, "error": err.Error()})
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{
+	// The ad-hoc path never stores anything; the audit subject marks it.
+	subject := req.Name
+	if subject == "" {
+		subject = "<ad-hoc>"
+	}
+	h.audit(r, "renderUPP", subject, "Executed-Success", map[string]any{"bytes": len(encoded)})
+	resp := map[string]any{
 		"rendered":   true,
-		"template":   toUPPView(tpl),
 		"inspection": ins,
 		"bytes":      len(encoded),
-	})
+	}
+	if tplView != nil {
+		resp["template"] = *tplView
+	} else {
+		resp["template"] = map[string]any{"name": "<ad-hoc>"}
+	}
+	writeJSON(w, http.StatusOK, resp)
 }
 
 // cloneUPP derives a tenant template from a global one (G7).

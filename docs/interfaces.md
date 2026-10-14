@@ -189,7 +189,7 @@ at `internal/api/admin/openapi.json`.
 | Tenants | `GET/POST /tenants`, `GET/PATCH/DELETE /tenants/{id}` (quotas, `defaultUpp`, `callbackUrl`; `GET` returns `usage`, `DELETE` refuses with `409 tenant_in_use` unless `?force=true&reassignTo=<tenant\|"">` migrates the resources first — N3) |
 | Profiles | `GET/POST /profiles`, `GET/PATCH/DELETE /profiles/{iccid}`, `POST /profiles/{iccid}/confirm\|cancel\|release`, `POST /profiles/{iccid}/activation-code` (`?rotate=1`), `GET /profiles/{iccid}/timeline` (orders + notifications + sessions + audit), `POST /profiles/bulk`, `GET /profiles/stats` |
 | Download batches | `GET/POST /batches`, `GET/DELETE /batches/{id}`, `GET /batches/{id}/items`, `POST /batches/{id}/confirm\|cancel` |
-| UPP registry | `GET/POST /upp`, `POST /upp/validate`, `POST /upp/render`, `GET/DELETE /upp/{name}`, `GET /upp/{name}/bytes`, `GET /upp/{name}/decoded`, `GET /upp/{name}/schema`, `POST /upp/{name}/activate\|deactivate\|clone\|promote`, `GET /upp/{name}/versions`, `POST /upp/{name}/versions/{id}/restore` |
+| UPP registry | `GET/POST /upp`, `POST /upp/validate` (`valid` + `errors[]`/`warnings[]`), `POST /upp/render` (accepts `name` or an ad-hoc base64 `data`, N5), `GET/DELETE /upp/{name}`, `GET /upp/{name}/bytes`, `GET /upp/{name}/decoded`, `GET /upp/{name}/schema` (per-template `applicable`/`targets[]`/`requiredIn[]`, N4), `POST /upp/{name}/activate\|deactivate\|clone\|promote`, `GET /upp/{name}/versions`, `POST /upp/{name}/versions/{id}/restore` |
 | Personalization | `GET /personalization`, `GET/PUT/DELETE /personalization/{iccid}` (`?reveal=1` includes K/OPc), `POST /personalization/import`, `POST /personalization/pool/import` (IMSI+K/OPc, no ICCID), `GET /personalization/export` |
 | ICCID pool | `GET /iccid-pool`, `GET /iccid-pool/stats`, `POST /iccid-pool/reserve\|release\|block`, `GET/POST /iccid-ranges`, `DELETE /iccid-ranges/{id}` |
 | Export/import | `GET /profiles/export?format=csv\|json`, `POST /profiles/import` (`application/json` or `text/csv`) |
@@ -198,11 +198,14 @@ at `internal/api/admin/openapi.json`.
 | Notifications | `GET /notifications` (`iccid`, `eid`, `from`, `to`, `page`, `size`) |
 | Callback queue | `GET /callbacks` (`state=pending\|sent\|failed\|dead`, `tenant`, `iccid`, `from`/`to`, `page`, `size`; `payload` is a parsed JSON object), `POST /callbacks/{id}/retry`, `POST /callbacks/retry-dead` (`{tenant,before,limit}`) — N2 |
 
-The SM-DS admin listener exposes a read-only `GET /admin/api/v1/events` with
-`eid`, `eventId`, `iccid`, `matchingId`, `tenant`, `status`
+The SM-DS admin listener exposes `GET /admin/api/v1/events` with `eid`,
+`eventId`, `iccid`, `matchingId`, `tenant`, `status`
 (`active|expired|deleted|any`), `from`/`since`, `to`/`until`, `sort`
-(`registered_at|expires_at`, `-` prefix for ascending), `page` and `size`; event
-writes remain the ES12 machine interface.
+(`registered_at|expires_at`, `-` prefix for ascending), `page` and `size`. N8
+adds the write endpoints `POST /events` (an omitted `eventId` is generated as
+`EVT-<token>`; re-use is `409 event_id_in_use`) and `DELETE /events/{id}`
+(soft delete) for the edge cases where ES12 is not usable; the ES12 machine
+interface remains the normal registration path.
 
 ### Tenant scoping and filters
 
@@ -211,8 +214,9 @@ over the query parameter; a non-empty tenant must be registered. Omit `tenant`
 to span all owners; pass an empty value to select the platform default
 (`tenant_id IS NULL`). Profiles additionally accept `state`, `eid`, `iccid`
 (prefix), `externalRef`, `batchId`, `q` (substring), `from`, `to`, `page`,
-`size` and `sort` (`created_at|updated_at|iccid|state|installed_at`, `-` prefix
-for ascending).
+`size` and `sort` (`created_at|updated_at|iccid|state|tenant|installed_at`, `-`
+prefix for ascending). `GET /profiles/stats` also accepts
+`groupBy=state|day|tenant|profile_type` (N7).
 
 ### Quotas
 

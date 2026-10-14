@@ -88,11 +88,13 @@
             "updated_at",
             "iccid",
             "state",
+            "tenant",
             "installed_at",
             "-created_at",
             "-updated_at",
             "-iccid",
             "-state",
+            "-tenant",
             "-installed_at"
           ]
         }
@@ -871,7 +873,8 @@
               "enum": [
                 "state",
                 "day",
-                "tenant"
+                "tenant",
+                "profile_type"
               ]
             }
           }
@@ -2028,6 +2031,102 @@
         "responses": {
           "200": {
             "description": "OK"
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "audit"
+        ],
+        "summary": "Register an SM-DS event through the management API (SM-DS role only; N8). An omitted eventId is generated as EVT-<token>; re-using one is 409 event_id_in_use.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "eid",
+                  "rspServerAddress"
+                ],
+                "properties": {
+                  "eid": {
+                    "type": "string"
+                  },
+                  "eventId": {
+                    "type": "string"
+                  },
+                  "rspServerAddress": {
+                    "type": "string"
+                  },
+                  "callerOid": {
+                    "type": "string"
+                  },
+                  "tenant": {
+                    "type": "string"
+                  },
+                  "iccid": {
+                    "type": "string"
+                  },
+                  "matchingId": {
+                    "type": "string"
+                  },
+                  "forwardingIndicator": {
+                    "type": "boolean"
+                  },
+                  "ttl": {
+                    "type": "string",
+                    "description": "Go duration (e.g. 720h); overrides the SM-DS default event TTL."
+                  },
+                  "expiresAt": {
+                    "type": "string",
+                    "format": "date-time"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Created"
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          },
+          "409": {
+            "description": "event_id_in_use",
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/admin/api/v1/events/{id}": {
+      "parameters": [
+        {
+          "name": "id",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "integer",
+            "format": "int64"
+          }
+        }
+      ],
+      "delete": {
+        "tags": [
+          "audit"
+        ],
+        "summary": "Soft-delete an SM-DS event (SM-DS role only; N8)",
+        "responses": {
+          "204": {
+            "description": "Deleted"
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          },
+          "404": {
+            "$ref": "#/components/responses/Error"
           }
         }
       }

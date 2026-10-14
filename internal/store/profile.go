@@ -214,8 +214,12 @@ func profileOrder(sort string) string {
 		dir, sort = "ASC", sort[1:]
 	}
 	switch sort {
+	// "tenant" sorts by the platform-default-normalised owner so NULL rows
+	// order consistently with the API contract (N7).
 	case "created_at", "updated_at", "iccid", "state", "installed_at":
 		col = sort
+	case "tenant":
+		col = "COALESCE(tenant_id,'')"
 	case "":
 	default:
 		return " ORDER BY created_at DESC"

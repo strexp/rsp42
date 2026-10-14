@@ -36,10 +36,10 @@
 
 ---
 
-### 0.3 第二轮必改项（N 清单：除 N6/N10 范围外，其余待实施）
+### 0.3 第二轮必改项（N 清单：除 N6/N10 范围外、N9 暂不做，其余均已落地）
 
 > 来源：`../esim42/todo/02` §7.2（N1–N17）、`01` §8（N11–N17）、`03` §3.3/§7/§11、`06` §13.1。
-> 第一轮的 G2–G20 已全部落地（见 §9）；下列各项在 rsp42 **均未落地**（**N6/N10 本轮明确不做**，见 §8.4 决策 11 与 §10.3 步骤 2.4），逐条实测结论见 §1bis / §2 / §3 对应的 N 小节与 §9.4。分步实施计划见 §10。
+> 第一轮的 G2–G20 已全部落地（见 §9）。第二轮：**批 1–4 已落地**（§9.4）；**N6/N10 明确不做**（§8.4 决策 11）；**N9 暂不做**（用户决定，§10.5 步骤 4.5）。逐条实测结论见 §1bis / §2 / §3 对应的 N 小节与 §9.4；分步实施计划见 §10。
 
 | # | 改动 | 对应 esim42 需求 | 优先级 |
 |---|---|---|---|
@@ -57,7 +57,7 @@
 | N5 | `/upp/render` 接受未入库模板（`data` base64 DER） | 模块 C 上传向导 | P2 |
 | N7 | 契约补全：`profiles/stats` 的 `groupBy` 补 `profile_type`；`sort` 白名单补 `tenant`；删除 catch-all `error` | 模块 C/D 筛选器与 SDK | P2 |
 | N8 | SM-DS 事件管理写接口 `POST/DELETE /admin/api/v1/events` | 模块 B 边缘场景 | P2 |
-| N9 | HTTP 延迟直方图 `rsp42_admin_http_request_duration_seconds` 等 | SLO 看板 | P2 |
+| N9 | HTTP 延迟直方图 `rsp42_admin_http_request_duration_seconds` 等 | SLO 看板 | **暂不做**（用户决定，见 §10.5 步骤 4.5） |
 | N10 | 密钥端点显式契约：`secret-bearing endpoint` 标注、`Cache-Control: no-store`、审计不记密钥 | 防密钥管道滥用 | **范围外**（随 N6，§10.3 步骤 2.4） |
 | N14 | SGP.22 Annex F 的 `PE-GenericFileManagement` 降级构造 | **esim42 明确范围外**，不预留代码位/开关 | — |
 
@@ -523,7 +523,7 @@
 | N5 | `/upp/render` 支持未入库模板 | 现状强制 `name`（`internal/api/admin/upp_tools.go:98-121`，空则 400），上传向导无法“校验 → 预览 → 保存”。**建议**：请求体接受 `{name,…}` 或 `{data:"<base64 DER>",…}` 二选一；同时给出 → `400 invalid_request`；`data` 路径不得落库，审计 `function=renderUPP, subject="<ad-hoc>"` |
 | N7 | 统计与排序参数的契约补全 | 实测：openapi 中 `profiles/stats` 的 `groupBy` enum = `[state, day, tenant]`，**缺 `profile_type`**（而 `internal/store/stats.go:36-41` **已支持** `profile_type`）；`components.parameters.sort` 的 enum 与白名单（`internal/store/profile.go:217`）**均缺 `tenant`/`-tenant`**；`internal/api/admin/admin.go:181` 仍有 catch-all `"error"` 码。**注**：esim42 称 `/iccid-pool/stats` 未文档化 `tenant`，实测**已列**，该项无需改动 |
 | N8 | SM-DS 事件的管理写接口 | 现仅只读 `GET /events`（`internal/api/admin/ds.go:19`），写入只走 ES12（mTLS + Registered-ID SAN）。**建议**：`POST /events`（`eventId` 省略时生成 `EVT-<…>`；重名 → `409 event_id_in_use`）、`DELETE /events/{id}`；审计 `function=registerEvent`。**不阻塞首期**（首期靠 `ConfirmOrder` 自动注册） |
-| N9 | HTTP 延迟直方图 | `internal/metrics/metrics.go` 无 Histogram 类型，esim42 无法对重查询（`/profiles/export`、`/profiles/{iccid}/timeline`、`/upp/{name}/decoded`）做 SLO。**建议**：`rsp42_admin_http_request_duration_seconds{route,method,status}`（`route` 用 chi 的 pattern 模板，避免高基数）与 `rsp42_es2p_http_request_duration_seconds{function}` |
+| N9 | HTTP 延迟直方图 | **【暂不做】**（用户决定，见 §10.5）：`internal/metrics/metrics.go` 目前无 Histogram 类型，本轮不新增 `rsp42_admin_http_request_duration_seconds` / `rsp42_es2p_http_request_duration_seconds`；SLO 看板暂以现有计数器/仪表与外部探针替代 |
 | N10 | 明文密钥路径的显式契约 | **【不做】**（§8.4 决策 11、§10.3 步骤 2.4）：实测无 `Cache-Control`、`docs/interfaces.md` 未标注；本轮维持现状，不引入 `X-RSP42-Reveal-Secrets` 护栏、`Cache-Control: no-store` 与 secret-bearing 标注，安全边界由 esim42 承担 |
 
 ### 3.2 代码级一致性修复（C 清单，与 N 清单并行）
@@ -681,7 +681,7 @@ esim42 `02` §7.2 与 `06` §13.1 给出的顺序，与第一轮的 M1–M4 **�
 | **批 1（P0）** | **N16 → N12**（同批做 N11 的接口预留：`Version` 集合入参、移除 `major<=0` 回退） | esim42 M2 的硬性退出条件；esim42 M3 的“不服务不适配机群”承诺 |
 | **批 2（P1，防数据丢失/误操作）** | **N2 → N3 → N1**（**N6 范围外**，见 §10.3 步骤 2.4） | 模块 C/E 的回调可靠性、模块 D 的误删防护、模块 E 的增量审计同步 |
 | **批 3（P1，SAIP 能力）** | **N15 → N13 → N17** | 模块 C 的模板上架校验与动态表单、MNO-SD 密钥集 |
-| **批 4（P2）** | **N4 → N5 → N7 → N8 → N9**（**N10 随 N6 范围外**） | 模块 C 的上传向导体验、契约生成与 SLO |
+| **批 4（P2）** | **N4 → N5 → N7 → N8**（**N9 暂不做**、**N10 随 N6 范围外**） | 模块 C 的上传向导体验与契约生成 |
 | **并行（工程化）** | C1–C11（§3.2）与 §3 的文档项 | 契约漂移、错误分支正确性 |
 
 **验收基线**：esim42 侧完成一次端到端（匿名领取 → LPA 下载 → 安装 → 看板可见 → 审计可查 → 取消/回池）的联调，全链路租户归属正确、幂等重放安全；外加 esim42 `02` §9 的 A1–A25（其中 A13–A17 依赖批 3 的 N13/N15/N17）。
@@ -766,7 +766,7 @@ esim42 `02` §7.2 与 `06` §13.1 给出的顺序，与第一轮的 M1–M4 **�
 | esim42 需求（N 编号） | 现状 | 结论 |
 |---|---|---|
 | OpenAPI 契约完整 | 完整 OpenAPI 3.0（`internal/api/admin/openapi.json`，`//go:embed` + 校验测试） | ✅ G10；N7 的 enum 补全待做 |
-| 监控指标 | `internal/metrics` + 管理监听 `GET /metrics` | ✅ G11；N9 的延迟直方图待做 |
+| 监控指标 | `internal/metrics` + 管理监听 `GET /metrics` | ✅ G11；N9 的延迟直方图**暂不做**（§10.5 步骤 4.5） |
 | SAIP 版本上限（N16） | 无（任意版本可入库） | ❌ **P0** |
 | 运行期版本兼容失败（N12） | 回落不校验版本，会把不兼容模板交给 eUICC | ❌ **P0** |
 | 审计单调游标（N1） | `AuditEntry` 无 `id`；只能按时间 + 分页 | ❌ P1 |
@@ -781,7 +781,7 @@ esim42 `02` §7.2 与 `06` §13.1 给出的顺序，与第一轮的 M1–M4 **�
 | `/upp/render` 未入库模板（N5） | 不支持 | ❌ P2 |
 | 统计/排序契约补全（N7） | 部分（`/iccid-pool/stats` 的 `tenant` 已列） | ⚠️ P2 |
 | SM-DS 事件管理写接口（N8） | 只读 | ❌ P2 |
-| HTTP 延迟直方图（N9） | 无 | ❌ P2 |
+| HTTP 延迟直方图（N9） | 无 | 暂不做（用户决定，§10.5） |
 | Annex F 降级构造（N14） | — | 范围外（§0.4） |
 
 ---
@@ -833,7 +833,7 @@ esim42 `02` §7.2 与 `06` §13.1 给出的顺序，与第一轮的 M1–M4 **�
 
 **无。** 文档 §3 的 G13–G18 已全部落地：G13（ACR 调用方侧接线）、G14（MatchingID 轮换）、G15（配额硬校验）、G16（`GET /eids` / CSV 导入）、G18（模板版本与回滚）均已完成；G17 文档已对齐。§9.2 列出的四项为**明确不做**（范围外）。
 
-> ⚠️ 本结论**只覆盖第一轮 G 清单**。第二轮 N 清单：**批 1（N16/N11/N12）、批 2（N2/N3/N1）已落地**（见 §9.4）；**N6/N10 为范围外**（§8.4 决策 11）；**批 3（N15/N13/N17）与批 4（N4/N5/N7/N8/N9）待实施**。§3.2 的 C1–C11 仍待处理（其中 **C1 已定方案**：删除 `pprIds`，见 §10.6）。第二轮的分步实施计划与已收敛决策见 **§10**。
+> ⚠️ 本结论**只覆盖第一轮 G 清单**。第二轮 N 清单：**批 1（N16/N11/N12）、批 2（N2/N3/N1）、批 3（N15/N13/N17）、批 4（N4/N5/N7/N8）均已落地**（见 §9.4）；**N6/N10 为范围外**（§8.4 决策 11）；**N9 暂不做**（用户决定，§10.5）。§3.2 的 C1–C11 仍待处理（其中 **C1 已定方案**：删除 `pprIds`，见 §10.6）。第二轮的分步实施计划与已收敛决策见 **§10**。
 
 ### 9.4 第二轮（N）：实施状态
 
@@ -852,11 +852,11 @@ esim42 `02` §7.2 与 `06` §13.1 给出的顺序，与第一轮的 M1–M4 **�
 | N15 | `ServicesList` 24 项 | `[x]` | `internal/saip/header.go`：补 `dfLink`(19)/`cat-tp`(20)/`get-identity`(21)/`profile-a-x25519`(22)/`profile-b-p256`(23) + `svcMax` 作为 `Services()` 上界；`bertlv` → 规范拼写 `ber-tlv`（对外契约变更，C7）；TUAK-256 修复（按 `PE-AKAParameter` 的 K 长度 16/32 置 `tuak128`/`tuak256`，新增 `AKAKeyLength`）；`internal/saip/services_test.go` |
 | N13 | Annex A/B 模板表 + 约束 + 向量 | `[x]` | `internal/saip/templates.go`（**V2.3.1 Annex B 权威表 = 14 个模板 OID**，`2.23.143.1.2.1`–`.2.14` + spec-version `2.23.143.1.1.2`；无版本化子弧）、`internal/saip/validate.go`（结构/单例/可选顺序/mandatory-services↔PE/AKA↔服务位/identification 唯一/File `doNotCreate`·`fileDescriptor`/GFSTE ⊆ 14 模板且拒绝带版本子弧/非 V2.3.1 PE 带 `mandated` → warning）、`internal/saip/files.go` 修 `Body()` 的 `fillFileOffset`；`service.UPPInspection.Errors` + `/upp/validate`（`valid:false`+`errors[]`）+ `/upp` 拒绝入库（`400 invalid_upp`）；测试 `internal/saip/validate_test.go`（含 TS.48 回归门禁） |
 | N17 | `SdKey*` / `MncLen` | `[x]` | `internal/saip/personalization/personalization.go`：`Data.SdKeys`（`KeyObject` 全字段：keyUsageQualifier/keyAccess/keyIdentifier/keyVersionNumber/keyCounterValue/keyCompontents，含 keyType/keyData/macLength）注入 `PE-SecurityDomain` 的 `keyList[2]`；`Data.MncLen` 写 **EF.AD = FID 6FAD**（TS 31.102 §4.2.23，byte-4 低半字节；**文档原写 6F3A 是 EF.LI，已更正**）；`csv.go` 增 `mnclen`/`sdkeys` 列；`api/admin/personalization.go` 与 `uppFieldSchema` 同步；测试 `personalization_test.go`、`api/admin/upp_version_test.go` |
-| N4 | schema 模板级字段可用性 | `[ ]` | `internal/api/admin/upp_tools.go:20-29` 为全局静态目录 |
-| N5 | `/upp/render` 未入库模板 | `[ ]` | `internal/api/admin/upp_tools.go:98-121` 强制 `name` |
-| N7 | 统计 / 排序契约补全 | `[~]` | `profiles/stats` 的 enum 缺 `profile_type`；`sort` 缺 `tenant`/`-tenant`；catch-all `"error"` 仍在（`internal/api/admin/admin.go:181`）；`/iccid-pool/stats` 的 `tenant` **已列** |
-| N8 | SM-DS 事件管理写接口 | `[ ]` | `internal/api/admin/ds.go:19` 仅只读 |
-| N9 | HTTP 延迟直方图 | `[ ]` | `internal/metrics/metrics.go` 无 Histogram |
+| N4 | schema 模板级字段可用性 | `[x]` | `api/admin/upp_tools.go`：`uppFieldSchema` 增 `applicable`/`targets[]`/`requiredIn[]`/`note`；`annotateSchema` 按 `inspection.files[].fid` 与 `elements[].name` 逐模板解析（`sdKeys`→`securityDomain`、`mncLen`→`6FAD` 等）；`required` 由 `requiredIn` 派生（`iccid` = `["render"]`，与凭据池流程解耦）；测试 `api/admin/upp_schema_test.go` |
+| N5 | `/upp/render` 未入库模板 | `[x]` | `api/admin/upp_tools.go renderUPP`：`{name}` 与 `{data:"<base64 DER>"}` 二选一，二者同给或都缺 → `400 invalid_request`；`data` 路径不落库，审计 `function=renderUPP, subject="<ad-hoc>"`；测试 `api/admin/upp_schema_test.go` |
+| N7 | 统计 / 排序契约补全 | `[x]` | `openapi.json`：`profiles/stats` 的 `groupBy` 补 `profile_type`、共享 `sort` enum 补 `tenant`/`-tenant`；`internal/store/profile.go` 的 `profileOrder` 白名单补 `tenant`（`COALESCE(tenant_id,'')`）；`api/admin/admin.go` 删除 catch-all `"error"` 码（新增 401/403/422 具名码，兜底 `request_failed`）；`/iccid-pool/stats` 的 `tenant` 本已列；测试 `store/profile_test.go`、`api/admin/upp_schema_test.go` |
+| N8 | SM-DS 事件管理写接口 | `[x]` | `api/admin/ds.go`：`MountDS` 改 `DSAdminConfig{Events,Audit,DefaultTTL}`；`POST /events`（省略 `eventId` 生成 `EVT-<…>`；重名 → `409 event_id_in_use`；`ttl`/`expiresAt` 可控，缺省用 `smds.event_ttl`）、`DELETE /events/{id}`（软删）；审计 `registerEvent`/`deleteEvent`；`cli/smds.go` 接线；测试 `api/admin/ds_test.go` |
+| N9 | HTTP 延迟直方图 | `—` | **暂不做**（用户决定，见 §10.5 步骤 4.5）；`internal/metrics` 不新增 Histogram |
 | N10 | 密钥端点显式契约 | `—` | **范围外**（随 N6，§10.3 步骤 2.4）；现状：无 `Cache-Control`、`docs/interfaces.md` 未标注，**本轮不改** |
 | N14 | Annex F 降级构造 | — | **范围外**（§0.4），不预留代码位/开关 |
 
@@ -968,13 +968,13 @@ esim42 `02` §7.2 与 `06` §13.1 给出的顺序，与第一轮的 M1–M4 **�
 - `internal/api/admin/upp_tools.go` 的 `personalizationSchema` 增字段（与 N4 合并解决“目录 ≠ 模板可绑定字段”）；`docs/coverage.md` 同步。
 - **验收**：含 `PE-SecurityDomain` 的模板可注入 SD 密钥集；`EF.AD` 的 MNC 长度可个性化。
 
-### 10.5 批 4（P2）
+### 10.5 批 4（P2）—— N4/N5/N7/N8 已落地；**N9 暂不做**（用户决定）
 
 - **步骤 4.1 — N4**：`/upp/{name}/schema` 的 `fields[]` 增 `applicable`/`targets[]`/`requiredIn[]`/`note`，由 `inspection.files[]/elements[]` 推导；保留 `required`（= `requiredIn` 含 `"render"`）以兼容；解开 `iccid.required=true` 与凭据池流程的冲突。
 - **步骤 4.2 — N5**：`/upp/render` 接受 `{name,…}` 或 `{data:"<base64 DER>",…}` 二选一；同给 → `400 invalid_request`；`data` 路径不落库，审计 `function=renderUPP, subject="<ad-hoc>"`。
 - **步骤 4.3 — N7**：`openapi.json` 的 `profiles/stats` `groupBy` 补 `profile_type`（`store/stats.go` 已支持，仅补文档）；`sort` enum 补 `tenant`/`-tenant` 并同步 `internal/store/profile.go` 的白名单；删除 `admin.go` 的 catch-all `"error"` 码。`/iccid-pool/stats` 的 `tenant` **已列，无需改**。
 - **步骤 4.4 — N8**：`internal/api/admin/ds.go` 增 `POST /events`（省略时生成 `EVT-<…>`；重名 → `409 event_id_in_use`）与 `DELETE /events/{id}`；审计 `function=registerEvent`。
-- **步骤 4.5 — N9**：`internal/metrics` 增 `Histogram` 类型 + `Observe` + 桶渲染；middleware 以 chi `RoutePattern()` 作 `route` 标签（防高基数）：`rsp42_admin_http_request_duration_seconds{route,method,status}` 与 `rsp42_es2p_http_request_duration_seconds{function}`。
+- **步骤 4.5 — N9【暂不做】**（用户决定）：本轮**不**新增 `internal/metrics` 的 Histogram 类型，也不新增 `rsp42_admin_http_request_duration_seconds{route,method,status}` / `rsp42_es2p_http_request_duration_seconds{function}`。SLO 看板暂以现有计数器/仪表与外部探针替代；若将来重启，`route` 标签须用 chi 的 `RoutePattern()` 模板以避免高基数。此提示不构成待办。
 - **N10【不做】**：见步骤 2.4（随 N6 一并范围外）。
 
 ### 10.6 并行：C 清单（代码级一致性）
@@ -1009,6 +1009,7 @@ esim42 `02` §7.2 与 `06` §13.1 给出的顺序，与第一轮的 M1–M4 **�
 | 6 | N16 的校验覆盖面 | 统一 choke point，覆盖 `clone`/`promote`/`restore` + CLI `upp import` |
 | 7 | 密钥端点 reveal 护栏是否覆盖 `GET /personalization?reveal=1` | 若实施则**是**；但 N6/N10 整体**不做**（步骤 2.4），本条随之暂缓 |
 | 8 | N6/N10（监听面收敛 + 密钥导出护栏） | **明确不做**（§8.4 决策 11、步骤 2.4） |
+| 9 | N9（HTTP 延迟直方图） | **暂不做**（用户决定，步骤 4.5）；`/metrics` 保持现有计数器/仪表，不新增 Histogram |
 
 ### 10.9 建议顺序与验收基线
 
@@ -1016,7 +1017,7 @@ esim42 `02` §7.2 与 `06` §13.1 给出的顺序，与第一轮的 M1–M4 **�
 批 0 决策 → ┬─ 批 1（N16 → N11 → N12）      ← esim42 M2 的硬性退出条件
             ├─ 批 2（N2 → N3 → N1）          ← N6 已范围外
             ├─ 批 3（N15 → N13 → N17）
-            └─ 批 4（N4 → N5 → N7 → N8 → N9）← N10 已范围外
+            └─ 批 4（N4 → N5 → N7 → N8）      ← N9 暂不做、N10 已范围外
 并行：C1–C11 与文档同步；每批结束跑 make ci
 ```
 

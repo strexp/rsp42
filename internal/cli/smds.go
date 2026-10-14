@@ -113,7 +113,9 @@ func cmdSMDS(prog string, args []string) int {
 	}
 	admin, err := buildServer(log, "admin", cfg.SMDS.Server.Bind, cfg.SMDS.Server.Admin,
 		api.NewAdminRouter(log, func() bool { return true }, func(r chi.Router) {
-			adminapi.MountDS(r, st.Events)
+			adminapi.MountDS(r, adminapi.DSAdminConfig{
+				Events: st.Events, Audit: st.Audit, DefaultTTL: cfg.SMDS.EventTTL.Duration(),
+			})
 			r.Get("/metrics", metrics.Handler(reg, eventCollector(st.Events)))
 		}, apiOpts))
 	if err != nil {
