@@ -75,10 +75,34 @@ func TestIntRoundTrip(t *testing.T) {
 
 func TestOIDRoundTrip(t *testing.T) {
 	for _, oid := range []string{"2.23.146.1.2.1.4", "2.999.10", "1.2.840.113549.1.1.11", "2.23.146.1.2.2.0"} {
-		enc := EncodeOID(oid)
+		enc, err := EncodeOID(oid)
+		require.NoError(t, err)
 		got, err := DecodeOID(enc)
 		require.NoError(t, err)
 		require.Equal(t, oid, got)
+	}
+}
+
+// TestEncodeOIDRejectsInvalid covers the X.690 §8.19 arc rules and the
+// uint64 range: these inputs used to panic, so a configuration typo could
+// abort the process instead of failing validation.
+func TestEncodeOIDRejectsInvalid(t *testing.T) {
+	for _, oid := range []string{
+		"",                         // no components
+		"2",                        // one component
+		"3.1",                      // first arc > 2
+		"0.40",                     // second arc > 39 with first arc < 2
+		"1.40.1",                   // second arc > 39 with first arc < 2
+		"2.",                       // empty trailing component
+		".1",                       // empty leading component
+		"1.a",                      // non-numeric
+		"1.-1",                     // negative
+		"1. 2",                     // whitespace is not allowed
+		"2.18446744073709551615",   // first two arcs overflow uint64
+		"1.2.99999999999999999999", // arc beyond uint64
+	} {
+		_, err := EncodeOID(oid)
+		require.Error(t, err, "EncodeOID(%q) should fail", oid)
 	}
 }
 

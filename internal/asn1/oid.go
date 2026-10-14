@@ -2,29 +2,58 @@ package asn1
 
 import (
 	"fmt"
+	"math"
 	"strconv"
 	"strings"
 )
 
 // EncodeOID encodes a dotted OBJECT IDENTIFIER string into DER content bytes.
-func EncodeOID(oid string) []byte {
+//
+// It returns an error (never panics) so that an operator-supplied OID cannot
+// abort the process. The rules mirror X.690 §8.19: at least two arcs, the
+// first arc 0, 1 or 2, and a second arc of 40 or more only when the first arc
+// is 2. Every arc must be a non-negative decimal integer that fits in uint64.
+func EncodeOID(oid string) ([]byte, error) {
 	parts := strings.Split(oid, ".")
 	if len(parts) < 2 {
-		panic("asn1: OID needs at least two components: " + oid)
+		return nil, fmt.Errorf("asn1: OID %q needs at least two components", oid)
 	}
 	nums := make([]uint64, len(parts))
 	for i, p := range parts {
+		if p == "" {
+			return nil, fmt.Errorf("asn1: OID %q has an empty component", oid)
+		}
 		n, err := strconv.ParseUint(p, 10, 64)
 		if err != nil {
-			panic("asn1: invalid OID component " + p)
+			return nil, fmt.Errorf("asn1: OID %q component %q is not a uint64: %w", oid, p, err)
 		}
 		nums[i] = n
+	}
+	if nums[0] > 2 {
+		return nil, fmt.Errorf("asn1: OID %q first arc must be 0, 1 or 2, got %d", oid, nums[0])
+	}
+	if nums[0] < 2 && nums[1] > 39 {
+		return nil, fmt.Errorf("asn1: OID %q second arc must be <= 39 when the first arc is %d, got %d", oid, nums[0], nums[1])
+	}
+	if nums[0] == 2 && nums[1] > math.MaxUint64-80 {
+		return nil, fmt.Errorf("asn1: OID %q first two arcs overflow", oid)
 	}
 	out := encodeOIDComponent(nums[0]*40 + nums[1])
 	for _, n := range nums[2:] {
 		out = append(out, encodeOIDComponent(n)...)
 	}
-	return out
+	return out, nil
+}
+
+// MustEncodeOID is EncodeOID for compile-time-constant OID literals. It panics
+// on an invalid literal, which can only be a programming error; dynamic input
+// must use EncodeOID.
+func MustEncodeOID(oid string) []byte {
+	b, err := EncodeOID(oid)
+	if err != nil {
+		panic(err)
+	}
+	return b
 }
 
 func encodeOIDComponent(n uint64) []byte {

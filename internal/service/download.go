@@ -152,7 +152,10 @@ func (c *CMAE) buildBPP(eid string, transactionID, smdpOtpk, smdpOtSK, euiccOtpk
 	}
 	iscr.SmdpSign = sign
 
-	configureISDP := (&rsp.ConfigureISDPRequest{DpOID: c.Cfg.OID}).Encode()
+	configureISDP, err := (&rsp.ConfigureISDPRequest{DpOID: c.Cfg.OID}).Encode()
+	if err != nil {
+		return nil, fmt.Errorf("configureISDP: %w", err)
+	}
 	storeMeta, err := c.buildStoreMetadata(profile)
 	if err != nil {
 		return nil, err

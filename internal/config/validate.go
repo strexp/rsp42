@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"rsp42/internal/asn1"
 	"rsp42/internal/rsp"
 )
 
@@ -303,17 +304,12 @@ func dirExists(p string) bool {
 	return err == nil && st.IsDir()
 }
 
+// validateOID checks that s is a valid dotted OBJECT IDENTIFIER. It delegates
+// to asn1.EncodeOID so that configuration validation and DER encoding share one
+// rule: anything that passes here is guaranteed to encode without error.
 func validateOID(s string) error {
-	parts := strings.Split(s, ".")
-	for _, p := range parts {
-		if p == "" {
-			return fmt.Errorf("empty component in OID %q", s)
-		}
-		for _, r := range p {
-			if r < '0' || r > '9' {
-				return fmt.Errorf("non-numeric component %q in OID %q", p, s)
-			}
-		}
+	if _, err := asn1.EncodeOID(s); err != nil {
+		return err
 	}
 	return nil
 }

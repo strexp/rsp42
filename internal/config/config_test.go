@@ -68,9 +68,18 @@ func TestValidateRejectsBadConfig(t *testing.T) {
 
 func TestValidateOID(t *testing.T) {
 	require.NoError(t, validateOID("2.999.10"))
+	require.NoError(t, validateOID("2.23.146.1.3.1.1"))
+	require.NoError(t, validateOID("1.2.840.113549.1.1.11"))
 	require.Error(t, validateOID("2..10"))
 	require.Error(t, validateOID("2.abc"))
 	require.Error(t, validateOID(""))
+	// These used to pass validation and then panic in asn1.EncodeOID during
+	// BPP generation (see docs/refactoring-plan.md 阶段 1.1).
+	require.Error(t, validateOID("2"), "single arc must be rejected")
+	require.Error(t, validateOID("9.1.2"), "first arc must be 0, 1 or 2")
+	require.Error(t, validateOID("1.40.1"), "second arc must be <= 39 when the first arc is < 2")
+	require.Error(t, validateOID("2.18446744073709551615"), "first two arcs must fit in uint64")
+	require.Error(t, validateOID("1.2.99999999999999999999"), "arc must fit in uint64")
 }
 
 func TestKEKValidation(t *testing.T) {

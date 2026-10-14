@@ -118,9 +118,6 @@ func BitString(unused uint8, bits []byte) *Builder {
 	return bertlv.NewValue(TagBitString, value)
 }
 
-// OID builds an OBJECT IDENTIFIER from its dotted string form.
-func OID(oid string) *Builder { return bertlv.NewValue(TagOID, EncodeOID(oid)) }
-
 // Sequence wraps children in a UNIVERSAL SEQUENCE and returns the encoded bytes.
 func Marshal(t *Builder) []byte {
 	b, err := t.MarshalBinary()

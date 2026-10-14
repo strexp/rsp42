@@ -71,13 +71,19 @@ type ConfigureISDPRequest struct {
 	DpOID string // when empty, an empty BF24 is encoded
 }
 
-// Encode returns the BF24 encoding of the request.
-func (r *ConfigureISDPRequest) Encode() []byte {
+// Encode returns the BF24 encoding of the request. It reports an error when
+// DpOID is not a valid dotted OBJECT IDENTIFIER (X.690 §8.19) instead of
+// panicking, because the value comes from configuration.
+func (r *ConfigureISDPRequest) Encode() ([]byte, error) {
 	if r.DpOID == "" {
-		return asn1.Marshal(asn1.New(asn1.Ctx(36, true)))
+		return asn1.Marshal(asn1.New(asn1.Ctx(36, true))), nil
 	}
-	prop := asn1.New(asn1.Ctx(24, true), asn1.Prim(asn1.Ctx(0, false), asn1.EncodeOID(r.DpOID)))
-	return asn1.Marshal(asn1.New(asn1.Ctx(36, true), prop))
+	oid, err := asn1.EncodeOID(r.DpOID)
+	if err != nil {
+		return nil, err
+	}
+	prop := asn1.New(asn1.Ctx(24, true), asn1.Prim(asn1.Ctx(0, false), oid))
+	return asn1.Marshal(asn1.New(asn1.Ctx(36, true), prop)), nil
 }
 
 // StoreMetadataRequest ------------------------------------------------------
@@ -164,9 +170,14 @@ func (r *StoreMetadataRequest) Encode() []byte {
 // serviceSpecificDataNotStoredInEuicc (BF23) element to embed in
 // StoreMetadataRequest.ServiceSpecificData.
 
+// acrOID is the SGP.22 §4.9.2 vendor extension OID (BF23 serviceSpecificData).
+// It is a compile-time constant, so a bad literal is a programming error caught
+// by TestACROIDLiteral.
+var acrOID = asn1.MustEncodeOID("2.23.146.1.3.1.1")
+
 func acrVendorExtension(inner []byte) []byte {
 	entry := tlvBytes([]byte{0x30}, concat(
-		tlvBytes(asn1.Ctx(0, false), asn1.EncodeOID("2.23.146.1.3.1.1")),
+		tlvBytes(asn1.Ctx(0, false), acrOID),
 		tlvBytes(asn1.Ctx(1, true), inner),
 	))
 	return tlvBytes(asn1.Ctx(35, true), entry)

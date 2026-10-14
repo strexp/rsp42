@@ -77,8 +77,28 @@ func TestEncodeInitialiseSecureChannelRequest(t *testing.T) {
 func TestEncodeConfigureISDPRequest(t *testing.T) {
 	r := &ConfigureISDPRequest{DpOID: "2.999.10"}
 	// Value captured from asn1tools.
-	hexEq(t, "bf2407b805800388370a", r.Encode())
-	hexEq(t, "bf2400", (&ConfigureISDPRequest{}).Encode())
+	got, err := r.Encode()
+	require.NoError(t, err)
+	hexEq(t, "bf2407b805800388370a", got)
+	empty, err := (&ConfigureISDPRequest{}).Encode()
+	require.NoError(t, err)
+	hexEq(t, "bf2400", empty)
+}
+
+// TestEncodeConfigureISDPRequestRejectsBadOID pins the contract that a bad
+// configured OID surfaces as an error instead of a panic.
+func TestEncodeConfigureISDPRequestRejectsBadOID(t *testing.T) {
+	_, err := (&ConfigureISDPRequest{DpOID: "2"}).Encode()
+	require.Error(t, err)
+}
+
+// TestACROIDLiteral guards the compile-time OID constant used by the ACR
+// vendor extension.
+func TestACROIDLiteral(t *testing.T) {
+	require.NotEmpty(t, acrOID)
+	got, err := asn1.DecodeOID(acrOID)
+	require.NoError(t, err)
+	require.Equal(t, "2.23.146.1.3.1.1", got)
 }
 
 func TestEncodeStoreMetadataRequest(t *testing.T) {
