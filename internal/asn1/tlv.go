@@ -1,6 +1,7 @@
 package asn1
 
 import (
+	"bytes"
 	"errors"
 	"fmt"
 )
@@ -74,7 +75,7 @@ func (t TLV) Find(tag []byte) (TLV, bool) {
 		return TLV{}, false
 	}
 	for _, k := range kids {
-		if bytesEqual(k.Tag, tag) {
+		if bytes.Equal(k.Tag, tag) {
 			return k, true
 		}
 	}
@@ -89,7 +90,7 @@ func (t TLV) FindAll(tag []byte) []TLV {
 	}
 	var out []TLV
 	for _, k := range kids {
-		if bytesEqual(k.Tag, tag) {
+		if bytes.Equal(k.Tag, tag) {
 			out = append(out, k)
 		}
 	}
@@ -178,16 +179,4 @@ func EncodeLength(n int) []byte {
 	default:
 		return []byte{0x84, byte(n >> 24), byte(n >> 16), byte(n >> 8), byte(n)}
 	}
-}
-
-func bytesEqual(a, b []byte) bool {
-	if len(a) != len(b) {
-		return false
-	}
-	for i := range a {
-		if a[i] != b[i] {
-			return false
-		}
-	}
-	return true
 }

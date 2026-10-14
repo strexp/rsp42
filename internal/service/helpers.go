@@ -21,8 +21,6 @@ func ecdsaKey(s crypto.Signer) (*ecdsa.PrivateKey, error) {
 	return k, nil
 }
 
-func equalBytes(a, b []byte) bool { return bytes.Equal(a, b) }
-
 // parseCertificates parses a list of DER certificates, returning an error if any
 // entry is not a valid certificate.
 func parseCertificates(ders [][]byte) ([]*x509.Certificate, error) {

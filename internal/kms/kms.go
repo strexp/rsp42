@@ -1,5 +1,3 @@
-// Package kms defines the key management abstraction used to load signing keys
-// and to encrypt sensitive material before it is persisted.
 package kms
 
 import "crypto"

@@ -1,6 +1,7 @@
 package service
 
 import (
+	"bytes"
 	"context"
 	stdcrypto "crypto"
 	"crypto/ecdsa"
@@ -68,7 +69,7 @@ func (c *CMAE) GetBoundProfilePackage(transactionID string, prepareDownloadRespo
 
 	if profile.CCRequired {
 		expected := confirmationHash(profile.CCHash, txn)
-		if !equalBytes(expected, ok.EuiccSigned2.HashCc) {
+		if !bytes.Equal(expected, ok.EuiccSigned2.HashCc) {
 			c.recordConfirmationFailure(profile)
 			c.notify(context.Background(), progressFor(profile, sess.EID, 2, "Failed"))
 			return nil, rsp.CodeConfirmationCode.Status("Confirmation code invalid")

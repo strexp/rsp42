@@ -1,6 +1,8 @@
 package saip
 
 import (
+	"bytes"
+	"encoding/hex"
 	"fmt"
 	"strings"
 
@@ -227,7 +229,7 @@ func (s *Sequence) ValidateV231() *Validation {
 
 	// --- non-baseline PEs --------------------------------------------------
 	for _, e := range s.Elements {
-		name, known := nonBaselinePEs[tagHex(e.Tag)]
+		name, known := nonBaselinePEs[hex.EncodeToString(e.Tag)]
 		if !known {
 			continue
 		}
@@ -247,9 +249,9 @@ func validateFileEntry(v *Validation, pe string, idx int, entry *asn1.Node) {
 	descIdx, descCount, hasDoNotCreate := -1, 0, false
 	for i, c := range entry.Children {
 		switch {
-		case bytesEq(c.Tag, tagDoNotCreate):
+		case bytes.Equal(c.Tag, tagDoNotCreate):
 			hasDoNotCreate = true
-		case bytesEq(c.Tag, tagFcp):
+		case bytes.Equal(c.Tag, tagFcp):
 			descCount++
 			if descIdx < 0 {
 				descIdx = i
@@ -297,7 +299,7 @@ func isFileField(n *asn1.Node) bool {
 	if n.Find(tagFcp) != nil {
 		return true
 	}
-	return len(n.Children) == 1 && bytesEq(n.Children[0].Tag, tagDoNotCreate)
+	return len(n.Children) == 1 && bytes.Equal(n.Children[0].Tag, tagDoNotCreate)
 }
 
 // peLabel renders a PE name for an error message.

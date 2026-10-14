@@ -1,6 +1,7 @@
 package rsp
 
 import (
+	"encoding/hex"
 	"fmt"
 
 	"rsp42/internal/asn1"
@@ -63,14 +64,14 @@ func DecodeRemoteProfileProvisioningRequest(raw []byte) (ASN1Function, []byte, e
 	if err != nil {
 		return 0, nil, err
 	}
-	if hexTag(t.Tag) != "a2" {
+	if hex.EncodeToString(t.Tag) != "a2" {
 		return 0, nil, fmt.Errorf("rsp: RemoteProfileProvisioningRequest unexpected tag %X", t.Tag)
 	}
 	inner, ok := t.First()
 	if !ok {
 		return 0, nil, fmt.Errorf("rsp: RemoteProfileProvisioningRequest is empty")
 	}
-	fn, ok := functionForTag(hexTag(inner.Tag))
+	fn, ok := functionForTag(hex.EncodeToString(inner.Tag))
 	if !ok {
 		return 0, nil, fmt.Errorf("rsp: unknown ASN.1 binding function tag %X", inner.Tag)
 	}
@@ -99,7 +100,7 @@ func DecodeInitiateAuthenticationRequest(raw []byte) (*InitiateAuthenticationReq
 	if err != nil {
 		return nil, err
 	}
-	if hexTag(t.Tag) != "bf39" {
+	if hex.EncodeToString(t.Tag) != "bf39" {
 		return nil, fmt.Errorf("rsp: InitiateAuthenticationRequest unexpected tag %X", t.Tag)
 	}
 	req := &InitiateAuthenticationRequest{
@@ -142,7 +143,7 @@ func PendingNotificationFromHandleNotification(raw []byte) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	if hexTag(t.Tag) != "bf3d" {
+	if hex.EncodeToString(t.Tag) != "bf3d" {
 		return nil, fmt.Errorf("rsp: HandleNotification unexpected tag %X", t.Tag)
 	}
 	if p, ok := t.First(); ok {

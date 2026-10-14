@@ -49,12 +49,6 @@ var templateByOID = func() map[string]Template {
 	return m
 }()
 
-// TemplateForOID returns the V2.3.1 template with the given dotted OID.
-func TemplateForOID(oid string) (Template, bool) {
-	t, ok := templateByOID[oid]
-	return t, ok
-}
-
 // IsTemplateOID reports whether oid is one of the V2.3.1 file-system templates.
 func IsTemplateOID(oid string) bool {
 	_, ok := templateByOID[oid]

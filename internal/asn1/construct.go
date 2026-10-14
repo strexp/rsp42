@@ -13,9 +13,6 @@ var (
 	TagInteger    = encodeTag(0, 0, 2)
 	TagBitString  = encodeTag(0, 0, 3)
 	TagOctetStr   = encodeTag(0, 0, 4)
-	TagNull       = encodeTag(0, 0, 5)
-	TagOID        = encodeTag(0, 0, 6)
-	TagEnumerated = encodeTag(0, 0, 10)
 	TagUTF8String = encodeTag(0, 0, 12)
 	TagSequence   = encodeTag(0, 1, 16)
 )
@@ -88,9 +85,6 @@ func Prim(tag bertlv.Tag, value []byte) *Builder { return bertlv.NewValue(tag, v
 // Octet builds an OCTET STRING.
 func Octet(b []byte) *Builder { return bertlv.NewValue(TagOctetStr, b) }
 
-// Null builds a NULL.
-func Null() *Builder { return bertlv.NewValue(TagNull, nil) }
-
 // Bool builds a BOOLEAN.
 func Bool(v bool) *Builder {
 	if v {
@@ -107,9 +101,6 @@ func Int(v int64) *Builder { return bertlv.NewValue(TagInteger, encodeInt(v)) }
 
 // IntBytes returns the minimal two's-complement content of an INTEGER value.
 func IntBytes(v int64) []byte { return encodeInt(v) }
-
-// Enumerated builds an ENUMERATED.
-func Enumerated(v int64) *Builder { return bertlv.NewValue(TagEnumerated, encodeInt(v)) }
 
 // BitString builds a BIT STRING. bits is the value with trailing bits already
 // zeroed; unused is the number of unused trailing bits (0..7).

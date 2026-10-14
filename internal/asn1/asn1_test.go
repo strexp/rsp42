@@ -143,7 +143,7 @@ func TestEncodeLengthBoundaries(t *testing.T) {
 }
 
 func TestSeqUnmarshal(t *testing.T) {
-	msg := Seq(Int(5), Bool(true), UTF8("abc"), Null())
+	msg := Seq(Int(5), Bool(true), UTF8("abc"), Octet(nil))
 	wire := Marshal(msg)
 	parsed, _, err := ReadTLV(wire)
 	require.NoError(t, err)

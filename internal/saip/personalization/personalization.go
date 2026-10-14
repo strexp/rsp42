@@ -1,6 +1,7 @@
 package personalization
 
 import (
+	"bytes"
 	"encoding/hex"
 	"fmt"
 	"strings"
@@ -243,7 +244,7 @@ func applySdKeys(seq *saip.Sequence, keys []SdKey) error {
 	// (an untagged SEQUENCE). ApplicationInstance ([1]) starts with an
 	// APPLICATION 15 AID instead.
 	for _, c := range pe.Children {
-		if len(c.Children) > 0 && bytesEq(c.Children[0].Tag, tagSequence) {
+		if len(c.Children) > 0 && bytes.Equal(c.Children[0].Tag, tagSequence) {
 			c.Children = keyObjects
 			return nil
 		}
@@ -252,7 +253,7 @@ func applySdKeys(seq *saip.Sequence, keys []SdKey) error {
 	list := asn1.NewConstructed(tagKeyList, keyObjects...)
 	idx := len(pe.Children)
 	for i, c := range pe.Children {
-		if len(c.Children) > 0 && bytesEq(c.Children[0].Tag, tagAppAID) {
+		if len(c.Children) > 0 && bytes.Equal(c.Children[0].Tag, tagAppAID) {
 			idx = i + 1
 			break
 		}
@@ -566,7 +567,7 @@ func applyPinLike(seq *saip.Sequence, peTag []byte, ref byte, value string, valu
 			continue
 		}
 		entries := container.Children
-		if len(entries) == 1 && bytesEq(entries[0].Tag, asn1.Ctx(0, true)) {
+		if len(entries) == 1 && bytes.Equal(entries[0].Tag, asn1.Ctx(0, true)) {
 			entries = entries[0].Children
 		}
 		for _, entry := range entries {
@@ -624,16 +625,4 @@ func checkHex(c byte) error {
 		return nil
 	}
 	return fmt.Errorf("personalization: non-hex ICCID digit %q", c)
-}
-
-func bytesEq(a, b []byte) bool {
-	if len(a) != len(b) {
-		return false
-	}
-	for i := range a {
-		if a[i] != b[i] {
-			return false
-		}
-	}
-	return true
 }

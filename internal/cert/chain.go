@@ -1,5 +1,3 @@
-// Package cert loads and validates SGP.26 (or private CA) certificate chains
-// and exposes role-based certificates and keys to the rest of the project.
 package cert
 
 import (

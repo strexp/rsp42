@@ -1,6 +1,7 @@
 package saip
 
 import (
+	"bytes"
 	"fmt"
 
 	"rsp42/internal/asn1"
@@ -64,9 +65,9 @@ func (f *FileHandle) Body() []byte {
 	pos := 0
 	for _, c := range f.Entry.Children {
 		switch {
-		case bytesEq(c.Tag, tagFileOffset):
+		case bytes.Equal(c.Tag, tagFileOffset):
 			pos = uintFromBytes(c.Value)
-		case bytesEq(c.Tag, tagFileContent):
+		case bytes.Equal(c.Tag, tagFileContent):
 			if pos > len(out) {
 				out = append(out, make([]byte, pos-len(out))...)
 			}
@@ -95,7 +96,7 @@ func uintFromBytes(b []byte) int {
 func (f *FileHandle) SetBody(body []byte) {
 	kept := f.Entry.Children[:0]
 	for _, c := range f.Entry.Children {
-		if bytesEq(c.Tag, tagFileContent) || bytesEq(c.Tag, tagFileOffset) {
+		if bytes.Equal(c.Tag, tagFileContent) || bytes.Equal(c.Tag, tagFileOffset) {
 			continue
 		}
 		kept = append(kept, c)

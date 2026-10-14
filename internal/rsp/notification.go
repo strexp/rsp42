@@ -1,6 +1,7 @@
 package rsp
 
 import (
+	"encoding/hex"
 	"fmt"
 
 	"rsp42/internal/asn1"
@@ -79,7 +80,7 @@ func DecodeProfileInstallationResult(raw []byte) (*ProfileInstallationResult, er
 	if err != nil {
 		return nil, err
 	}
-	if hexTag(t.Tag) != "bf37" {
+	if hex.EncodeToString(t.Tag) != "bf37" {
 		return nil, fmt.Errorf("rsp: ProfileInstallationResult unexpected tag %X", t.Tag)
 	}
 	out := &ProfileInstallationResult{EuiccSign: childBytes(t, asn1.App(55, false))}
@@ -181,7 +182,7 @@ func DecodePendingNotification(raw []byte) (*PendingNotification, error) {
 		}
 		return DecodePendingNotification(inner.Raw)
 	}
-	switch hexTag(t.Tag) {
+	switch hex.EncodeToString(t.Tag) {
 	case "bf37":
 		out.InstallationResult, err = DecodeProfileInstallationResult(t.Raw)
 		return out, err
@@ -206,7 +207,7 @@ func DecodeHandleNotification(raw []byte) (*HandleNotification, error) {
 	if err != nil {
 		return nil, err
 	}
-	if hexTag(t.Tag) != "bf3d" {
+	if hex.EncodeToString(t.Tag) != "bf3d" {
 		return nil, fmt.Errorf("rsp: HandleNotification unexpected tag %X", t.Tag)
 	}
 	child, ok := firstChild(t)

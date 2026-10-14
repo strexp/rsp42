@@ -1,6 +1,7 @@
 package service
 
 import (
+	"bytes"
 	stdcrypto "crypto"
 	"crypto/ecdsa"
 	"crypto/rand"
@@ -250,7 +251,7 @@ func (c *cmaeCore) verify(transactionID string, authenticateServerResponse []byt
 	if !strings.EqualFold(hex.EncodeToString(signed1.TransactionID), transactionID) {
 		return nil, cmErr(cmTxnMismatch, "transactionId mismatch")
 	}
-	if !equalBytes(signed1.ServerChallenge, sess.ServerChallenge) {
+	if !bytes.Equal(signed1.ServerChallenge, sess.ServerChallenge) {
 		return nil, cmErr(cmChallengeMismatch, "serverChallenge mismatch")
 	}
 

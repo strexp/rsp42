@@ -1,6 +1,7 @@
 package rsp
 
 import (
+	"encoding/hex"
 	"fmt"
 
 	"rsp42/internal/asn1"
@@ -28,7 +29,7 @@ func DecodeCancelSessionResponse(raw []byte) (*CancelSessionResponseOk, int64, e
 	if err != nil {
 		return nil, 0, err
 	}
-	if hexTag(t.Tag) != "bf41" {
+	if hex.EncodeToString(t.Tag) != "bf41" {
 		return nil, 0, fmt.Errorf("rsp: CancelSessionResponse unexpected tag %X", t.Tag)
 	}
 	if ok, found := t.Find(asn1.Ctx(0, true)); found {
@@ -91,7 +92,7 @@ func DecodeCancelSessionRequestEs9(raw []byte) (*CancelSessionRequestEs9, error)
 	if err != nil {
 		return nil, err
 	}
-	if hexTag(t.Tag) != "bf41" {
+	if hex.EncodeToString(t.Tag) != "bf41" {
 		return nil, fmt.Errorf("rsp: CancelSessionRequestEs9 unexpected tag %X", t.Tag)
 	}
 	out := &CancelSessionRequestEs9{TransactionID: childBytes(t, asn1.Ctx(0, false))}

@@ -1,4 +1,3 @@
-// Package audit implements structured audit logging with db/file sinks.
 package audit
 
 import (

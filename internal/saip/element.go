@@ -1,6 +1,7 @@
 package saip
 
 import (
+	"bytes"
 	"fmt"
 
 	"rsp42/internal/asn1"
@@ -72,7 +73,7 @@ func (s *Sequence) Encode() []byte {
 // Find returns the first PE with the given tag.
 func (s *Sequence) Find(tag []byte) *asn1.Node {
 	for _, e := range s.Elements {
-		if bytesEq(e.Tag, tag) {
+		if bytes.Equal(e.Tag, tag) {
 			return e
 		}
 	}
@@ -83,7 +84,7 @@ func (s *Sequence) Find(tag []byte) *asn1.Node {
 func (s *Sequence) FindAll(tag []byte) []*asn1.Node {
 	var out []*asn1.Node
 	for _, e := range s.Elements {
-		if bytesEq(e.Tag, tag) {
+		if bytes.Equal(e.Tag, tag) {
 			out = append(out, e)
 		}
 	}
@@ -93,21 +94,9 @@ func (s *Sequence) FindAll(tag []byte) []*asn1.Node {
 // Header returns the ProfileHeader PE.
 func (s *Sequence) Header() *asn1.Node { return s.Find(TagHeader) }
 
-func bytesEq(a, b []byte) bool {
-	if len(a) != len(b) {
-		return false
-	}
-	for i := range a {
-		if a[i] != b[i] {
-			return false
-		}
-	}
-	return true
-}
-
 func isFileBearing(tag []byte) bool {
 	for _, t := range fileBearingTags {
-		if bytesEq(t, tag) {
+		if bytes.Equal(t, tag) {
 			return true
 		}
 	}

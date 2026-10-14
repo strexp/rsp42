@@ -1,6 +1,6 @@
 package asn1
 
-import "fmt"
+import "bytes"
 
 // Node is a mutable BER-TLV tree used when a structure must be edited and
 // re-encoded (e.g. SAIP ProfileElements). Unlike TLV it owns its bytes and can
@@ -72,7 +72,7 @@ func (n *Node) Encode() []byte {
 // Find returns the first child with the given tag.
 func (n *Node) Find(tag []byte) *Node {
 	for _, c := range n.Children {
-		if bytesEqual(c.Tag, tag) {
+		if bytes.Equal(c.Tag, tag) {
 			return c
 		}
 	}
@@ -83,7 +83,7 @@ func (n *Node) Find(tag []byte) *Node {
 func (n *Node) FindAll(tag []byte) []*Node {
 	var out []*Node
 	for _, c := range n.Children {
-		if bytesEqual(c.Tag, tag) {
+		if bytes.Equal(c.Tag, tag) {
 			out = append(out, c)
 		}
 	}
@@ -94,7 +94,7 @@ func (n *Node) FindAll(tag []byte) []*Node {
 func (n *Node) RemoveAll(tag []byte) {
 	kept := n.Children[:0]
 	for _, c := range n.Children {
-		if !bytesEqual(c.Tag, tag) {
+		if !bytes.Equal(c.Tag, tag) {
 			kept = append(kept, c)
 		}
 	}
@@ -115,13 +115,4 @@ func NewPrimitive(tag, value []byte) *Node {
 // NewConstructed builds a constructed node.
 func NewConstructed(tag []byte, children ...*Node) *Node {
 	return &Node{Tag: append([]byte(nil), tag...), Constructed: true, Children: children}
-}
-
-// MustParseNode panics on parse errors; for tests and constant data.
-func MustParseNode(b []byte) *Node {
-	n, _, err := ParseNode(b)
-	if err != nil {
-		panic(fmt.Sprintf("asn1: %v", err))
-	}
-	return n
 }

@@ -2,6 +2,7 @@ package saip
 
 import (
 	"bytes"
+	"encoding/hex"
 	"fmt"
 	"sort"
 
@@ -37,7 +38,7 @@ type Header struct {
 
 // ParseHeader decodes the ProfileHeader PE.
 func ParseHeader(pe *asn1.Node) (*Header, error) {
-	if pe == nil || !bytesEq(pe.Tag, TagHeader) {
+	if pe == nil || !bytes.Equal(pe.Tag, TagHeader) {
 		return nil, fmt.Errorf("saip: not a ProfileHeader PE")
 	}
 	h := &Header{Node: pe}
@@ -183,7 +184,7 @@ var templatePETags = [][]byte{
 
 func isTemplatePE(tag []byte) bool {
 	for _, t := range templatePETags {
-		if bytesEq(t, tag) {
+		if bytes.Equal(t, tag) {
 			return true
 		}
 	}
@@ -230,7 +231,7 @@ func (s *Sequence) RebuildMandatoryGFSTEList() error {
 	idx := -1
 	kept := make([]*asn1.Node, 0, len(hd.Children))
 	for i, c := range hd.Children {
-		if bytesEq(c.Tag, hdrGFSTE) {
+		if bytes.Equal(c.Tag, hdrGFSTE) {
 			if idx < 0 {
 				idx = i
 			}
@@ -285,7 +286,7 @@ func (h *Header) GFSTEList() []string {
 	}
 	var out []string
 	for _, c := range node.Children {
-		if bytesEq(c.Tag, tagOID) {
+		if bytes.Equal(c.Tag, tagOID) {
 			if oid, err := asn1.DecodeOID(c.Value); err == nil {
 				out = append(out, oid)
 			}
@@ -296,7 +297,7 @@ func (h *Header) GFSTEList() []string {
 
 // PEName returns a human-readable name for a ProfileElement tag, or "".
 func PEName(tag []byte) string {
-	return peNames[tagHex(tag)]
+	return peNames[hex.EncodeToString(tag)]
 }
 
 var peNames = map[string]string{
@@ -307,15 +308,6 @@ var peNames = map[string]string{
 	"b5": "isim", "b6": "opt-isim", "b7": "phonebook", "b8": "gsm-access",
 	"b9": "csim", "ba": "opt-csim", "bb": "eap", "bc": "df-5gs", "bd": "df-saip",
 	"be": "df-snpn", "bf20": "iot", "bf21": "opt-iot",
-}
-
-func tagHex(tag []byte) string {
-	const d = "0123456789abcdef"
-	out := make([]byte, 0, len(tag)*2)
-	for _, b := range tag {
-		out = append(out, d[b>>4], d[b&0x0f])
-	}
-	return string(out)
 }
 
 // AKAAlgorithmID navigates PE-AKAParameter → algoConfiguration → algoParameter

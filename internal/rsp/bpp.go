@@ -1,6 +1,7 @@
 package rsp
 
 import (
+	"encoding/hex"
 	"fmt"
 
 	"rsp42/internal/asn1"
@@ -54,7 +55,7 @@ func DecodeBoundProfilePackage(raw []byte) (*BoundProfilePackage, error) {
 	if err != nil {
 		return nil, err
 	}
-	if hexTag(t.Tag) != "bf36" {
+	if hex.EncodeToString(t.Tag) != "bf36" {
 		return nil, fmt.Errorf("rsp: BoundProfilePackage unexpected tag %X", t.Tag)
 	}
 	b := &BoundProfilePackage{}

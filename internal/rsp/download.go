@@ -1,6 +1,7 @@
 package rsp
 
 import (
+	"encoding/hex"
 	"fmt"
 
 	"rsp42/internal/asn1"
@@ -43,7 +44,7 @@ func (r *InitialiseSecureChannelRequest) Encode() []byte {
 		asn1.Prim(asn1.Ctx(4, false), r.ControlRefTemplate.HostID),
 	)
 	return asn1.Marshal(asn1.New(asn1.Ctx(35, true),
-		asn1.Prim(asn1.Ctx(2, false), encodeInt(r.remoteOpID())),
+		asn1.Prim(asn1.Ctx(2, false), asn1.IntBytes(r.remoteOpID())),
 		asn1.Prim(asn1.Ctx(0, false), r.TransactionID),
 		crt,
 		asn1.Prim(asn1.App(73, false), r.SmdpOtpk),
@@ -201,11 +202,6 @@ func ACRAvailable() []byte {
 	return acrVendorExtension([]byte{0x82, 0x01, 0xff})
 }
 
-// ACRRetryDelay builds the retryDelay variant (minutes).
-func ACRRetryDelay(minutes int64) []byte {
-	return acrVendorExtension(tlvBytes([]byte{0x83}, asn1.IntBytes(minutes)))
-}
-
 // DecodeStoreMetadataRequest parses a BF25 StoreMetadataRequest.
 func DecodeStoreMetadataRequest(t asn1.TLV) (*StoreMetadataRequest, error) {
 	r := &StoreMetadataRequest{
@@ -268,7 +264,7 @@ func DecodeGetBoundProfilePackageRequest(raw []byte) (*GetBoundProfilePackageReq
 	if err != nil {
 		return nil, err
 	}
-	if hexTag(t.Tag) != "bf3a" {
+	if hex.EncodeToString(t.Tag) != "bf3a" {
 		return nil, fmt.Errorf("rsp: GetBoundProfilePackageRequest unexpected tag %X", t.Tag)
 	}
 	out := &GetBoundProfilePackageRequest{TransactionID: childBytes(t, asn1.Ctx(0, false))}
@@ -291,7 +287,7 @@ func DecodeGetBoundProfilePackageRequest(raw []byte) (*GetBoundProfilePackageReq
 // field (e.g. `prepareDownloadResponse [33]`). It is tolerant of a single-tagged
 // form, returning the field itself when it already carries the inner tag.
 func unwrapExplicit(field asn1.TLV, innerTag []byte) []byte {
-	if c, ok := field.First(); ok && hexTag(c.Tag) == hexTag(innerTag) {
+	if c, ok := field.First(); ok && hex.EncodeToString(c.Tag) == hex.EncodeToString(innerTag) {
 		return c.Raw
 	}
 	return field.Raw
@@ -311,7 +307,7 @@ func DecodeAuthenticateClientRequest(raw []byte) (*AuthenticateClientRequest, er
 	if err != nil {
 		return nil, err
 	}
-	if hexTag(t.Tag) != "bf3b" {
+	if hex.EncodeToString(t.Tag) != "bf3b" {
 		return nil, fmt.Errorf("rsp: AuthenticateClientRequest unexpected tag %X", t.Tag)
 	}
 	out := &AuthenticateClientRequest{TransactionID: childBytes(t, asn1.Ctx(0, false))}

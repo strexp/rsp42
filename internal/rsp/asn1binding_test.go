@@ -1,6 +1,7 @@
 package rsp
 
 import (
+	"encoding/hex"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -43,7 +44,7 @@ func TestASN1BindingInitiateResponse(t *testing.T) {
 
 	tlv, _, err := asn1.ReadTLV(inner)
 	require.NoError(t, err)
-	require.Equal(t, "bf39", hexTag(tlv.Tag))
+	require.Equal(t, "bf39", hex.EncodeToString(tlv.Tag))
 
 	alt, ok2 := tlv.Find(asn1.Ctx(0, true))
 	require.True(t, ok2, "Ok branch must be tagged A0")

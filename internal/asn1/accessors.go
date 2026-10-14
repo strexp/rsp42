@@ -1,9 +1,6 @@
 package asn1
 
-import (
-	"fmt"
-	"math/big"
-)
+import "fmt"
 
 // Bytes returns the primitive content.
 func (t TLV) Bytes() []byte { return t.Value }
@@ -22,27 +19,6 @@ func (t TLV) Int() (int64, error) {
 	}
 	return v, nil
 }
-
-// Uint decodes an unsigned INTEGER (rejecting negative values).
-func (t TLV) Uint() (uint64, error) {
-	if len(t.Value) == 0 {
-		return 0, fmt.Errorf("asn1: empty INTEGER")
-	}
-	if t.Value[0]&0x80 != 0 {
-		return 0, fmt.Errorf("asn1: negative INTEGER in unsigned context")
-	}
-	u := new(big.Int).SetBytes(t.Value)
-	if !u.IsUint64() {
-		return 0, fmt.Errorf("asn1: INTEGER overflows uint64")
-	}
-	return u.Uint64(), nil
-}
-
-// OID decodes an OBJECT IDENTIFIER.
-func (t TLV) OID() (string, error) { return DecodeOID(t.Value) }
-
-// Str returns the content as a string.
-func (t TLV) Str() string { return string(t.Value) }
 
 // Bool decodes a BOOLEAN.
 func (t TLV) Bool() (bool, error) {
@@ -72,12 +48,4 @@ func (t TLV) BitSet(i int) (bool, error) {
 		return false, nil
 	}
 	return bits[byteIdx]&(0x80>>(uint(i)%8)) != 0, nil
-}
-
-// MustTag returns an error when the TLV tag does not match want.
-func (t TLV) MustTag(want []byte) error {
-	if !bytesEqual(t.Tag, want) {
-		return fmt.Errorf("asn1: unexpected tag %X, want %X", t.Tag, want)
-	}
-	return nil
 }

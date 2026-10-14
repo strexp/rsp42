@@ -1,11 +1,3 @@
-// Package rsp implements the SGP.22 RSP message structures and codecs.
-//
-// The encodings follow the RSPDefinitions ASN.1 module (AUTOMATIC TAGS,
-// EXTENSIBILITY IMPLIED). The automatic-tag assignments were cross-checked
-// byte-for-byte against asn1tools and the gomaja-generated bindings (see
-// testdata/vectors/rsp_golden.json); note in particular that a few untagged
-// fields remain universal (e.g. SmdpSigned2.ccRequiredFlag,
-// NotificationMetadata.notificationAddress).
 package rsp
 
 import (

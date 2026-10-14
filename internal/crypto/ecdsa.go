@@ -1,6 +1,3 @@
-// Package crypto implements the cryptographic primitives used by SGP.22:
-// ECDSA raw-signature handling, the X9.63 KDF and the SCP03t (BSP) protection
-// protocol.
 package crypto
 
 import (

@@ -127,8 +127,11 @@ func ProtectBPP(sharedSecret, hostID, eid []byte, configureISDP, storeMetadata, 
 	return res, nil
 }
 
-// UnprotectBPP reverses ProtectBPP, returning the plaintext elements. It is used
-// for tests and interoperability verification.
+// UnprotectBPP reverses ProtectBPP, returning the plaintext elements. It is the
+// inverse half of the BPP protection pair: ProtectBPP generates the package the
+// eUICC consumes, and this verifies the generation path (segmenting, padding,
+// MAC chaining) round-trips. It is exercised by TestProtectBPPRoundTrip and is
+// also useful for interoperability checks against a captured package.
 func UnprotectBPP(sharedSecret, hostID, eid []byte, r *BSPResult, ppk *BSPKeyMaterial) (configureISDP, storeMetadata, replaceSessionKeys, upp []byte, err error) {
 	initial, err := NewBSPInstance(BSPDerive(sharedSecret, 0x88, 16, hostID, eid, 16))
 	if err != nil {
