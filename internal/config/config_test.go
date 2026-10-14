@@ -3,6 +3,7 @@ package config
 import (
 	"os"
 	"path/filepath"
+	"reflect"
 	"testing"
 	"time"
 
@@ -42,6 +43,46 @@ func TestEnvOverride(t *testing.T) {
 	cfg, err := Load(exampleConfig, RoleDP)
 	require.NoError(t, err)
 	require.Equal(t, "override.example.com", cfg.SMDpp.FQDN)
+}
+
+// TestEnvOverrideCoversEveryKey is the regression test for the automatic-env
+// gap: viper.Unmarshal only walks keys viper already knows, so any key absent
+// from both the YAML file and setDefaults silently ignored its RSP42_*
+// override. These are exactly the keys that used to be dropped.
+func TestEnvOverrideCoversEveryKey(t *testing.T) {
+	chdirRepo(t)
+
+	kek := filepath.Join(t.TempDir(), "kek.bin")
+	require.NoError(t, os.WriteFile(kek, make([]byte, 32), 0o600))
+	t.Setenv("RSP42_KMS_KEK_FILE", kek)
+	// smdpp.server.es9p.tls.cert_file has a value in the example YAML, but its
+	// sibling keys and the nested listener knobs must be overridable too.
+	t.Setenv("RSP42_SMDPP_SERVER_ES9P_TLS_CERT_FILE", "override-cert.pem")
+	t.Setenv("RSP42_SMDPP_SERVER_ES9P_TLS_MIN_VERSION", "1.3")
+	t.Setenv("RSP42_SMDS_SESSION_TTL", "42m")
+	t.Setenv("RSP42_CERTS_ALLOW_EXPIRED_TEST_CERTS", "false")
+
+	cfg, err := Load(exampleConfig, RoleDS)
+	require.NoError(t, err)
+	require.Equal(t, kek, cfg.KMS.KEKFile)
+	require.Equal(t, "override-cert.pem", cfg.SMDpp.Server.ES9P.TLS.CertFile)
+	require.Equal(t, "1.3", cfg.SMDpp.Server.ES9P.TLS.MinVersion)
+	require.Equal(t, 42*time.Minute, cfg.SMDS.SessionTTL.Duration())
+	require.False(t, cfg.Certs.AllowExpiredTestCerts)
+}
+
+// TestConfigKeysCoverSchema guards the reflection-based key enumeration: it
+// must not silently produce an empty or truncated list.
+func TestConfigKeysCoverSchema(t *testing.T) {
+	keys := configKeys(reflect.TypeOf(Config{}), "")
+	require.Contains(t, keys, "smdpp.fqdn")
+	require.Contains(t, keys, "kms.kek_file")
+	require.Contains(t, keys, "smds.session_ttl")
+	require.Contains(t, keys, "smdpp.server.es9p.tls.cert_file")
+	// Slice containers are bound as a single key; element indices are not.
+	require.Contains(t, keys, "certs.identities")
+	require.NotContains(t, keys, "certs.identities.ci")
+	require.Greater(t, len(keys), 40)
 }
 
 func TestValidateRejectsBadConfig(t *testing.T) {

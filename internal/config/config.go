@@ -194,18 +194,23 @@ type CallbackConfig struct {
 
 // SMDSConfig configures the SM-DS process.
 type SMDSConfig struct {
-	Enabled  bool          `mapstructure:"enabled"`
-	Role     string        `mapstructure:"role"`
-	FQDN     string        `mapstructure:"fqdn"`
-	OID      string        `mapstructure:"oid"`
-	Curve    string        `mapstructure:"curve"`
-	EventTTL Duration      `mapstructure:"event_ttl"`
-	ES12     ES12Config    `mapstructure:"es12"`
-	DSAuth   CertKeyConfig `mapstructure:"dsauth"`
-	DSTLS    CertKeyConfig `mapstructure:"dstls"`
-	Cascade  CascadeConfig `mapstructure:"cascade"`
-	Server   SMDSServer    `mapstructure:"server"`
-	Store    StoreConfig   `mapstructure:"store"`
+	Enabled bool   `mapstructure:"enabled"`
+	Role    string `mapstructure:"role"`
+	FQDN    string `mapstructure:"fqdn"`
+	OID     string `mapstructure:"oid"`
+	Curve   string `mapstructure:"curve"`
+	// EventTTL bounds how long a registered event stays discoverable.
+	EventTTL Duration `mapstructure:"event_ttl"`
+	// SessionTTL bounds how long an ES11 Common Mutual Authentication session
+	// stays valid. It is the SM-DS counterpart of smdpp.session_ttl; the two
+	// roles are independent processes and must not share the value.
+	SessionTTL Duration      `mapstructure:"session_ttl"`
+	ES12       ES12Config    `mapstructure:"es12"`
+	DSAuth     CertKeyConfig `mapstructure:"dsauth"`
+	DSTLS      CertKeyConfig `mapstructure:"dstls"`
+	Cascade    CascadeConfig `mapstructure:"cascade"`
+	Server     SMDSServer    `mapstructure:"server"`
+	Store      StoreConfig   `mapstructure:"store"`
 }
 
 // CertKeyConfig is a DER/PEM cert + PEM key pair.
@@ -295,6 +300,9 @@ func Load(path string, roles ...Role) (*Config, error) {
 	v.SetEnvPrefix("RSP42")
 	v.SetEnvKeyReplacer(strings.NewReplacer(".", "_"))
 	v.AutomaticEnv()
+	// AutomaticEnv only resolves keys viper already knows; bind the full schema
+	// so every value is overridable from the environment.
+	bindEnvs(v)
 
 	setDefaults(v)
 
@@ -354,6 +362,7 @@ func setDefaults(v *viper.Viper) {
 	v.SetDefault("smds.role", "root")
 	v.SetDefault("smds.curve", "nist")
 	v.SetDefault("smds.event_ttl", "720h")
+	v.SetDefault("smds.session_ttl", "30m")
 	v.SetDefault("smds.server.es11.port", 9443)
 	v.SetDefault("smds.server.es12.port", 9444)
 	v.SetDefault("smds.server.admin.port", 9100)

@@ -25,14 +25,17 @@ type Profile struct {
 	TenantID string
 	// ExternalRef is the caller's own identifier for this profile. It is an
 	// Admin API convenience field only and is never carried on ES2+.
-	ExternalRef      string
-	ICCID            string
-	IMSI             string
-	ProfileType      string
-	EID              string
-	State            ProfileState
-	MatchingID       string
-	CCHash           []byte // encrypted (AES-256-GCM)
+	ExternalRef string
+	ICCID       string
+	IMSI        string
+	ProfileType string
+	EID         string
+	State       ProfileState
+	MatchingID  string
+	// CCHash is SHA-256 of the operator-supplied confirmation code, stored as a
+	// plain digest; confirmationHash() mixes it with the TransactionID. It is
+	// not encrypted at rest (only Session secrets are).
+	CCHash           []byte
 	CCRequired       bool
 	SMDSAddress      string
 	ReleaseFlag      bool

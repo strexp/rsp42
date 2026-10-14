@@ -49,7 +49,9 @@ func cmdSMDS(prog string, args []string) int {
 		return 1
 	}
 	defer func() { _ = st.Close() }()
-	sessions := service.NewSessionService(st.Sessions, provider, cfg.SMDS.EventTTL.Duration())
+	// The session store fallback TTL is the SM-DS session TTL, not the event
+	// TTL: the two govern different lifetimes.
+	sessions := service.NewSessionService(st.Sessions, provider, cfg.SMDS.SessionTTL.Duration())
 	eventSvc := service.NewEventService(st.Events, cfg.SMDS.Role, cfg.SMDS.FQDN, cfg.SMDS.EventTTL.Duration())
 	eventSvc.Log = log
 	reg := newDSMetricsRegistry()
@@ -71,7 +73,7 @@ func cmdSMDS(prog string, args []string) int {
 	}
 	ds, err := service.NewDSService(service.DSConfig{
 		FQDN: cfg.SMDS.FQDN, OID: cfg.SMDS.OID, Role: cfg.SMDS.Role,
-		TransactionIDLen: 16, SessionTTL: cfg.SMDpp.SessionTTL.Duration(),
+		TransactionIDLen: 16, SessionTTL: cfg.SMDS.SessionTTL.Duration(),
 	}, certs, sessions, eventSvc, log)
 	if err != nil {
 		log.Error("ds service", "err", err)

@@ -51,7 +51,7 @@ type Session struct {
 	HostID          []byte
 	SharedSecret    []byte // encrypted
 	ProfileID       int64
-	CCHash          []byte
+	CCHash          []byte // encrypted (AES-256-GCM), unlike Profile.CCHash
 	CCRequired      bool
 	UPPTemplate     string
 	// EuiccProfileVersion is the base SAIP version the eUICC advertised

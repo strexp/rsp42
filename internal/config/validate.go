@@ -250,6 +250,9 @@ func (c *Config) validateDS() error {
 	if s.EventTTL < 0 {
 		return fmt.Errorf("smds.event_ttl must be >= 0")
 	}
+	if s.SessionTTL <= 0 {
+		return fmt.Errorf("smds.session_ttl must be positive")
+	}
 	if s.Role == "alternative" {
 		if !s.Cascade.Enabled {
 			return fmt.Errorf("smds.cascade.enabled must be true when role=alternative")

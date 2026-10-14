@@ -62,7 +62,11 @@ func headerWithGFSTE(oids ...string) *asn1.Node {
 	if len(oids) > 0 {
 		list := asn1.NewConstructed(hdrGFSTE)
 		for _, oid := range oids {
-			list.AppendChild(asn1.NewPrimitive(tagOID, asn1.EncodeOID(oid)))
+			enc, err := asn1.EncodeOID(oid)
+			if err != nil {
+				panic(err)
+			}
+			list.AppendChild(asn1.NewPrimitive(tagOID, enc))
 		}
 		children = append(children, list)
 	}

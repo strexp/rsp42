@@ -101,6 +101,9 @@ smds:
   oid: "2.999.15"
   curve: "nist"
   event_ttl: "720h"
+  # CMAC session lifetime for the ES11 handshake (independent of
+  # smdpp.session_ttl: the two roles are separate processes).
+  session_ttl: "30m"
   dsauth:
     cert_file: "testdata/sgp26/SM-DS/DSauth/CERT_DSauth_NIST.der"
     key_file: "testdata/sgp26/SM-DS/DSauth/SK_DSauth_NIST.pem"
