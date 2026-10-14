@@ -11,7 +11,10 @@ cp config/config.example.yaml config/config.yaml
 
 ## Databases
 
-SQLite (pure Go driver), migrated automatically at startup via goose. The
+**SQLite only** (pure Go driver), migrated automatically at startup via goose.
+PostgreSQL/MySQL and any other backend are explicitly not supported:
+`profiles.repository` accepts only `sqlite`, and any other value fails
+configuration validation with an explanatory error. The
 schema is versioned migrations under `internal/store/migrations/`. Separate DSNs
 for the SM-DP+ (`profiles.store.dsn` → `db/rsp42-smdpp.db`) and SM-DS
 (`smds.store.dsn` → `db/rsp42-smds.db`); the parent directory is created on
@@ -125,13 +128,41 @@ rsp42 admin mock-operator            # test-only operator stub
 
 ## Known limitations
 
-Online CRL/OCSP is out of scope (expiry is validated, revocation is not). The
-JSON binding is implemented; the ASN.1 binding is not. Only NIST P-256 is
-supported (`certs.curve: brainpool` is not implemented). See `docs/coverage.md`
-for the full list.
+Online CRL/OCSP is out of scope (expiry is validated, revocation is not). Both
+the JSON binding (§6.5) and the ASN.1 binding (§6.6) are implemented for ES9+ and
+ES11; ES2+/ES12/ES15 use the JSON binding only, as the specification mandates.
+Only NIST P-256 is supported (`certs.curve: brainpool` is not implemented).
+
+Explicit non-goals (decided, not pending — see
+`docs/esim42-integration-gaps.md` §8.4): PostgreSQL/other database backends,
+multi-replica deployment, per-carrier ES2+ client certificates (tenant
+attribution uses `functionRequesterIdentifier`), and rsp42-side rate limiting /
+429 semantics. See `docs/coverage.md` for the full list.
 
 Multiple SGP.26 certificate variants can be served by one deployment by listing
 additional certificate sets under `certs.identities`; the identity whose CI the
 eUICC proposes is selected automatically. `profiles.ppr_ids` and the order-level
 `pprIds` populate the Profile Policy Rules, and the UPP template is selected from
-the eUICC's advertised profile version unless the order pins one.
+the eUICC's advertised profile version unless the order (or the tenant default)
+pins one.
+
+## Observability
+
+`GET /metrics` on the admin listener exposes Prometheus text metrics:
+download-progress notifications by tenant/point/status, session and ICCID
+reservation GC counters, ICCID pool depth by state, and the outbound ES2+
+callback queue depth. ES12 registration failures are counted and audited, as are
+outbound `ES2+.HandleAcrRequest` confirmations
+(`rsp42_acr_requests_total{tenant,outcome}`).
+
+All SQLite transactions run in IMMEDIATE mode, so the read-then-update paths
+(ICCID reservation, idempotency claim) cannot deadlock on a lock upgrade. The
+database is still single-writer: **exactly one rsp42 process per database file**.
+
+Multi-replica deployments (leader election, distributed locks, shared storage)
+are explicitly **not** supported and are not planned. Scaling out means
+re-architecting, not adding a lock: see
+`docs/esim42-integration-gaps.md` §8.4. For the same reason rsp42 does not
+implement request rate limiting (no 429 semantics) — throttling belongs in the
+operator backend in front of it; rsp42 enforces only resource-level quotas
+(`tenants.template_quota`, `tenants.profile_quota`).

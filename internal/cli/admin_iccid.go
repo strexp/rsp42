@@ -21,6 +21,7 @@ func cmdICCID(prog string, args []string) int {
 	end := fs.String("end", "", "range end ICCID")
 	note := fs.String("note", "", "range note")
 	state := fs.String("state", "", "list filter: available|allocated|blocked")
+	tenant := fs.String("tenant", "", "tenant id (empty = platform default)")
 	limit := fs.Int("limit", 50, "list limit")
 	if err := fs.Parse(args[1:]); err != nil {
 		return 2
@@ -43,7 +44,7 @@ func cmdICCID(prog string, args []string) int {
 			fmt.Fprintln(os.Stderr, "import: --start and --end are required")
 			return 2
 		}
-		id, inserted, skipped, err := st.Pool.ImportRange(*start, *end, *note)
+		id, inserted, skipped, err := st.Pool.ImportRange(*tenant, *start, *end, *note)
 		if err != nil {
 			fmt.Fprintln(os.Stderr, err)
 			return 1
@@ -51,7 +52,7 @@ func cmdICCID(prog string, args []string) int {
 		fmt.Printf("imported range #%d: inserted=%d skipped=%d\n", id, inserted, skipped)
 		return 0
 	case "stats":
-		counts, ranges, err := st.Pool.Stats()
+		counts, ranges, err := st.Pool.Stats(tenant)
 		if err != nil {
 			fmt.Fprintln(os.Stderr, err)
 			return 1
@@ -62,7 +63,7 @@ func cmdICCID(prog string, args []string) int {
 		}
 		return 0
 	case "list":
-		items, total, err := st.Pool.ListPage(*state, "", *limit, 0)
+		items, total, err := st.Pool.ListPage(*state, "", tenant, *limit, 0)
 		if err != nil {
 			fmt.Fprintln(os.Stderr, err)
 			return 1

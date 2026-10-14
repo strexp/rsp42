@@ -10,6 +10,7 @@ import (
 
 type auditView struct {
 	Time       time.Time `json:"time"`
+	Tenant     string    `json:"tenant,omitempty"`
 	Actor      string    `json:"actor,omitempty"`
 	Interface  string    `json:"interface,omitempty"`
 	Function   string    `json:"function,omitempty"`
@@ -22,7 +23,7 @@ type auditView struct {
 
 func toAuditView(e *store.AuditEntry) auditView {
 	v := auditView{
-		Time: e.TS, Actor: e.Actor, Interface: e.Interface, Function: e.Function,
+		Time: e.TS, Tenant: e.TenantID, Actor: e.Actor, Interface: e.Interface, Function: e.Function,
 		Subject: e.Subject, Outcome: e.Outcome, StatusCode: e.StatusCode, RemoteAddr: e.RemoteAddr,
 	}
 	if e.DetailJSON != "" {
@@ -43,30 +44,19 @@ func (h *Handler) listAudit(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	q := r.URL.Query()
-	size := atoiDefault(q.Get("size"), defaultPageSize)
-	if size < 1 {
-		size = defaultPageSize
-	}
-	if size > maxPageSize {
-		size = maxPageSize
-	}
-	page := atoiDefault(q.Get("page"), 1)
-	if page < 1 {
-		page = 1
-	}
+	size := clampSize(atoiDefault(q.Get("size"), defaultPageSize))
+	page := clampPage(atoiDefault(q.Get("page"), 1))
 	filter := store.AuditFilter{
 		Interface: q.Get("interface"), Function: q.Get("function"),
 		Subject: q.Get("subject"), Actor: q.Get("actor"), Outcome: q.Get("outcome"),
+		Tenant: tenantFilter(r),
 	}
-	if s := q.Get("since"); s != "" {
-		if t, err := time.Parse(time.RFC3339, s); err == nil {
-			filter.Since = &t
-		}
+	// `since`/`until` are accepted as aliases for `from`/`to`.
+	if t := parseTime(firstNonEmpty(q.Get("from"), q.Get("since"))); t != nil {
+		filter.Since = t
 	}
-	if s := q.Get("until"); s != "" {
-		if t, err := time.Parse(time.RFC3339, s); err == nil {
-			filter.Until = &t
-		}
+	if t := parseTime(firstNonEmpty(q.Get("to"), q.Get("until"))); t != nil {
+		filter.Until = t
 	}
 	entries, total, err := h.Audit.ListFiltered(filter, size, (page-1)*size)
 	if err != nil {

@@ -30,6 +30,7 @@ func base(log *slog.Logger, opts Options) chi.Router {
 		r.Use(middleware.CORS(opts.CORS))
 	}
 	r.Use(middleware.RequestID)
+	r.Use(middleware.RequestScope)
 	r.Use(middleware.Recover(log))
 	r.Use(middleware.Logger(log))
 	r.Use(middleware.AdminProtocol)

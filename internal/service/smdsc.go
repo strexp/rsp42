@@ -11,6 +11,45 @@ import (
 	"time"
 )
 
+// ES12 correlation headers. SGP.22 §6.2 explicitly allows additional HTTP
+// header fields, so rsp42 carries the tenant (and optional profile correlation)
+// out of band instead of extending the closed ES12 JSON body.
+const (
+	HeaderTenant     = "X-RSP42-Tenant"
+	HeaderICCID      = "X-RSP42-ICCID"
+	HeaderMatchingID = "X-RSP42-Matching-Id"
+)
+
+// EventMeta is the out-of-band correlation metadata of an ES12 event.
+type EventMeta struct {
+	Tenant     string
+	ICCID      string
+	MatchingID string
+}
+
+func (m EventMeta) headers() map[string]string {
+	h := map[string]string{}
+	if m.Tenant != "" {
+		h[HeaderTenant] = m.Tenant
+	}
+	if m.ICCID != "" {
+		h[HeaderICCID] = m.ICCID
+	}
+	if m.MatchingID != "" {
+		h[HeaderMatchingID] = m.MatchingID
+	}
+	return h
+}
+
+// EventMetaFromHeaders extracts the correlation metadata from an ES12 request.
+func EventMetaFromHeaders(h http.Header) EventMeta {
+	return EventMeta{
+		Tenant:     h.Get(HeaderTenant),
+		ICCID:      h.Get(HeaderICCID),
+		MatchingID: h.Get(HeaderMatchingID),
+	}
+}
+
 // SMDSCClient is the SM-DP+ (or cascade) ES12 client used to register and
 // delete events at an SM-DS (SGP.22 §5.9).
 type SMDSCClient struct {
@@ -56,7 +95,7 @@ type es12Response struct {
 	} `json:"header"`
 }
 
-func (c *SMDSCClient) call(ctx context.Context, function string, body map[string]any) error {
+func (c *SMDSCClient) call(ctx context.Context, function string, body map[string]any, headers map[string]string) error {
 	attempts := c.MaxAttempts
 	if attempts < 1 {
 		attempts = 1
@@ -70,7 +109,7 @@ func (c *SMDSCClient) call(ctx context.Context, function string, body map[string
 			case <-time.After(c.Backoff(i - 1)):
 			}
 		}
-		err := c.callOnce(ctx, function, body)
+		err := c.callOnce(ctx, function, body, headers)
 		if err == nil {
 			return nil
 		}
@@ -84,7 +123,7 @@ func (c *SMDSCClient) call(ctx context.Context, function string, body map[string
 	return lastErr
 }
 
-func (c *SMDSCClient) callOnce(ctx context.Context, function string, body map[string]any) error {
+func (c *SMDSCClient) callOnce(ctx context.Context, function string, body map[string]any, headers map[string]string) error {
 	body["header"] = map[string]any{
 		"functionRequesterIdentifier": c.RequesterID,
 		"functionCallIdentifier":      fmt.Sprintf("ES12-%d", time.Now().UnixNano()),
@@ -98,6 +137,9 @@ func (c *SMDSCClient) callOnce(ctx context.Context, function string, body map[st
 		return err
 	}
 	req.Header.Set("Content-Type", "application/json")
+	for k, v := range headers {
+		req.Header.Set(k, v)
+	}
 	resp, err := c.HTTP.Do(req)
 	if err != nil {
 		return err
@@ -124,14 +166,14 @@ func (c *SMDSCClient) callOnce(ctx context.Context, function string, body map[st
 	return fmt.Errorf("es12: status %s", status)
 }
 
-// Register registers an event.
-func (c *SMDSCClient) Register(eid, rspServerAddress, eventID string, forwardingIndicator bool) error {
+// Register registers an event, carrying the correlation metadata out of band.
+func (c *SMDSCClient) Register(eid, rspServerAddress, eventID string, forwardingIndicator bool, meta EventMeta) error {
 	err := c.call(context.Background(), "registerEvent", map[string]any{
 		"eid":                 eid,
 		"rspServerAddress":    rspServerAddress,
 		"eventId":             eventID,
 		"forwardingIndicator": forwardingIndicator,
-	})
+	}, meta.headers())
 	var e *ES12Error
 	if errors.As(err, &e) && e.IsAlreadyInUse() {
 		return nil // idempotent: already registered
@@ -140,11 +182,11 @@ func (c *SMDSCClient) Register(eid, rspServerAddress, eventID string, forwarding
 }
 
 // Delete deletes an event.
-func (c *SMDSCClient) Delete(eid, eventID string) error {
+func (c *SMDSCClient) Delete(eid, eventID string, meta EventMeta) error {
 	return c.call(context.Background(), "deleteEvent", map[string]any{
 		"eid":     eid,
 		"eventId": eventID,
-	})
+	}, meta.headers())
 }
 
 // IsNotFound reports whether err is a "not found" condition.

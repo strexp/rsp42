@@ -57,7 +57,6 @@ var (
 	CodeEIDNotPermitted     = Code{"8.1.4", "6.1"}
 	CodeProfileLoadFailed   = Code{"8.2", "3.7"}
 	CodeInputRefused        = Code{"8.2.1", "1.2"}
-	CodeProfileNotFound     = Code{"8.2.5", "3.9"}
 	CodeProfileNotEligible  = Code{"8.2.6", "3.8"}
 	CodeAllocateFailed      = Code{"8.2.1", "3.8"}
 	CodeProfileUpdateFailed = Code{"8.2.6", "3.7"}
@@ -76,4 +75,30 @@ var (
 	CodeEventIDInUse        = Code{"8.9.5", "3.3"}
 	CodeEventNotFound       = Code{"8.9.5", "3.9"}
 	CodeUnknownTransaction  = Code{"8.10.1", "3.9"}
+
+	// ES2+ argument/authorisation codes (SGP.22 §5.2.6, Tables 23/24/26).
+	//
+	// CodeInvalidAssociation is returned by ConfirmOrder when its EID does not
+	// match the EID of the DownloadOrder (§5.3.2).
+	CodeInvalidAssociation = Code{"8.1.1", "3.10"}
+	// CodeMandatoryElementMissing is returned when a mandatory request element
+	// (e.g. iccid) is absent.
+	CodeMandatoryElementMissing = Code{"8.1.1", "2.2"}
+	// CodeICCIDUnknown is returned when the ICCID is not known to the SM-DP+
+	// (§5.3.1 8.2.1/3.9). It is deliberately distinct from a Profile Type
+	// problem so the operator can branch correctly.
+	CodeICCIDUnknown = Code{"8.2.1", "3.9"}
+	// CodeProfileTypeUnknown is returned when the requested Profile Type cannot
+	// be resolved (§5.3.1 8.2.5/3.9).
+	CodeProfileTypeUnknown = Code{"8.2.5", "3.9"}
+	// CodeProfileTypeNotAllowed is returned when the caller may not use the
+	// requested Profile Type / template (§5.3.1 8.2.5/1.2, authorisation).
+	CodeProfileTypeNotAllowed = Code{"8.2.5", "1.2"}
+	// CodeACRNotAllowed is the ES2+.HandleAcrRequest-specific refusal code
+	// (§5.3.8 Table 32e: Profile ICCID Not Allowed). It shares the
+	// 8.2.1/1.2 pair with CodeInputRefused but names the ACR semantics.
+	CodeACRNotAllowed = Code{"8.2.1", "1.2"}
+	// CodeProfileNotFound is kept for ES9+ internal use where the spec's
+	// "Profile not found" wording applies.
+	CodeProfileNotFound = Code{"8.2.5", "3.9"}
 )

@@ -113,3 +113,22 @@ func (r *CallbackRepo) MarkRetry(id int64, next time.Time, response string) erro
 		next.Unix(), nullStr(response), id)
 	return err
 }
+
+// Stats returns the callback queue depth per status.
+func (r *CallbackRepo) Stats() (map[string]int, error) {
+	rows, err := r.db.Query(`SELECT status, COUNT(*) FROM es2p_callbacks GROUP BY status`)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = rows.Close() }()
+	out := map[string]int{}
+	for rows.Next() {
+		var status string
+		var n int
+		if err := rows.Scan(&status, &n); err != nil {
+			return nil, err
+		}
+		out[status] = n
+	}
+	return out, rows.Err()
+}

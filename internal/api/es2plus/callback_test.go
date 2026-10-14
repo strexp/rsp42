@@ -13,6 +13,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"rsp42/internal/api/es2plus"
+	"rsp42/internal/service"
 	"rsp42/internal/store"
 )
 
@@ -41,7 +42,7 @@ func TestCallbackQueueRetriesThenSucceeds(t *testing.T) {
 	q.Backoff = func(int) time.Duration { return 0 } // retry immediately
 
 	// The first delivery fails and is persisted as pending.
-	err := q.Deliver(context.Background(), "89049032123451234512345678901235", "8900012345678901234", 4, "Executed-Success")
+	err := q.Deliver(context.Background(), service.ProgressInfo{EID: "89049032123451234512345678901235", ICCID: "8900012345678901234", PointID: 4, Status: "Executed-Success"})
 	require.Error(t, err)
 
 	due, err := st.Callbacks.Due(time.Now().UTC().Add(time.Hour), 10)
@@ -73,7 +74,7 @@ func TestCallbackQueueDeadLetter(t *testing.T) {
 	q.MaxAttempts = 2
 	q.Backoff = func(int) time.Duration { return 0 }
 
-	require.Error(t, q.Deliver(context.Background(), "", "8900012345678901234", 4, "Failed"))
+	require.Error(t, q.Deliver(context.Background(), service.ProgressInfo{EID: "", ICCID: "8900012345678901234", PointID: 4, Status: "Failed"}))
 	_, err := q.RunOnce(context.Background())
 	require.NoError(t, err)
 

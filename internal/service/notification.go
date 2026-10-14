@@ -14,9 +14,46 @@ import (
 	"rsp42/internal/store"
 )
 
+// ProgressInfo is one ES2+.HandleDownloadProgressInfo payload. The tenant and
+// correlation fields are rsp42 additions (the function is rsp42 -> Operator, so
+// it is not bound by the ES2+ input schema).
+type ProgressInfo struct {
+	TenantID    string
+	ExternalRef string
+	MatchingID  string
+	EID         string
+	ICCID       string
+	PointID     int
+	Status      string
+}
+
 // OperatorCallback delivers an ES2+.HandleDownloadProgressInfo notification to
 // the operator. It is optional.
-type OperatorCallback func(ctx context.Context, eid, iccid string, pointID int, statusJSON string) error
+type OperatorCallback func(ctx context.Context, info ProgressInfo) error
+
+// progressMeta builds the ES12 correlation metadata for a profile.
+func progressMeta(p *store.Profile) EventMeta {
+	if p == nil {
+		return EventMeta{}
+	}
+	return EventMeta{Tenant: p.TenantID, ICCID: p.ICCID, MatchingID: p.MatchingID}
+}
+
+// progressFor builds a ProgressInfo from a profile; eid overrides the stored
+// value when known from the session.
+func progressFor(p *store.Profile, eid string, pointID int, status string) ProgressInfo {
+	info := ProgressInfo{EID: eid, PointID: pointID, Status: status}
+	if p != nil {
+		info.TenantID = p.TenantID
+		info.ExternalRef = p.ExternalRef
+		info.MatchingID = p.MatchingID
+		info.ICCID = p.ICCID
+		if info.EID == "" {
+			info.EID = p.EID
+		}
+	}
+	return info
+}
 
 // NotificationService processes ES9+.HandleNotification payloads and drives
 // operator callbacks (SGP.22 §3.5).
@@ -98,7 +135,7 @@ func (n *NotificationService) handleInstallation(ctx context.Context, pir *rsp.P
 				n.Log.Warn("mark installed", "iccid", profile.ICCID, "err", err)
 			}
 			if n.Registrar != nil && profile.EID != "" {
-				if err := n.Registrar.DeleteForEID(profile.EID); err != nil && n.Log != nil {
+				if err := n.Registrar.DeleteForEID(profile.EID, progressMeta(profile)); err != nil && n.Log != nil {
 					n.Log.Warn("ES12 delete event on install", "eid", profile.EID, "err", err)
 				}
 			}
@@ -121,7 +158,7 @@ func (n *NotificationService) handleInstallation(ctx context.Context, pir *rsp.P
 	if n.Sessions != nil {
 		_ = n.Sessions.Delete(txn)
 	}
-	n.notify(ctx, eidOf(profile), iccid, 4, "Executed-Success")
+	n.notify(ctx, progressFor(profile, eidOf(profile), 4, "Executed-Success"))
 	return nil
 }
 
@@ -236,12 +273,12 @@ func (n *NotificationService) record(notif *store.Notification) {
 	_ = n.Notifs.Insert(notif)
 }
 
-func (n *NotificationService) notify(ctx context.Context, eid, iccid string, pointID int, status string) {
+func (n *NotificationService) notify(ctx context.Context, info ProgressInfo) {
 	if n.Callback == nil {
 		return
 	}
-	if err := n.Callback(ctx, eid, iccid, pointID, status); err != nil && n.Log != nil {
-		n.Log.Warn("operator callback failed", "point", pointID, "err", err)
+	if err := n.Callback(ctx, info); err != nil && n.Log != nil {
+		n.Log.Warn("operator callback failed", "point", info.PointID, "err", err)
 	}
 }
 

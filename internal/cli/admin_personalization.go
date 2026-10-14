@@ -21,6 +21,7 @@ func cmdPersonalization(prog string, args []string) int {
 	iccid := fs.String("iccid", "", "ICCID (delete)")
 	file := fs.String("file", "", "CSV/file path (import)")
 	kind := fs.String("kind", "csv", "import source kind: csv|file|static")
+	tenant := fs.String("tenant", "", "tenant id (empty = platform default)")
 	if err := fs.Parse(args[1:]); err != nil {
 		return 2
 	}
@@ -66,7 +67,7 @@ func cmdPersonalization(prog string, args []string) int {
 			fmt.Fprintln(os.Stderr, "import: --file is required")
 			return 2
 		}
-		n, err := svc.Import(*kind, *file, nil, nil)
+		n, err := svc.Import(*tenant, *kind, *file, nil, nil)
 		if err != nil {
 			fmt.Fprintln(os.Stderr, err)
 			return 1
@@ -78,7 +79,7 @@ func cmdPersonalization(prog string, args []string) int {
 			fmt.Fprintln(os.Stderr, "delete: --iccid is required")
 			return 2
 		}
-		if err := svc.Delete(*iccid); err != nil {
+		if err := svc.Delete(*tenant, *iccid); err != nil {
 			fmt.Fprintln(os.Stderr, err)
 			return 1
 		}

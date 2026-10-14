@@ -89,7 +89,7 @@ func (h *Handler) authenticateClient(w http.ResponseWriter, r *http.Request) {
 		common.WriteCode(w, rsp.CodeVerificationFailed, "invalid authenticateServerResponse")
 		return
 	}
-	res, err := h.CMAE.AuthenticateClient(req.TransactionID, resp)
+	res, err := h.CMAE.AuthenticateClient(r.Context(), req.TransactionID, resp)
 	if err != nil {
 		common.WriteStatusFailure(w, err)
 		return

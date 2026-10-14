@@ -15,6 +15,8 @@ import (
 	"github.com/google/uuid"
 
 	"rsp42/internal/api/common"
+	"rsp42/internal/api/middleware"
+	"rsp42/internal/metrics"
 	"rsp42/internal/rsp"
 	"rsp42/internal/service"
 	"rsp42/internal/store"
@@ -22,7 +24,7 @@ import (
 
 // OrderAuditor records ES2+ order actions.
 type OrderAuditor interface {
-	Insert(iccid, eid, matchingID, action, requestJSON, resultJSON string) error
+	Insert(tenant, iccid, eid, matchingID, action, requestJSON, resultJSON string) error
 }
 
 // Handler holds the ES2+ handler dependencies.
@@ -31,8 +33,20 @@ type Handler struct {
 	Profiles  service.ProfileStore
 	Orders    *service.OrderService
 	Inventory *service.Inventory
+	// UPP, when set, is used to validate a "<tenant>/<template>" profileType.
+	UPP *store.UPPRepo
+	// RequesterTenants maps header.functionRequesterIdentifier to a tenant
+	// (decision 3). A nil resolver means "everything is the platform default".
+	RequesterTenants *service.TenantResolver
+	// Idem, when set, enables Idempotency-Key replay on the write functions
+	// whose resend semantics SGP.22 does not define.
+	Idem *store.IdempotencyRepo
 	// OrderAudit, when set, records each order action.
 	OrderAudit OrderAuditor
+	// Metrics, when set, counts ES12 registration failures.
+	Metrics *metrics.Registry
+	// AuditRepo, when set, records ES12 registration failures.
+	AuditRepo *store.AuditRepo
 	// ACRHandler, when set, is invoked for handleAcrRequest.
 	ACRHandler func(req AcrRequest) (*AcrResponse, error)
 	// Registrar, when set, registers an SM-DS event on ConfirmOrder.
@@ -46,10 +60,11 @@ func New(log *slog.Logger, profiles service.ProfileStore, orders *service.OrderS
 
 // Mount registers the ES2+ routes on r.
 func Mount(r chi.Router, h *Handler) {
+	idem := middleware.Idempotency(h.Idem)
 	r.Post("/gsma/rsp2/es2plus/downloadOrder", h.downloadOrder)
-	r.Post("/gsma/rsp2/es2plus/confirmOrder", h.confirmOrder)
-	r.Post("/gsma/rsp2/es2plus/cancelOrder", h.cancelOrder)
-	r.Post("/gsma/rsp2/es2plus/releaseProfile", h.releaseProfile)
+	r.With(idem).Post("/gsma/rsp2/es2plus/confirmOrder", h.confirmOrder)
+	r.With(idem).Post("/gsma/rsp2/es2plus/cancelOrder", h.cancelOrder)
+	r.With(idem).Post("/gsma/rsp2/es2plus/releaseProfile", h.releaseProfile)
 	r.Post("/gsma/rsp2/es2plus/handleDownloadProgressInfo", h.handleDownloadProgressInfo)
 	r.Post("/gsma/rsp2/es2plus/handleAcrRequest", h.handleAcrRequest)
 }
@@ -105,10 +120,24 @@ type AcrResponse struct {
 
 func (h *Handler) downloadOrder(w http.ResponseWriter, r *http.Request) {
 	var req downloadOrderReq
-	if !decode(w, r, &req) {
+	hdr, ok := decode(w, r, &req)
+	if !ok {
 		return
 	}
-	p, err := h.Inventory.Allocate(req.EID, req.ProfileType, req.ICCID)
+	tenant := h.applyCaller(r, hdr)
+	template, err := h.resolveProfileType(tenant, req.ProfileType)
+	if err != nil {
+		common.WriteStatusFailure(w, err)
+		return
+	}
+	p, err := h.Inventory.Allocate(service.AllocateRequest{
+		EID:         req.EID,
+		ProfileType: req.ProfileType,
+		ICCID:       req.ICCID,
+		UPPTemplate: template,
+		Tenant:      tenant,
+		Reference:   hdr.FunctionCallIdentifier,
+	})
 	if err != nil {
 		writeFailure(w, rsp.CodeAllocateFailed, err.Error())
 		return
@@ -120,7 +149,7 @@ func (h *Handler) downloadOrder(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
-	if err := h.record("downloadOrder", req.ICCID, req.EID, "", req); err != nil {
+	if err := h.record(tenant, "downloadOrder", req.ICCID, req.EID, "", req); err != nil {
 		h.Log.Warn("order record", "err", err)
 	}
 	writeSuccess(w, map[string]any{"iccid": p.ICCID})
@@ -128,16 +157,22 @@ func (h *Handler) downloadOrder(w http.ResponseWriter, r *http.Request) {
 
 func (h *Handler) confirmOrder(w http.ResponseWriter, r *http.Request) {
 	var req confirmOrderReq
-	if !decode(w, r, &req) {
+	hdr, ok := decode(w, r, &req)
+	if !ok {
 		return
 	}
+	tenant := h.applyCaller(r, hdr)
 	if req.ICCID == "" {
-		writeFailure(w, rsp.CodeProfileNotFound, "iccid is required")
+		writeFailure(w, rsp.CodeMandatoryElementMissing, "iccid is required")
 		return
 	}
 	p, err := h.Profiles.GetByICCID(normalizeICCID(req.ICCID))
 	if err != nil {
-		writeFailure(w, rsp.CodeProfileNotFound, "unknown ICCID")
+		writeFailure(w, rsp.CodeICCIDUnknown, "unknown ICCID")
+		return
+	}
+	if err := h.authorize(tenant, p, req.EID); err != nil {
+		common.WriteStatusFailure(w, err)
 		return
 	}
 	if req.EID != "" {
@@ -164,10 +199,12 @@ func (h *Handler) confirmOrder(w http.ResponseWriter, r *http.Request) {
 		writeError(w, err)
 		return
 	}
-	_ = h.record("confirmOrder", p.ICCID, p.EID, matchingID, req)
+	_ = h.record(tenant, "confirmOrder", p.ICCID, p.EID, matchingID, req)
 	if req.SMDSAddress != "" && h.Registrar != nil && p.EID != "" {
-		if err := h.Registrar.Register(p.EID, matchingID, req.SMDSAddress); err != nil {
-			h.Log.Warn("ES12 register event", "eid", p.EID, "err", err)
+		meta := service.EventMeta{Tenant: tenant, ICCID: p.ICCID, MatchingID: matchingID}
+		if err := h.Registrar.Register(p.EID, matchingID, req.SMDSAddress, meta); err != nil {
+			h.Log.Warn("ES12 register event", "eid", p.EID, "tenant", tenant, "err", err)
+			h.registerFailure(tenant, p.EID, p.ICCID, err)
 		}
 	}
 	writeSuccess(w, map[string]any{"matchingId": matchingID, "smdpAddress": ""})
@@ -175,19 +212,29 @@ func (h *Handler) confirmOrder(w http.ResponseWriter, r *http.Request) {
 
 func (h *Handler) cancelOrder(w http.ResponseWriter, r *http.Request) {
 	var req cancelOrderReq
-	if !decode(w, r, &req) {
+	hdr, ok := decode(w, r, &req)
+	if !ok {
 		return
 	}
+	tenant := h.applyCaller(r, hdr)
 	final, err := parseFinalStatus(req.FinalProfileStatusIndicator)
 	if err != nil {
 		writeFailure(w, rsp.CodeInputRefused, err.Error())
+		return
+	}
+	if req.ICCID == "" {
+		writeFailure(w, rsp.CodeMandatoryElementMissing, "iccid is required")
+		return
+	}
+	if err := h.authorizeICCID(tenant, req.ICCID); err != nil {
+		common.WriteStatusFailure(w, err)
 		return
 	}
 	if _, err := h.Orders.Cancel(normalizeICCID(req.ICCID), final == finalUnavailable); err != nil {
 		writeError(w, err)
 		return
 	}
-	_ = h.record("cancelOrder", req.ICCID, req.EID, req.MatchingID, req)
+	_ = h.record(tenant, "cancelOrder", req.ICCID, req.EID, req.MatchingID, req)
 	writeSuccess(w, nil)
 }
 
@@ -214,14 +261,24 @@ func parseFinalStatus(s string) (string, error) {
 
 func (h *Handler) releaseProfile(w http.ResponseWriter, r *http.Request) {
 	var req releaseProfileReq
-	if !decode(w, r, &req) {
+	hdr, ok := decode(w, r, &req)
+	if !ok {
+		return
+	}
+	tenant := h.applyCaller(r, hdr)
+	if req.ICCID == "" {
+		writeFailure(w, rsp.CodeMandatoryElementMissing, "iccid is required")
+		return
+	}
+	if err := h.authorizeICCID(tenant, req.ICCID); err != nil {
+		common.WriteStatusFailure(w, err)
 		return
 	}
 	if _, err := h.Orders.Release(normalizeICCID(req.ICCID)); err != nil {
 		writeError(w, err)
 		return
 	}
-	_ = h.record("releaseProfile", req.ICCID, "", "", req)
+	_ = h.record(tenant, "releaseProfile", req.ICCID, "", "", req)
 	writeSuccess(w, nil)
 }
 
@@ -254,14 +311,101 @@ func (h *Handler) handleAcrRequest(w http.ResponseWriter, r *http.Request) {
 	common.WriteJSON(w, resp)
 }
 
+// Tenant / authorisation ----------------------------------------------------
+
+// applyCaller records the caller identity in the audit scope and resolves the
+// tenant from functionRequesterIdentifier.
+func (h *Handler) applyCaller(r *http.Request, hdr common.RequestHeader) string {
+	common.SetActor(r.Context(), hdr.FunctionRequesterIdentifier)
+	tenant, mapped := h.RequesterTenants.Resolve(hdr.FunctionRequesterIdentifier)
+	if !mapped {
+		tenant = ""
+		if h.RequesterTenants.Len() > 0 && h.Log != nil {
+			h.Log.Warn("unmapped ES2+ functionRequesterIdentifier; using the platform default tenant",
+				"requester", hdr.FunctionRequesterIdentifier)
+		}
+	}
+	common.SetTenant(r.Context(), tenant)
+	return tenant
+}
+
+// resolveProfileType interprets the operator's profileType. A
+// "<tenant>/<template>" value selects a template inside the caller's tenant
+// (SGP.22 §6.5.2.1: profileType is content free information defined by the
+// Operator); anything else stays opaque and lets the SM-DP+ fall back to the
+// eUICC version and the tenant default.
+func (h *Handler) resolveProfileType(tenant, profileType string) (string, error) {
+	i := strings.IndexByte(profileType, '/')
+	if i < 0 {
+		return "", nil
+	}
+	want, name := profileType[:i], profileType[i+1:]
+	if want == "" || name == "" {
+		return "", rsp.CodeProfileTypeUnknown.Status("malformed profileType " + profileType)
+	}
+	if want != tenant {
+		return "", rsp.CodeProfileTypeNotAllowed.Status("profileType belongs to another tenant")
+	}
+	if h.UPP != nil {
+		if _, err := h.UPP.GetForTenant(tenant, name); err != nil {
+			return "", rsp.CodeProfileTypeUnknown.Status("unknown profileType template " + name)
+		}
+	}
+	return name, nil
+}
+
+// authorize enforces tenant ownership of a profile and, when the request
+// carries an EID, the EID consistency required by SGP.22 §5.3.2.
+func (h *Handler) authorize(tenant string, p *store.Profile, eid string) error {
+	if p.TenantID != tenant {
+		return rsp.CodeInputRefused.Status("ICCID belongs to another tenant")
+	}
+	if eid != "" && p.EID != "" && p.EID != eid {
+		return rsp.CodeInvalidAssociation.Status("eid does not match the download order")
+	}
+	return nil
+}
+
+// authorizeICCID loads a profile and enforces tenant ownership. An unknown
+// ICCID is reported as such (8.2.1/3.9), distinct from an authorisation
+// failure (8.2.1/1.2).
+func (h *Handler) authorizeICCID(tenant, iccid string) error {
+	p, err := h.Profiles.GetByICCID(normalizeICCID(iccid))
+	if err != nil {
+		return rsp.CodeICCIDUnknown.Status("unknown ICCID")
+	}
+	if p.TenantID != tenant {
+		return rsp.CodeInputRefused.Status("ICCID belongs to another tenant")
+	}
+	return nil
+}
+
+// registerFailure makes an ES12 registration failure observable: esim42 needs
+// to know that an event was not registered (G20), so it is counted and audited
+// rather than only logged.
+func (h *Handler) registerFailure(tenant, eid, iccid string, err error) {
+	if h.Metrics != nil {
+		h.Metrics.Inc("rsp42_es12_register_failures_total", map[string]string{"tenant": tenant})
+	}
+	if h.AuditRepo == nil {
+		return
+	}
+	detail, _ := json.Marshal(map[string]string{"eid": eid, "iccid": iccid, "error": err.Error()})
+	_ = h.AuditRepo.Insert(&store.AuditEntry{
+		TenantID: tenant, Interface: "es12", Function: "registerEvent", Subject: eid,
+		Outcome: "Failed", DetailJSON: string(detail),
+	})
+}
+
 // Helpers -------------------------------------------------------------------
 
-func decode(w http.ResponseWriter, r *http.Request, v any) bool {
+// decode reads and validates a request and returns its header. ES2+ requires
+// both header identifiers.
+func decode(w http.ResponseWriter, r *http.Request, v any) (common.RequestHeader, bool) {
 	if err := common.ReadJSON(w, r, 1<<20, v); err != nil {
 		common.WriteCode(w, rsp.CodeInvalidRequest, "invalid JSON")
-		return false
+		return common.RequestHeader{}, false
 	}
-	// ES2+ requires both header identifiers.
 	var hdr common.RequestHeader
 	switch t := v.(type) {
 	case *downloadOrderReq:
@@ -275,12 +419,12 @@ func decode(w http.ResponseWriter, r *http.Request, v any) bool {
 	}
 	if hdr.FunctionRequesterIdentifier == "" || hdr.FunctionCallIdentifier == "" {
 		common.WriteCode(w, rsp.CodeInvalidRequest, "missing header.functionRequesterIdentifier/functionCallIdentifier")
-		return false
+		return common.RequestHeader{}, false
 	}
-	return true
+	return hdr, true
 }
 
-func (h *Handler) record(action, iccid, eid, matchingID string, req any) error {
+func (h *Handler) record(tenant, action, iccid, eid, matchingID string, req any) error {
 	if h.OrderAudit == nil {
 		return nil
 	}
@@ -288,7 +432,7 @@ func (h *Handler) record(action, iccid, eid, matchingID string, req any) error {
 	if err != nil {
 		return err
 	}
-	return h.OrderAudit.Insert(iccid, eid, matchingID, action, string(raw), "")
+	return h.OrderAudit.Insert(tenant, iccid, eid, matchingID, action, string(raw), "")
 }
 
 func writeSuccess(w http.ResponseWriter, extra map[string]any) {
@@ -306,7 +450,7 @@ func writeError(w http.ResponseWriter, err error) {
 		return
 	}
 	if errors.Is(err, store.ErrNotFound) {
-		common.WriteCode(w, rsp.CodeProfileNotFound, "unknown ICCID")
+		common.WriteCode(w, rsp.CodeICCIDUnknown, "unknown ICCID")
 		return
 	}
 	common.WriteStatusFailure(w, err)

@@ -14,6 +14,7 @@ import (
 // Entry is one audit record.
 type Entry struct {
 	TS         time.Time
+	TenantID   string
 	Actor      string
 	Interface  string
 	Function   string
@@ -70,14 +71,14 @@ func (l *Logger) Log(e Entry) {
 			}
 		}
 		_ = l.repo.Insert(&store.AuditEntry{
-			TS: e.TS, Actor: e.Actor, Interface: e.Interface, Function: e.Function,
+			TS: e.TS, TenantID: e.TenantID, Actor: e.Actor, Interface: e.Interface, Function: e.Function,
 			Subject: e.Subject, Outcome: e.Outcome, StatusCode: e.StatusCode,
 			RemoteAddr: e.RemoteAddr, DetailJSON: detail,
 		})
 	}
 	if l.file != nil {
 		if b, err := json.Marshal(map[string]any{
-			"ts": e.TS.Format(time.RFC3339), "actor": e.Actor, "interface": e.Interface,
+			"ts": e.TS.Format(time.RFC3339), "tenantId": e.TenantID, "actor": e.Actor, "interface": e.Interface,
 			"function": e.Function, "subject": e.Subject, "outcome": e.Outcome,
 			"statusCode": e.StatusCode, "remoteAddr": e.RemoteAddr, "detail": e.Detail,
 		}); err == nil {

@@ -11,7 +11,7 @@ import (
 // ProfileRepo persists the SM-DP+ profile inventory.
 type ProfileRepo struct{ db *sql.DB }
 
-const profileCols = `id, iccid, imsi, profile_type, eid, state, matching_id, cc_hash, cc_required,
+const profileCols = `id, tenant_id, external_ref, iccid, imsi, profile_type, eid, state, matching_id, cc_hash, cc_required,
 	smds_address, release_flag, download_attempts, cc_attempts, upp_template, ppr_ids, personalization,
 	created_at, updated_at, installed_at, error_reason, batch_id`
 
@@ -19,12 +19,12 @@ func scanProfile(sc interface {
 	Scan(dest ...any) error
 }) (*Profile, error) {
 	var p Profile
-	var imsi, ptype, eid, matching, smds, upp, pers, errReason sql.NullString
+	var tenant, extRef, imsi, ptype, eid, matching, smds, upp, pers, errReason sql.NullString
 	var ccHash, pprIds []byte
 	var ccReq, relFlag int
 	var created, updated int64
 	var installed, batchID sql.NullInt64
-	if err := sc.Scan(&p.ID, &p.ICCID, &imsi, &ptype, &eid, &p.State, &matching, &ccHash, &ccReq,
+	if err := sc.Scan(&p.ID, &tenant, &extRef, &p.ICCID, &imsi, &ptype, &eid, &p.State, &matching, &ccHash, &ccReq,
 		&smds, &relFlag, &p.DownloadAttempts, &p.CCAttempts, &upp, &pprIds, &pers, &created, &updated, &installed, &errReason, &batchID); err != nil {
 		return nil, err
 	}
@@ -32,6 +32,8 @@ func scanProfile(sc interface {
 		v := batchID.Int64
 		p.BatchID = &v
 	}
+	p.TenantID = tenant.String
+	p.ExternalRef = extRef.String
 	p.IMSI = imsi.String
 	p.ProfileType = ptype.String
 	p.EID = eid.String
@@ -61,11 +63,11 @@ func (r *ProfileRepo) Create(p *Profile) (int64, error) {
 	p.UpdatedAt = p.CreatedAt
 	now := p.CreatedAt.Unix()
 	res, err := r.db.Exec(`INSERT INTO profiles
-		(iccid, imsi, profile_type, eid, state, matching_id, cc_hash, cc_required, smds_address,
+		(tenant_id, external_ref, iccid, imsi, profile_type, eid, state, matching_id, cc_hash, cc_required, smds_address,
 		 release_flag, download_attempts, cc_attempts, upp_template, ppr_ids, personalization,
 		 created_at, updated_at, error_reason, batch_id)
-		VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
-		p.ICCID, nullStr(p.IMSI), nullStr(p.ProfileType), nullStr(p.EID), string(p.State), nullStr(p.MatchingID),
+		VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+		nullStr(p.TenantID), nullStr(p.ExternalRef), p.ICCID, nullStr(p.IMSI), nullStr(p.ProfileType), nullStr(p.EID), string(p.State), nullStr(p.MatchingID),
 		p.CCHash, boolInt(p.CCRequired), nullStr(p.SMDSAddress), boolInt(p.ReleaseFlag),
 		p.DownloadAttempts, p.CCAttempts, nullStr(p.UPPTemplate), p.PPRIds, nullStr(p.Personalization), now, now, nullStr(p.ErrorReason), p.BatchID)
 	if err != nil {
@@ -123,40 +125,25 @@ func (r *ProfileRepo) List() ([]*Profile, error) {
 
 // ProfileFilter constrains a profile listing (all fields optional).
 type ProfileFilter struct {
-	State   string // exact state
-	EID     string // exact EID
-	ICCID   string // ICCID prefix
-	Query   string // substring over iccid/imsi/eid/matching_id
-	BatchID *int64 // profiles belonging to a download batch
+	// Tenant matches an exact tenant id. A non-nil pointer to "" selects the
+	// platform-default profiles (tenant_id IS NULL); nil means "any tenant".
+	Tenant      *string
+	ExternalRef string     // exact external reference
+	State       string     // exact state
+	EID         string     // exact EID
+	ICCID       string     // ICCID prefix
+	Query       string     // substring over iccid/imsi/eid/matching_id
+	BatchID     *int64     // profiles belonging to a download batch
+	Since       *time.Time // created_at >= Since
+	Until       *time.Time // created_at <= Until
 }
 
 // ListFiltered returns a page of profiles and the total matching count. sort is
 // one of "created_at", "updated_at", "iccid", "state" (optionally prefixed with
 // '-'); anything else falls back to newest-first by created_at.
 func (r *ProfileRepo) ListFiltered(f ProfileFilter, limit, offset int, sort string) ([]*Profile, int, error) {
-	var where []string
-	var args []any
-	if f.State != "" {
-		where, args = append(where, "state = ?"), append(args, f.State)
-	}
-	if f.EID != "" {
-		where, args = append(where, "eid = ?"), append(args, f.EID)
-	}
-	if f.ICCID != "" {
-		where, args = append(where, "iccid LIKE ?"), append(args, f.ICCID+"%")
-	}
-	if f.Query != "" {
-		where = append(where, "(iccid LIKE ? OR imsi LIKE ? OR eid LIKE ? OR matching_id LIKE ?)")
-		q := "%" + f.Query + "%"
-		args = append(args, q, q, q, q)
-	}
-	if f.BatchID != nil {
-		where, args = append(where, "batch_id = ?"), append(args, *f.BatchID)
-	}
-	clause := ""
-	if len(where) > 0 {
-		clause = " WHERE " + strings.Join(where, " AND ")
-	}
+	where, args := profileWhere(f)
+	clause := buildWhere(where)
 
 	var total int
 	if err := r.db.QueryRow("SELECT COUNT(*) FROM profiles"+clause, args...).Scan(&total); err != nil {
@@ -180,6 +167,46 @@ func (r *ProfileRepo) ListFiltered(f ProfileFilter, limit, offset int, sort stri
 	return out, total, rows.Err()
 }
 
+// profileWhere builds the WHERE conditions for a profile filter.
+func profileWhere(f ProfileFilter) ([]string, []any) {
+	var where []string
+	var args []any
+	if f.Tenant != nil {
+		if *f.Tenant == "" {
+			where = append(where, "tenant_id IS NULL")
+		} else {
+			where, args = append(where, "tenant_id = ?"), append(args, *f.Tenant)
+		}
+	}
+	if f.ExternalRef != "" {
+		where, args = append(where, "external_ref = ?"), append(args, f.ExternalRef)
+	}
+	if f.State != "" {
+		where, args = append(where, "state = ?"), append(args, f.State)
+	}
+	if f.EID != "" {
+		where, args = append(where, "eid = ?"), append(args, f.EID)
+	}
+	if f.ICCID != "" {
+		where, args = append(where, "iccid LIKE ?"), append(args, f.ICCID+"%")
+	}
+	if f.Query != "" {
+		where = append(where, "(iccid LIKE ? OR imsi LIKE ? OR eid LIKE ? OR matching_id LIKE ?)")
+		q := "%" + f.Query + "%"
+		args = append(args, q, q, q, q)
+	}
+	if f.BatchID != nil {
+		where, args = append(where, "batch_id = ?"), append(args, *f.BatchID)
+	}
+	if f.Since != nil {
+		where, args = append(where, "created_at >= ?"), append(args, f.Since.Unix())
+	}
+	if f.Until != nil {
+		where, args = append(where, "created_at <= ?"), append(args, f.Until.Unix())
+	}
+	return where, args
+}
+
 func profileOrder(sort string) string {
 	dir := "DESC"
 	col := "created_at"
@@ -200,10 +227,10 @@ func profileOrder(sort string) string {
 func (r *ProfileRepo) Update(p *Profile) error {
 	p.UpdatedAt = time.Now().UTC()
 	_, err := r.db.Exec(`UPDATE profiles SET
-		imsi=?, profile_type=?, eid=?, state=?, matching_id=?, cc_hash=?, cc_required=?, smds_address=?,
+		tenant_id=?, external_ref=?, imsi=?, profile_type=?, eid=?, state=?, matching_id=?, cc_hash=?, cc_required=?, smds_address=?,
 		release_flag=?, download_attempts=?, cc_attempts=?, upp_template=?, ppr_ids=?, personalization=?,
 		updated_at=?, installed_at=?, error_reason=?, batch_id=? WHERE id=?`,
-		nullStr(p.IMSI), nullStr(p.ProfileType), nullStr(p.EID), string(p.State), nullStr(p.MatchingID),
+		nullStr(p.TenantID), nullStr(p.ExternalRef), nullStr(p.IMSI), nullStr(p.ProfileType), nullStr(p.EID), string(p.State), nullStr(p.MatchingID),
 		p.CCHash, boolInt(p.CCRequired), nullStr(p.SMDSAddress), boolInt(p.ReleaseFlag),
 		p.DownloadAttempts, p.CCAttempts, nullStr(p.UPPTemplate), p.PPRIds, nullStr(p.Personalization),
 		p.UpdatedAt.Unix(), nullTime(p.InstalledAt), nullStr(p.ErrorReason), p.BatchID, p.ID)
@@ -217,4 +244,45 @@ func (r *ProfileRepo) Update(p *Profile) error {
 func (r *ProfileRepo) Delete(iccid string) error {
 	_, err := r.db.Exec("DELETE FROM profiles WHERE iccid = ?", iccid)
 	return err
+}
+
+// EIDSummary aggregates the profiles installed on one eUICC.
+type EIDSummary struct {
+	EID            string    `json:"eid"`
+	ProfileCount   int       `json:"profileCount"`
+	InstalledCount int       `json:"installedCount"`
+	LastUpdatedAt  time.Time `json:"lastUpdatedAt"`
+}
+
+// ListEIDs returns one row per EID seen in the inventory, ordered by EID.
+func (r *ProfileRepo) ListEIDs(f ProfileFilter, limit, offset int) ([]EIDSummary, int, error) {
+	where, args := profileWhere(f)
+	where = append(where, "eid IS NOT NULL", "eid <> ''")
+	clause := buildWhere(where)
+
+	var total int
+	if err := r.db.QueryRow("SELECT COUNT(DISTINCT eid) FROM profiles"+clause, args...).Scan(&total); err != nil {
+		return nil, 0, err
+	}
+	rows, err := r.db.Query(`SELECT eid, COUNT(*), SUM(CASE WHEN state = 'Installed' THEN 1 ELSE 0 END), MAX(updated_at)
+		FROM profiles`+clause+` GROUP BY eid ORDER BY eid LIMIT ? OFFSET ?`, append(args, limit, offset)...)
+	if err != nil {
+		return nil, 0, err
+	}
+	defer func() { _ = rows.Close() }()
+	var out []EIDSummary
+	for rows.Next() {
+		var e EIDSummary
+		var installed sql.NullInt64
+		var updated sql.NullInt64
+		if err := rows.Scan(&e.EID, &e.ProfileCount, &installed, &updated); err != nil {
+			return nil, 0, err
+		}
+		e.InstalledCount = int(installed.Int64)
+		if updated.Valid {
+			e.LastUpdatedAt = toTime(updated.Int64)
+		}
+		out = append(out, e)
+	}
+	return out, total, rows.Err()
 }

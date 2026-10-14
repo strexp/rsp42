@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>rsp42 · management demo</title>
+<title>rsp42 · management console</title>
 <style>
   :root {
     --bg: #f6f7fb; --panel: #ffffff; --panel-2: #fafbfe; --border: #e5e7ef;
@@ -44,12 +44,13 @@
   .brand small { font-weight: 500; color: var(--muted); }
   .spacer { flex: 1; }
   .connect { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
-  .input, select {
+  .input, select, textarea {
     background: var(--panel); color: var(--text); border: 1px solid var(--border);
     border-radius: 10px; padding: 8px 10px; font: inherit; outline: none; min-width: 0;
   }
-  .input:focus, select:focus { border-color: var(--primary); box-shadow: 0 0 0 3px var(--primary-soft); }
-  .input.url { width: min(46vw, 420px); font-family: var(--mono); font-size: 12px; }
+  textarea { width: 100%; font-family: var(--mono); font-size: 12px; resize: vertical; }
+  .input:focus, select:focus, textarea:focus { border-color: var(--primary); box-shadow: 0 0 0 3px var(--primary-soft); }
+  .input.url { width: min(40vw, 380px); font-family: var(--mono); font-size: 12px; }
   .btn {
     display: inline-flex; align-items: center; gap: 6px; border: 1px solid var(--border);
     background: var(--panel); color: var(--text); padding: 8px 12px; border-radius: 10px;
@@ -70,7 +71,7 @@
   .pill.warn { color: var(--amber); background: var(--amber-soft); border-color: transparent; }
   .dotlive { width: 8px; height: 8px; border-radius: 50%; background: currentColor; }
 
-  .layout { display: grid; grid-template-columns: 226px 1fr; min-height: calc(100% - 57px); }
+  .layout { display: grid; grid-template-columns: 236px 1fr; min-height: calc(100% - 57px); }
   .sidebar { padding: 16px 12px; border-right: 1px solid var(--border); position: sticky; top: 57px; align-self: start; height: calc(100vh - 57px); overflow: auto; }
   .nav { display: flex; flex-direction: column; gap: 4px; }
   .nav button {
@@ -83,51 +84,59 @@
   .nav .ico { width: 18px; text-align: center; }
   .sidebar .hint { margin: 14px 6px 0; color: var(--faint); font-size: 11.5px; line-height: 1.5; }
 
-  main { padding: 20px 22px 60px; max-width: 1240px; }
+  main { padding: 20px 22px 60px; max-width: 1280px; }
   .page-head { display: flex; align-items: flex-end; gap: 12px; flex-wrap: wrap; margin-bottom: 14px; }
   .page-head h1 { font-size: 20px; margin: 0; }
-  .page-head p { margin: 2px 0 0; color: var(--muted); font-size: 13px; }
+  .page-head p { margin: 2px 0 0; color: var(--muted); font-size: 13px; max-width: 74ch; }
   .toolbar { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin: 0 0 12px; }
   .toolbar .grow { flex: 1; }
+  .toolbar label.inline { display: inline-flex; align-items: center; gap: 6px; color: var(--muted); font-size: 12.5px; }
 
   .card { background: var(--panel); border: 1px solid var(--border); border-radius: var(--radius); box-shadow: var(--shadow); }
   .card .pad { padding: 14px 16px; }
   .grid { display: grid; gap: 14px; }
-  .grid.cols { grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); }
+  .grid.cols { grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); }
+  .grid.two { grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); }
 
   table { width: 100%; border-collapse: collapse; }
   thead th {
     text-align: left; font-size: 11.5px; text-transform: uppercase; letter-spacing: .04em;
     color: var(--faint); font-weight: 600; padding: 10px 14px; border-bottom: 1px solid var(--border);
-    position: sticky; top: 0; background: var(--panel);
+    position: sticky; top: 0; background: var(--panel); z-index: 1;
   }
   tbody td { padding: 10px 14px; border-bottom: 1px solid var(--border); vertical-align: middle; }
   tbody tr:hover { background: var(--panel-2); }
   tbody tr:last-child td { border-bottom: none; }
-  td .actions { display: flex; gap: 6px; justify-content: flex-end; }
+  td .actions { display: flex; gap: 6px; justify-content: flex-end; flex-wrap: wrap; }
+  td.narrow, th.narrow { width: 34px; }
 
-  .badge { display: inline-flex; align-items: center; padding: 2px 9px; border-radius: 999px; font-size: 11.5px; font-weight: 600; background: var(--primary-soft); color: var(--primary); }
-  .badge.installed { background: var(--green-soft); color: var(--green); }
-  .badge.error, .badge.unavailable { background: var(--red-soft); color: var(--red); }
-  .badge.downloaded, .badge.released { background: var(--blue-soft); color: var(--blue); }
-  .badge.allocated, .badge.linked, .badge.confirmed { background: var(--amber-soft); color: var(--amber); }
-  .badge.available { background: var(--green-soft); color: var(--green); }
-  .badge.blocked { background: var(--red-soft); color: var(--red); }
-  .badge.reserved { background: var(--amber-soft); color: var(--amber); }
-  .badge.allocated-p { background: var(--blue-soft); color: var(--blue); }
+  .badge { display: inline-flex; align-items: center; padding: 2px 9px; border-radius: 999px; font-size: 11.5px; font-weight: 600; background: var(--primary-soft); color: var(--primary); white-space: nowrap; }
+  .badge.installed, .badge.active, .badge.completed, .badge.available, .badge.confirmed { background: var(--green-soft); color: var(--green); }
+  .badge.error, .badge.unavailable, .badge.blocked, .badge.failed, .badge.disabled, .badge.cancelled { background: var(--red-soft); color: var(--red); }
+  .badge.downloaded, .badge.released, .badge.open, .badge.allocated-p, .badge.pool { background: var(--blue-soft); color: var(--blue); }
+  .badge.allocated, .badge.linked, .badge.reserved, .badge.expired, .badge.reservationexpired { background: var(--amber-soft); color: var(--amber); }
+  .badge.deleted { background: var(--panel-2); color: var(--faint); }
+  .tag { display: inline-block; padding: 1px 7px; border-radius: 6px; background: var(--panel-2); border: 1px solid var(--border); color: var(--muted); font-size: 11.5px; font-family: var(--mono); }
 
   .stat { background: var(--panel); border: 1px solid var(--border); border-radius: var(--radius); padding: 14px 16px; box-shadow: var(--shadow); }
-  .stat .k { color: var(--muted); font-size: 12px; }
+  .stat .k { color: var(--muted); font-size: 12px; text-transform: lowercase; }
   .stat .v { font-size: 24px; font-weight: 700; margin-top: 4px; }
   .stat .s { color: var(--faint); font-size: 11.5px; }
 
+  .bars { display: flex; flex-direction: column; gap: 7px; }
+  .bar { display: grid; grid-template-columns: minmax(90px, 160px) 1fr 52px; gap: 10px; align-items: center; font-size: 12.5px; }
+  .bar .track { height: 8px; border-radius: 99px; background: var(--panel-2); border: 1px solid var(--border); overflow: hidden; }
+  .bar .fill { height: 100%; background: var(--primary); }
+  .bar .n { text-align: right; color: var(--muted); font-family: var(--mono); font-size: 12px; }
+
   .empty { padding: 40px 16px; text-align: center; color: var(--muted); }
   .empty .big { font-size: 30px; opacity: .5; }
-
   .pager { display: flex; align-items: center; gap: 10px; padding: 10px 14px; color: var(--muted); font-size: 12.5px; }
 
+  .bulkbar { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; padding: 10px 14px; margin-bottom: 10px; border: 1px solid color-mix(in oklab, var(--primary) 30%, var(--border)); background: var(--primary-soft); border-radius: var(--radius); color: var(--primary); }
+
   .toasts { position: fixed; right: 16px; bottom: 16px; display: flex; flex-direction: column; gap: 8px; z-index: 60; }
-  .toast { background: var(--panel); border: 1px solid var(--border); border-left: 3px solid var(--primary); border-radius: 10px; box-shadow: var(--shadow); padding: 10px 12px; max-width: 360px; animation: slidein .18s ease; }
+  .toast { background: var(--panel); border: 1px solid var(--border); border-left: 3px solid var(--primary); border-radius: 10px; box-shadow: var(--shadow); padding: 10px 12px; max-width: 380px; animation: slidein .18s ease; }
   .toast.ok { border-left-color: var(--green); }
   .toast.err { border-left-color: var(--red); }
   .toast .t { font-weight: 600; }
@@ -136,13 +145,13 @@
 
   .overlay { position: fixed; inset: 0; background: rgba(10,12,18,.44); display: none; z-index: 40; }
   .overlay.show { display: block; }
-  .modal { position: fixed; z-index: 50; top: 8vh; left: 50%; transform: translateX(-50%); width: min(680px, 94vw); max-height: 84vh; overflow: auto; display: none; }
+  .modal { position: fixed; z-index: 50; top: 6vh; left: 50%; transform: translateX(-50%); width: min(760px, 94vw); max-height: 88vh; overflow: auto; display: none; }
   .modal.show { display: block; }
-  .modal .head, .drawer .head { display: flex; align-items: center; gap: 10px; padding: 14px 16px; border-bottom: 1px solid var(--border); }
+  .modal .head, .drawer .head { display: flex; align-items: center; gap: 10px; padding: 14px 16px; border-bottom: 1px solid var(--border); position: sticky; top: 0; background: var(--panel); z-index: 2; }
   .modal .head h3, .drawer .head h3 { margin: 0; font-size: 15px; flex: 1; }
   .modal .body { padding: 16px; }
-  .modal .foot { display: flex; gap: 8px; justify-content: flex-end; padding: 12px 16px; border-top: 1px solid var(--border); }
-  .drawer { position: fixed; z-index: 50; top: 0; right: 0; height: 100%; width: min(560px, 96vw); background: var(--panel); border-left: 1px solid var(--border); box-shadow: var(--shadow); transform: translateX(102%); transition: transform .22s ease; overflow: auto; }
+  .modal .foot { display: flex; gap: 8px; justify-content: flex-end; padding: 12px 16px; border-top: 1px solid var(--border); position: sticky; bottom: 0; background: var(--panel); }
+  .drawer { position: fixed; z-index: 50; top: 0; right: 0; height: 100%; width: min(620px, 96vw); background: var(--panel); border-left: 1px solid var(--border); box-shadow: var(--shadow); transform: translateX(102%); transition: transform .22s ease; overflow: auto; }
   .drawer.show { transform: none; }
   .drawer .body { padding: 16px; }
 
@@ -151,8 +160,9 @@
   .field .row { display: flex; gap: 8px; }
   .field .row > * { flex: 1; }
   .two { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+  .three { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 12px; }
 
-  dl.kv { display: grid; grid-template-columns: 140px 1fr; gap: 6px 12px; margin: 0; }
+  dl.kv { display: grid; grid-template-columns: 150px 1fr; gap: 6px 12px; margin: 0; }
   dl.kv dt { color: var(--muted); font-size: 12px; }
   dl.kv dd { margin: 0; font-family: var(--mono); font-size: 12.5px; word-break: break-all; }
 
@@ -167,23 +177,26 @@
   .banner.warn { background: var(--amber-soft); color: var(--amber); }
   .banner.err { background: var(--red-soft); color: var(--red); }
 
+  pre.json { background: var(--panel-2); border: 1px solid var(--border); border-radius: 10px; padding: 10px; overflow: auto; max-height: 340px; font-family: var(--mono); font-size: 12px; margin: 0; white-space: pre-wrap; word-break: break-word; }
+
   .spin { width: 15px; height: 15px; border: 2px solid color-mix(in oklab, var(--primary) 30%, transparent); border-top-color: var(--primary); border-radius: 50%; animation: rot .7s linear infinite; display: inline-block; }
   @keyframes rot { to { transform: rotate(360deg) } }
   .loading { padding: 26px; text-align: center; color: var(--muted); }
+  h4.sec { margin: 16px 0 6px; font-size: 12px; color: var(--muted); text-transform: uppercase; letter-spacing: .05em; }
 
-  @media (max-width: 900px) {
+  @media (max-width: 980px) {
     .layout { grid-template-columns: 1fr; }
     .sidebar { position: static; height: auto; border-right: none; border-bottom: 1px solid var(--border); }
     .nav { flex-direction: row; flex-wrap: wrap; }
     .nav button { width: auto; }
-    .two { grid-template-columns: 1fr; }
+    .two, .three { grid-template-columns: 1fr; }
     .input.url { width: 100%; }
   }
 </style>
 </head>
 <body>
 <header class="topbar">
-  <div class="brand"><span class="dot"></span>rsp42 <small>· management demo</small></div>
+  <div class="brand"><span class="dot"></span>rsp42 <small>· management console</small></div>
   <div class="spacer"></div>
   <div class="connect">
     <input id="base" class="input url" spellcheck="false" placeholder="http://127.0.0.1:9000/admin/api/v1" />
@@ -191,6 +204,7 @@
       <option value="api">Live API</option>
       <option value="demo">Demo data</option>
     </select>
+    <select id="tenant" title="Tenant scope (sent as ?tenant=)"></select>
     <button id="connectBtn" class="btn primary">Connect</button>
     <span id="status" class="pill"><span class="dotlive"></span><span id="statusText">idle</span></span>
   </div>
@@ -203,7 +217,10 @@
     <nav class="nav" id="nav"></nav>
     <div class="hint">
       BSS/OSS-facing management API. No authentication — deploy on a trusted network.
-      <div style="margin-top:8px">Client: <span id="clientKind" class="mono">–</span></div>
+      <div style="margin-top:8px">Source: <span id="clientKind" class="mono">–</span></div>
+      <div style="margin-top:4px">Scope: <span id="tenantScope" class="mono">all tenants</span></div>
+      <div style="margin-top:8px"><a id="specLink" href="#" target="_blank" rel="noreferrer">OpenAPI document ↗</a></div>
+      <div style="margin-top:8px">SM-DP+ admin is :9000, SM-DS admin is :9100 (serves only <span class="mono">/events</span> and <span class="mono">/openapi.json</span>).</div>
     </div>
   </aside>
   <main>
@@ -217,28 +234,31 @@
 <aside class="drawer" id="drawer"></aside>
 
 <script type="module">
-// ------------------------------------------------------------------ helpers
+// ===================================================================== helpers
 const $ = (s, r = document) => r.querySelector(s);
 const $$ = (s, r = document) => [...r.querySelectorAll(s)];
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, c => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[c]));
 const fmtTime = (t) => { if (!t) return '–'; const d = new Date(t); return isNaN(d) ? esc(t) : d.toLocaleString(); };
 const short = (s, n = 16) => { s = String(s ?? ''); return s.length > n ? s.slice(0, n) + '…' : s; };
+const attr = (v) => esc(v ?? '');
+const newKey = () => (crypto.randomUUID ? crypto.randomUUID() : 'k-' + Date.now() + '-' + Math.random().toString(16).slice(2));
 
 function toast(title, msg = '', kind = '') {
   const el = document.createElement('div');
   el.className = 'toast ' + kind;
   el.innerHTML = `<div class="t">${esc(title)}</div>${msg ? `<div class="m">${esc(msg)}</div>` : ''}`;
   $('#toasts').appendChild(el);
-  setTimeout(() => { el.style.opacity = '0'; el.style.transition = 'opacity .3s'; setTimeout(() => el.remove(), 320); }, 4200);
+  setTimeout(() => { el.style.opacity = '0'; el.style.transition = 'opacity .3s'; setTimeout(() => el.remove(), 320); }, 5000);
 }
-
 function badge(text) {
   const cls = String(text).toLowerCase().replace(/[^a-z]/g, '');
   return `<span class="badge ${cls}">${esc(text)}</span>`;
 }
+function boolBadge(v, yes = 'yes', no = 'no') { return v ? badge(yes) : `<span class="badge error">${esc(no)}</span>`; }
 function loading() { return `<div class="loading"><span class="spin"></span> loading…</div>`; }
 function empty(msg, icon = '∅') { return `<div class="empty"><div class="big">${icon}</div><div>${esc(msg)}</div></div>`; }
-function pager(state, onGo) {
+function errBox(msg) { return `<div class="card"><div class="empty"><div class="big">⚠️</div><div>${esc(msg)}</div></div></div>`; }
+function pager(state) {
   const pages = Math.max(1, Math.ceil(state.total / state.size));
   return `<div class="pager">
     <button class="btn sm" ${state.page <= 1 ? 'disabled' : ''} data-pager="prev">‹ Prev</button>
@@ -246,225 +266,807 @@ function pager(state, onGo) {
     <button class="btn sm" ${state.page >= pages ? 'disabled' : ''} data-pager="next">Next ›</button>
   </div>`;
 }
-
-// ------------------------------------------------------------------ spec (for openapi-client-axios)
-const SPEC_PATHS = {
-  '/profiles': ['get', 'post'],
-  '/profiles/{iccid}': ['get', 'patch', 'delete'],
-  '/profiles/{iccid}/confirm': ['post'],
-  '/profiles/{iccid}/cancel': ['post'],
-  '/profiles/{iccid}/release': ['post'],
-  '/profiles/{iccid}/activation-code': ['post'],
-  '/profiles/{iccid}/timeline': ['get'],
-  '/profiles/bulk': ['post'],
-  '/profiles/export': ['get'],
-  '/profiles/import': ['post'],
-  '/batches': ['get', 'post'],
-  '/batches/{id}': ['get', 'delete'],
-  '/batches/{id}/items': ['get'],
-  '/batches/{id}/confirm': ['post'],
-  '/batches/{id}/cancel': ['post'],
-  '/upp': ['get', 'post'],
-  '/upp/{name}': ['get', 'delete'],
-  '/upp/{name}/decoded': ['get'],
-  '/upp/{name}/activate': ['post'],
-  '/upp/{name}/deactivate': ['post'],
-  '/personalization': ['get'],
-  '/personalization/{iccid}': ['get', 'put', 'delete'],
-  '/personalization/import': ['post'],
-  '/personalization/export': ['get'],
-  '/iccid-pool': ['get'],
-  '/iccid-pool/stats': ['get'],
-  '/iccid-pool/reserve': ['post'],
-  '/iccid-pool/release': ['post'],
-  '/iccid-pool/block': ['post'],
-  '/iccid-ranges': ['get', 'post'],
-  '/iccid-ranges/{id}': ['delete'],
-  '/audit': ['get'],
-};
-function buildSpec(base) {
-  const paths = {};
-  for (const [p, methods] of Object.entries(SPEC_PATHS)) {
-    paths[p] = {};
-    for (const m of methods) paths[p][m] = { responses: { 200: { description: 'ok' } } };
-  }
-  return { openapi: '3.0.3', info: { title: 'rsp42 management API', version: '0.1.0' }, servers: [{ url: base }], paths };
+function bars(buckets) {
+  if (!buckets || !buckets.length) return empty('No data.', '📊');
+  const max = Math.max(...buckets.map(b => b.count)) || 1;
+  return `<div class="bars">${buckets.map(b => `<div class="bar">
+    <div class="mono">${esc(b.key || '(default)')}</div>
+    <div class="track"><div class="fill" style="width:${Math.round(100 * b.count / max)}%"></div></div>
+    <div class="n">${b.count}</div></div>`).join('')}</div>`;
 }
-
-// ------------------------------------------------------------------ clients
-function rspClient(transport) {
-  return {
-    get: (p, cfg) => transport.request('GET', p, null, cfg && cfg.params),
-    post: (p, b) => transport.request('POST', p, b),
-    put: (p, b) => transport.request('PUT', p, b),
-    patch: (p, b) => transport.request('PATCH', p, b),
-    delete: (p) => transport.request('DELETE', p),
-  };
+function saveBlob(blob, filename) {
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = filename;
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 4000);
 }
+function debounce(fn, ms = 300) { let t; return (...a) => { clearTimeout(t); t = setTimeout(() => fn(...a), ms); }; }
+function field(label, input) { return `<div class="field"><label>${esc(label)}</label>${input}</div>`; }
+function opt(v, cur) { return `<option value="${attr(v)}" ${String(v) === String(cur) ? 'selected' : ''}>${esc(v === '' ? '(platform default)' : v)}</option>`; }
 
-// fetch-based transport
-function makeFetchTransport(base) {
-  async function request(method, path, body, params) {
-    const url = new URL(base.replace(/\/$/, '') + path);
-    if (params) for (const [k, v] of Object.entries(params)) if (v !== undefined && v !== null && v !== '') url.searchParams.set(k, v);
-    let res;
-    try {
-      res = await fetch(url, { method, headers: body ? { 'Content-Type': 'application/json' } : {}, body: body ? JSON.stringify(body) : undefined });
-    } catch (e) { const err = new Error('network error (CORS?): ' + e.message); err.network = true; throw err; }
-    const text = await res.text();
-    let data = null; try { data = text ? JSON.parse(text) : null; } catch { data = text; }
-    if (!res.ok) throw new Error((data && data.error) || `${res.status} ${res.statusText}`);
-    return { data, status: res.status };
-  }
-  return { request };
-}
+// ===================================================================== state
+const SECTIONS = [
+  { id: 'dashboard', icon: '📊', label: 'Overview' },
+  { id: 'profiles',  icon: '📇', label: 'Profiles' },
+  { id: 'batches',   icon: '🗂️', label: 'Download lists' },
+  { id: 'upp',       icon: '🧩', label: 'UPP templates' },
+  { id: 'perso',     icon: '🔑', label: 'Personalization' },
+  { id: 'pool',      icon: '🔢', label: 'ICCID pool' },
+  { id: 'eids',      icon: '📱', label: 'eUICCs' },
+  { id: 'notifs',    icon: '🔔', label: 'Notifications' },
+  { id: 'audit',     icon: '📜', label: 'Audit log' },
+  { id: 'events',    icon: '📡', label: 'SM-DS events' },
+  { id: 'tenants',   icon: '🏢', label: 'Tenants' },
+];
 
-async function makeOpenAPI(base) {
-  const mod = await import('https://esm.sh/openapi-client-axios@7');
-  const OpenAPIClientAxios = mod.default || mod.OpenAPIClientAxios || mod;
-  const api = new OpenAPIClientAxios({ definition: buildSpec(base), axiosConfig: { baseURL: base } });
-  await api.init();
-  const ax = api.getClient();
-  const transport = { request: (m, p, b, params) => ax.request({ method: m, url: p, data: b, params }).then(r => ({ data: r.data, status: r.status })) };
-  return transport;
-}
-
-// ------------------------------------------------------------------ demo (offline) transport
-function makeDemoTransport() {
-  const now = () => new Date().toISOString();
-  let seq = 100;
-  const profiles = [
-    { iccid: '89000123456789012341', imsi: '001010123456063', profileType: 'operational', eid: '', state: 'Installed', matchingId: 'M-A1', ccRequired: false, downloadAttempts: 1, ccAttempts: 0, createdAt: now(), updatedAt: now(), installedAt: now() },
-    { iccid: '89000123456789012342', imsi: '001010123456064', profileType: 'operational', eid: '', state: 'Released', matchingId: 'M-A2', ccRequired: true, downloadAttempts: 0, ccAttempts: 0, createdAt: now(), updatedAt: now() },
-    { iccid: '89000123456789012343', imsi: '001010123456065', profileType: 'test', eid: '89049032123451234512345678901235', state: 'Allocated', matchingId: '', ccRequired: false, downloadAttempts: 0, ccAttempts: 0, createdAt: now(), updatedAt: now() },
-  ];
-  const batches = [{ id: 1, name: 'Q4 rollout', profileType: 'operational', state: 'Open', total: 2, createdAt: now(), updatedAt: now() }];
-  const upp = [
-    { name: 'TS48v1_A.der', saipMajor: 2, saipMinor: 1, active: true, sha256: 'dea14ec7a909…', size: 31000 },
-    { name: 'TS48v2_SAIP2.3_BERTLV.der', saipMajor: 2, saipMinor: 3, active: true, sha256: '43af15322855…', size: 42000 },
-  ];
-  const perso = [{ iccid: '89000123456789012341', imsi: '001010123456063', hasK: true, hasOPc: true, algorithm: 'milenage' }];
-  const pool = [{ iccid: '8900012000000000009', state: 'available', createdAt: now() }, { iccid: '8900012000000000014', state: 'allocated', eid: '89049032123451234512345678901235', createdAt: now() }];
-  const ranges = [{ id: 1, start: '8900012000000000000', end: '8900012000000000099', createdAt: now() }];
-  const audit = [{ time: now(), interface: 'admin', function: 'createProfile', subject: '89000123456789012341', outcome: 'Executed-Success', remoteAddr: '127.0.0.1:5555' }];
-
-  const page = (items, params) => {
-    const p = +(params?.page || 1), s = +(params?.size || 20);
-    return { items: items.slice((p - 1) * s, (p - 1) * s + s), page: p, size: s, total: items.length };
-  };
-  const find = (arr, key, val) => arr.find(x => String(x[key]) === String(val));
-
-  async function request(method, path, body, params) {
-    await new Promise(r => setTimeout(r, 120));
-    const seg = path.split('/').filter(Boolean);
-    // profiles
-    if (seg[0] === 'profiles') {
-      if (seg.length === 1) {
-        if (method === 'GET') return { data: page(profiles, params), status: 200 };
-        if (method === 'POST') { const p = { iccid: '8900012999' + String(++seq).padStart(10, '0'), imsi: '00101', profileType: body?.profileType || 'operational', eid: body?.eid || '', state: 'Allocated', matchingId: body?.matchingId || '', ccRequired: false, downloadAttempts: 0, ccAttempts: 0, createdAt: now(), updatedAt: now() }; profiles.unshift(p); return { data: p, status: 201 }; }
-      }
-      if (seg[1] === 'bulk') { return { data: { action: body.action, results: (body.iccids || []).map(i => ({ iccid: i, ok: true })) }, status: 200 }; }
-      if (seg[1] === 'export') { return { data: { items: profiles, total: profiles.length }, status: 200 }; }
-      if (seg[1] === 'import') { return { data: { imported: (body.records || []).length }, status: 200 }; }
-      const p = find(profiles, 'iccid', seg[1]);
-      if (!p) throw new Error('unknown ICCID');
-      const sub = seg[2];
-      if (!sub) {
-        if (method === 'GET') return { data: p, status: 200 };
-        if (method === 'PATCH') { Object.assign(p, body); p.updatedAt = now(); return { data: p, status: 200 }; }
-        if (method === 'DELETE') { profiles.splice(profiles.indexOf(p), 1); return { data: null, status: 204 }; }
-      }
-      if (sub === 'confirm') { p.state = body?.release ? 'Released' : 'Confirmed'; if (body?.matchingId) p.matchingId = body.matchingId; return { data: p, status: 200 }; }
-      if (sub === 'cancel') { p.state = body?.finalStatus === 'Unavailable' ? 'Unavailable' : 'Available'; return { data: p, status: 200 }; }
-      if (sub === 'release') { p.state = 'Released'; return { data: p, status: 200 }; }
-      if (sub === 'activation-code') { return { data: { activationCode: `1$testsmdpplus1.example.com$${p.matchingId}`, matchingId: p.matchingId }, status: 200 }; }
-      if (sub === 'timeline') { return { data: { iccid: p.iccid, events: [{ time: now(), kind: 'order', action: 'downloadOrder', detail: p.matchingId }, { time: now(), kind: 'notification', action: 'install', signed: true, success: true }] }, status: 200 }; }
-    }
-    // batches
-    if (seg[0] === 'batches') {
-      if (seg.length === 1) {
-        if (method === 'GET') return { data: page(batches, params), status: 200 };
-        if (method === 'POST') { const b = { id: batches.length + 1, name: body.name, profileType: body.profileType, state: 'Open', total: body.count, createdAt: now(), updatedAt: now() }; batches.unshift(b); return { data: b, status: 201 }; }
-      }
-      const b = find(batches, 'id', seg[1]);
-      if (!b) throw new Error('unknown batch');
-      if (!seg[2]) { if (method === 'GET') return { data: { batch: b, states: { Allocated: b.total } }, status: 200 }; if (method === 'DELETE') { batches.splice(batches.indexOf(b), 1); return { data: null, status: 204 }; } }
-      if (seg[2] === 'items') return { data: page(profiles.slice(0, b.total), params), status: 200 };
-      if (seg[2] === 'confirm') { b.state = 'Completed'; return { data: { applied: b.total, failed: 0 }, status: 200 }; }
-      if (seg[2] === 'cancel') { b.state = 'Cancelled'; return { data: { applied: b.total, failed: 0 }, status: 200 }; }
-    }
-    // upp
-    if (seg[0] === 'upp') {
-      if (seg.length === 1) { if (method === 'GET') return { data: { items: upp }, status: 200 }; if (method === 'POST') { const u = { name: body.name, saipMajor: 2, saipMinor: 1, active: true, sha256: 'demo…', size: 1234 }; upp.unshift(u); return { data: u, status: 200 }; } }
-      const u = find(upp, 'name', seg[1]);
-      if (!u) throw new Error('unknown template');
-      if (seg[2] === 'decoded') return { data: { name: u.name, major: u.saipMajor, minor: u.saipMinor, profileType: 'GSMA Generic eUICC Test Profile', iccid: '89000123456789012341', services: ['usim', 'isim', 'javacard'], gfste: ['2.23.143.1.2.1', '2.23.143.1.2.3'], elements: [{ tag: 'A0', name: 'header', size: 137 }, { tag: 'B0', name: 'mf', size: 761 }], files: [{ fid: '2FE2', peName: 'mf', bodySize: 10 }] }, status: 200 };
-      if (seg[2] === 'activate') { u.active = true; return { data: u, status: 200 }; }
-      if (seg[2] === 'deactivate') { u.active = false; return { data: u, status: 200 }; }
-      if (!seg[2] && method === 'DELETE') { upp.splice(upp.indexOf(u), 1); return { data: null, status: 204 }; }
-    }
-    // personalization
-    if (seg[0] === 'personalization') {
-      if (seg.length === 1 && method === 'GET') return { data: page(perso, params), status: 200 };
-      if (seg[1] === 'export') return { data: { items: perso, total: perso.length }, status: 200 };
-      if (seg[1] === 'import') { return { data: { imported: (body.records || []).length }, status: 200 }; }
-      const key = seg[1];
-      const rec = find(perso, 'iccid', key);
-      if (method === 'GET') { if (!rec) throw new Error('no personalization'); return { data: rec, status: 200 }; }
-      if (method === 'PUT') { const r = { iccid: key, imsi: body.imsi, hasK: !!body.k, hasOPc: !!body.opc, algorithm: body.algorithm, k: body.k, opc: body.opc }; const i = perso.findIndex(x => x.iccid === key); if (i >= 0) perso[i] = r; else perso.unshift(r); return { data: r, status: 200 }; }
-      if (method === 'DELETE') { const i = perso.findIndex(x => x.iccid === key); if (i < 0) throw new Error('not found'); perso.splice(i, 1); return { data: null, status: 204 }; }
-    }
-    // iccid pool
-    if (seg[0] === 'iccid-pool') {
-      if (seg[1] === 'stats') { const c = {}; pool.forEach(x => c[x.state] = (c[x.state] || 0) + 1); return { data: { states: c, ranges: ranges.length, available: c.available || 0 }, status: 200 }; }
-      if (seg[1] === 'reserve') { const e = pool.find(x => x.state === 'available'); if (!e) throw new Error('no available ICCID'); e.state = 'allocated'; e.eid = body.eid; return { data: { iccid: e.iccid, state: 'allocated' }, status: 200 }; }
-      if (seg[1] === 'release' || seg[1] === 'block') { const e = find(pool, 'iccid', body.iccid); if (!e) throw new Error('unknown ICCID'); e.state = seg[1] === 'release' ? 'available' : 'blocked'; return { data: e, status: 200 }; }
-      if (method === 'GET') return { data: page(pool.filter(x => !params?.state || x.state === params.state), params), status: 200 };
-    }
-    if (seg[0] === 'iccid-ranges') {
-      if (method === 'GET') return { data: { items: ranges }, status: 200 };
-      if (method === 'POST') { const r = { id: ranges.length + 1, start: body.start, end: body.end, note: body.note, createdAt: now() }; ranges.push(r); return { data: { rangeId: r.id, inserted: 10, skipped: 90 }, status: 201 }; }
-      if (method === 'DELETE') { ranges.splice(ranges.findIndex(x => String(x.id) === seg[1]), 1); return { data: { removed: 10 }, status: 200 }; }
-    }
-    if (seg[0] === 'audit' && method === 'GET') {
-      const items = audit.filter(a => (!params?.interface || a.interface === params.interface) && (!params?.subject || a.subject === params.subject));
-      return { data: page(items, params), status: 200 };
-    }
-    throw new Error(`demo: ${method} ${path} not implemented`);
-  }
-  return { request };
-}
-
-// ------------------------------------------------------------------ app state
 const S = {
   base: localStorage.getItem('rsp42.base') || 'http://127.0.0.1:9000/admin/api/v1',
   mode: localStorage.getItem('rsp42.mode') || 'api',
-  client: null, kind: '–', connected: false,
+  tenant: localStorage.getItem('rsp42.tenant') === null ? null
+        : (localStorage.getItem('rsp42.tenant') === '*' ? null : localStorage.getItem('rsp42.tenant')),
+  transport: null, kind: '–', connected: false, specServed: false,
   section: 'profiles',
-  profiles: { page: 1, size: 20, q: '', state: '', total: 0, items: [], loading: false },
-  batches: { page: 1, size: 20, total: 0, items: [], loading: false },
-  upp: { items: [], loading: false },
-  perso: { page: 1, size: 20, total: 0, items: [], loading: false },
-  pool: { page: 1, size: 20, total: 0, items: [], stats: null, ranges: [], loading: false },
-  audit: { page: 1, size: 20, total: 0, items: [], interface: '', subject: '', loading: false },
+  tenants:    { items: [], loading: false, error: '' },
+  dashboard:  { data: null, loading: false, error: '' },
+  profiles:   { page: 1, size: 25, total: 0, items: [], loading: false, error: '',
+                q: '', state: '', eid: '', iccid: '', externalRef: '', batchId: '', from: '', to: '', sort: '',
+                stats: [], selected: new Set() },
+  batches:    { page: 1, size: 25, total: 0, items: [], loading: false, error: '' },
+  upp:        { items: [], loading: false, error: '' },
+  perso:      { page: 1, size: 25, total: 0, items: [], loading: false, error: '', iccid: '', reveal: false },
+  pool:       { page: 1, size: 25, total: 0, items: [], ranges: [], stats: null, loading: false, error: '', state: '', iccid: '' },
+  eids:       { page: 1, size: 25, total: 0, items: [], loading: false, error: '', state: '', from: '', to: '' },
+  notifs:     { page: 1, size: 25, total: 0, items: [], loading: false, error: '', iccid: '', eid: '', from: '', to: '' },
+  audit:      { page: 1, size: 25, total: 0, items: [], loading: false, error: '', stats: null,
+                interface: '', function: '', subject: '', actor: '', outcome: '', from: '', to: '' },
+  events:     { page: 1, size: 25, total: 0, items: [], loading: false, error: '', stats: null,
+                eid: '', eventId: '', iccid: '', matchingId: '', status: '', from: '', to: '', sort: '' },
 };
 
-const SECTIONS = [
-  { id: 'profiles', icon: '📇', label: 'Profiles' },
-  { id: 'batches', icon: '🗂️', label: 'Download lists' },
-  { id: 'upp', icon: '🧩', label: 'UPP templates' },
-  { id: 'perso', icon: '🔑', label: 'Personalization' },
-  { id: 'pool', icon: '🔢', label: 'ICCID pool' },
-  { id: 'audit', icon: '📜', label: 'Audit log' },
-];
-
-async function api(method, path, body, params) {
-  if (!S.client) throw new Error('not connected');
-  const res = await S.client[method.toLowerCase()](path, method === 'GET' ? { params } : body);
-  return res.data;
+// ===================================================================== transports
+function buildURL(base, path, params) {
+  const url = new URL(base.replace(/\/+$/, '') + path, window.location.href);
+  if (params) for (const [k, v] of Object.entries(params)) {
+    // Only null/undefined are dropped: an empty `tenant=` is meaningful (it
+    // selects the platform-default scope, while omitting it spans all owners).
+    if (v === undefined || v === null) continue;
+    url.searchParams.set(k, v);
+  }
+  return url;
 }
 
-// ------------------------------------------------------------------ shell
+function makeFetchTransport(base) {
+  async function request(method, path, opts = {}) {
+    const { body, params, idem, contentType } = opts;
+    const url = buildURL(base, path, params);
+    const headers = { Accept: 'application/json' };
+    let payload;
+    if (body !== undefined && body !== null) {
+      if (typeof body === 'string') { headers['Content-Type'] = contentType || 'text/csv'; payload = body; }
+      else { headers['Content-Type'] = 'application/json'; payload = JSON.stringify(body); }
+    }
+    if (idem) headers['Idempotency-Key'] = idem;
+    let res;
+    try { res = await fetch(url, { method, headers, body: payload }); }
+    catch (e) { const err = new Error('network error (server down or CORS): ' + e.message); err.network = true; throw err; }
+    const text = await res.text();
+    let data = null; try { data = text ? JSON.parse(text) : null; } catch { data = text; }
+    if (!res.ok) {
+      const err = new Error((data && (data.message || data.error)) || `${res.status} ${res.statusText}`);
+      err.status = res.status; err.code = data && data.code;
+      throw err;
+    }
+    return { data, status: res.status, replayed: res.headers.get('Idempotency-Replayed') === 'true' };
+  }
+  async function download(path, params) {
+    const url = buildURL(base, path, params);
+    const res = await fetch(url);
+    if (!res.ok) {
+      const text = await res.text();
+      let data = null; try { data = JSON.parse(text); } catch {}
+      throw new Error((data && (data.message || data.error)) || `${res.status} ${res.statusText}`);
+    }
+    return await res.blob();
+  }
+  return { request, download, kind: 'fetch' };
+}
+
+// ------------------------------------------------------------------ demo data
+function makeDemoTransport() {
+  const nowIso = () => new Date().toISOString();
+  const daysAgo = (n) => new Date(Date.now() - n * 86400000).toISOString();
+  const minsAgo = (n) => new Date(Date.now() - n * 60000).toISOString();
+  let seq = 0;
+  const EID_A = '89049032123451234512345678901235';
+  const EID_B = '89049032999999999999999999999901';
+
+  const tenants = [
+    { id: 'carrier-a', name: 'Carrier A', status: 'active', templateQuota: 5, profileQuota: 1000,
+      hasProfileQuota: true, defaultUpp: 'TS48v2_SAIP2.3_BERTLV.der',
+      callbackUrl: 'https://bss.carrier-a.example/es2p/callback', createdAt: daysAgo(30), updatedAt: daysAgo(2) },
+    { id: 'carrier-b', name: 'Carrier B', status: 'active', templateQuota: 2, profileQuota: 200,
+      hasProfileQuota: true, defaultUpp: '', callbackUrl: '', createdAt: daysAgo(20), updatedAt: daysAgo(5) },
+    { id: 'carrier-c', name: 'Carrier C (suspended)', status: 'disabled', hasProfileQuota: false,
+      defaultUpp: '', callbackUrl: '', createdAt: daysAgo(9), updatedAt: daysAgo(1) },
+  ];
+
+  const profiles = [];
+  const mkProfile = (o) => Object.assign({
+    tenant: '', externalRef: '', imsi: '', profileType: 'operational', eid: '', matchingId: '',
+    ccRequired: false, smdsAddress: '', uppTemplate: '', pprIds: '', downloadAttempts: 0, ccAttempts: 0,
+    batchId: undefined, createdAt: daysAgo(3), updatedAt: daysAgo(1), installedAt: undefined, errorReason: '',
+  }, o);
+  profiles.push(
+    mkProfile({ iccid: '89000123456789012341', tenant: 'carrier-a', imsi: '001010123456063', eid: EID_A,
+      state: 'Installed', matchingId: 'MATCH-A1', uppTemplate: 'TS48v2_SAIP2.3_BERTLV.der',
+      externalRef: 'order-1001', downloadAttempts: 1, installedAt: daysAgo(2), batchId: 1 }),
+    mkProfile({ iccid: '89000123456789012342', tenant: 'carrier-a', imsi: '001010123456064', eid: EID_A,
+      state: 'Confirmed', matchingId: 'MATCH-A2', ccRequired: true, externalRef: 'order-1002', batchId: 1 }),
+    mkProfile({ iccid: '89000123456789012343', tenant: 'carrier-b', profileType: 'test', eid: EID_B,
+      state: 'Allocated', matchingId: 'MATCH-B1', batchId: 2 }),
+    mkProfile({ iccid: '89000123456789012344', tenant: 'carrier-b', state: 'Available' },
+      ),
+    mkProfile({ iccid: '89000123456789012345', profileType: 'provisioning', state: 'Linked', matchingId: 'MATCH-D1' }),
+    mkProfile({ iccid: '89000123456789012346', tenant: 'carrier-a', imsi: '001010123456068', eid: EID_A,
+      state: 'Released', matchingId: 'MATCH-A6' }),
+    mkProfile({ iccid: '89000123456789012347', tenant: 'carrier-b', eid: EID_B, state: 'Error',
+      errorReason: 'download failed: 8.8.2/3.1 unsupported CI key', downloadAttempts: 3 }),
+    mkProfile({ iccid: '89000123456789012348', tenant: 'carrier-a', imsi: '001010123456070', eid: EID_A,
+      state: 'Downloaded', matchingId: 'MATCH-A8', pprIds: '0102', downloadAttempts: 1 }),
+  );
+
+  const batches = [
+    { id: 1, name: 'Q4 rollout', profileType: 'operational', state: 'Completed', total: 2, note: 'BSS order 4711', createdAt: daysAgo(4), updatedAt: daysAgo(2) },
+    { id: 2, name: 'Pilot (test)', profileType: 'test', state: 'Open', total: 1, note: '', createdAt: daysAgo(1), updatedAt: daysAgo(1) },
+  ];
+
+  const uppBytes = (n) => new Uint8Array(Array.from({ length: n }, (_, i) => (i * 31 + 2) & 0xff));
+  const upp = [
+    { name: 'TS48v2_SAIP2.3_BERTLV.der', tenant: '', saipMajor: 2, saipMinor: 3, saip: '2.3',
+      sha256: '43af1532285534b1b0d0a0c1b1d0e33f6a4b2c8d9e0f1a2b3c4d5e6f7a8b9c0d', active: true, size: 42000,
+      createdAt: daysAgo(30), updatedAt: daysAgo(6), bytes: uppBytes(420) },
+    { name: 'A-custom.der', tenant: 'carrier-a', saipMajor: 2, saipMinor: 3, saip: '2.3',
+      sha256: 'aa11bb22cc33dd44ee55ff6600112233445566778899aabbccddeeff00112233', active: true, size: 41800,
+      createdAt: daysAgo(8), updatedAt: daysAgo(8), bytes: uppBytes(418) },
+    { name: 'TS48v1_SAIP2.1.der', tenant: '', saipMajor: 2, saipMinor: 1, saip: '2.1',
+      sha256: 'dea14ec7a909bfab9d2f3a4b5c6d7e8f90a1b2c3d4e5f60718293a4b5c6d7e8f', active: false, size: 31000,
+      createdAt: daysAgo(60), updatedAt: daysAgo(15), bytes: uppBytes(310) },
+  ];
+  let versionSeq = 4;
+  const versions = {
+    'TS48v2_SAIP2.3_BERTLV.der': [
+      { id: 1, name: 'TS48v2_SAIP2.3_BERTLV.der', versionNo: 1, saip: '2.3', sha256: '11'.repeat(32), size: 41900, note: 'seeded', createdAt: daysAgo(30) },
+      { id: 2, name: 'TS48v2_SAIP2.3_BERTLV.der', versionNo: 2, saip: '2.3', sha256: '22'.repeat(32), size: 42000, note: 'uploaded through the management API', createdAt: daysAgo(6) },
+    ],
+  };
+
+  const perso = [
+    { iccid: '89000123456789012341', tenant: 'carrier-a', imsi: '001010123456063', algorithm: 'milenage',
+      hasK: true, hasOPc: true, spn: 'Carrier A', pin1: '1234', puk1: '12345678', adm1: '00000001', adm2: '00000002',
+      k: '00112233445566778899AABBCCDDEEFF', opc: 'FFEEDDCCBBAA99887766554433221100',
+      plmn: [{ mcc: '001', mnc: '01', act: 1 }], msisdn: '4915100000001', acc: 1, pool: false },
+    { iccid: '', tenant: 'carrier-a', imsi: '001010999999901', algorithm: 'milenage',
+      hasK: true, hasOPc: true, k: '0102030405060708090A0B0C0D0E0F10', opc: '101112131415161718191A1B1C1D1E1F',
+      pool: true },
+    { iccid: '89000123456789012347', tenant: 'carrier-b', imsi: '001019999999907', algorithm: 'tuak',
+      hasK: true, hasOPc: false, k: 'ABCDEF0123456789ABCDEF0123456789', pool: false },
+  ];
+
+  const ranges = [
+    { id: 1, tenant: '', start: '8900012000000000000', end: '8900012000000000099', note: 'platform block', createdAt: daysAgo(12) },
+    { id: 2, tenant: 'carrier-a', start: '89000123456789012300', end: '89000123456789012399', note: 'carrier A block', createdAt: daysAgo(10) },
+  ];
+
+  const pool = [];
+  const mkPool = (o) => Object.assign({ tenant: '', state: 'available', eid: '', reference: '', note: '', createdAt: daysAgo(9) }, o);
+  for (let i = 0; i < 6; i++) pool.push(mkPool({ iccid: '890001200000000000' + i, tenant: '' }));
+  for (let i = 0; i < 3; i++) pool.push(mkPool({ iccid: '8900012345678901230' + i, tenant: 'carrier-a' }));
+  pool.push(mkPool({ iccid: '8900012000000000031', tenant: 'carrier-b' }));
+  pool.push(mkPool({ iccid: '8900012000000000021', tenant: 'carrier-a', state: 'allocated', eid: EID_A, reference: 'order-1001', profileId: 1, allocatedAt: daysAgo(3) }));
+  pool.push(mkPool({ iccid: '8900012000000000022', tenant: 'carrier-a', state: 'allocated', eid: '', reference: 'reserved by BSS', reservedUntil: minsAgo(30), allocatedAt: daysAgo(1) }));
+  pool.push(mkPool({ iccid: '8900012000000000023', tenant: 'carrier-b', state: 'blocked', note: 'stolen batch' }));
+  pool.push(mkPool({ iccid: '89000123456789012344', tenant: 'carrier-b', state: 'allocated', eid: '', profileId: 4 }));
+
+  const notifications = [
+    { id: 1, eid: EID_A, seqNumber: 3, operation: 'install', iccid: '89000123456789012341', transactionId: 'A1B2C3D4', signatureOk: true, processed: true, receivedAt: minsAgo(120) },
+    { id: 2, eid: EID_A, seqNumber: 4, operation: 'enable', iccid: '89000123456789012341', transactionId: 'A1B2C3D5', signatureOk: true, processed: true, receivedAt: minsAgo(60) },
+    { id: 3, eid: EID_B, seqNumber: 1, operation: 'install', iccid: '89000123456789012343', transactionId: 'B0B0B0B0', signatureOk: false, processed: false, receivedAt: minsAgo(5) },
+  ];
+
+  const audit = [
+    { time: minsAgo(4), tenant: 'carrier-a', actor: 'esim42-backend', interface: 'admin', function: 'createProfile', subject: '89000123456789012348', outcome: 'Executed-Success', statusCode: '', remoteAddr: '127.0.0.1:5555', detail: { uppTemplate: 'TS48v2_SAIP2.3_BERTLV.der' } },
+    { time: minsAgo(20), tenant: 'carrier-b', actor: 'carrier-b-bss', interface: 'es2p', function: 'downloadOrder', subject: '89000123456789012347', outcome: 'Executed-Success', statusCode: '', remoteAddr: '10.0.0.9:44112', detail: {} },
+    { time: minsAgo(35), tenant: 'carrier-b', actor: 'lpa', interface: 'es9p', function: 'handleNotification', subject: EID_B, outcome: 'Failed', statusCode: '8.8.2/3.1', remoteAddr: '10.0.0.44:51200', detail: { reasonCode: '3.1' } },
+    { time: minsAgo(70), tenant: '', actor: 'esim42-backend', interface: 'admin', function: 'importICCIDRange', subject: '8900012000000000000..8900012000000000099', outcome: 'Executed-Success', statusCode: '', remoteAddr: '127.0.0.1:5555', detail: { inserted: 100, skipped: 0 } },
+    { time: minsAgo(150), tenant: 'carrier-a', actor: 'esim42-backend', interface: 'admin', function: 'putUPP', subject: 'A-custom.der', outcome: 'Executed-Success', statusCode: '', remoteAddr: '127.0.0.1:5555', detail: { saip: '2.3' } },
+    { time: daysAgo(1), tenant: 'carrier-a', actor: 'smds', interface: 'es12', function: 'registerEvent', subject: EID_A, outcome: 'Executed-Success', statusCode: '', remoteAddr: '10.0.0.7:33000', detail: {} },
+  ];
+
+  const events = [
+    { id: 1, tenant: 'carrier-a', eid: EID_A, eventId: 'EVT-0001', rspServerAddress: 'testsmdpplus1.example.com',
+      callerOid: '2.999.10', iccid: '89000123456789012341', matchingId: 'MATCH-A1', forwardingIndicator: true, cascaded: false,
+      registeredAt: daysAgo(2), expiresAt: daysAgo(-5) },
+    { id: 2, tenant: 'carrier-b', eid: EID_B, eventId: 'EVT-0002', rspServerAddress: 'testsmdpplus1.example.com',
+      callerOid: '2.999.10', forwardingIndicator: false, cascaded: true, rootEventId: 'EVT-0001',
+      registeredAt: daysAgo(1), expiresAt: daysAgo(-6) },
+    { id: 3, tenant: 'carrier-b', eid: EID_B, eventId: 'EVT-0003', rspServerAddress: 'testsmdpplus1.example.com',
+      callerOid: '2.999.11', forwardingIndicator: false, cascaded: false, registeredAt: daysAgo(10), deletedAt: daysAgo(9) },
+  ];
+
+  // ---------- demo request handling ----------
+  const err = (status, code, message) => { const e = new Error(message); e.status = status; e.code = code; throw e; };
+  const notFound = (m) => err(404, 'not_found', m);
+  const bad = (m) => err(400, 'invalid_request', m);
+  const conflict = (m) => err(409, 'conflict', m);
+  const find = (arr, key, val) => arr.find(x => String(x[key]) === String(val));
+
+  function page(items, params, dflt = 25) {
+    const p = +(params?.page || 1), s = +(params?.size || dflt);
+    return { items: items.slice((p - 1) * s, (p - 1) * s + s), page: p, size: s, total: items.length };
+  }
+  const tenantEq = (rowTenant, filter) => filter === undefined || filter === null ? true : (rowTenant || '') === filter;
+
+  function filterProfiles(params = {}) {
+    let out = profiles.filter(p => {
+      if (!tenantEq(p.tenant, params.tenant)) return false;
+      if (params.state && p.state !== params.state) return false;
+      if (params.eid && !String(p.eid || '').includes(params.eid)) return false;
+      if (params.iccid && !String(p.iccid).startsWith(params.iccid)) return false;
+      if (params.externalRef && !String(p.externalRef || '').includes(params.externalRef)) return false;
+      if (params.batchId && String(p.batchId || '') !== String(params.batchId)) return false;
+      if (params.q) {
+        const q = String(params.q).toLowerCase();
+        const hay = [p.iccid, p.imsi, p.eid, p.matchingId, p.externalRef, p.uppTemplate].join(' ').toLowerCase();
+        if (!hay.includes(q)) return false;
+      }
+      if (params.from && new Date(p.createdAt) < new Date(params.from)) return false;
+      if (params.to && new Date(p.createdAt) > new Date(params.to)) return false;
+      return true;
+    });
+    const sort = params.sort || '-created_at';
+    const desc = sort.startsWith('-');
+    const key = sort.replace(/^-/, '');
+    const col = { created_at: 'createdAt', updated_at: 'updatedAt', iccid: 'iccid', state: 'state', installed_at: 'installedAt' }[key] || 'createdAt';
+    out = out.slice().sort((a, b) => String(a[col] || '').localeCompare(String(b[col] || '')));
+    if (desc) out.reverse();
+    return out;
+  }
+
+  function profileStats(params) {
+    const groupBy = params?.groupBy || 'state';
+    const keyOf = (p) => groupBy === 'tenant' ? (p.tenant || '') : groupBy === 'profile_type' ? (p.profileType || '')
+      : groupBy === 'day' ? new Date(p.createdAt).toISOString().slice(0, 10) : p.state;
+    const counts = {};
+    for (const p of filterProfiles(params)) counts[keyOf(p)] = (counts[keyOf(p)] || 0) + 1;
+    const buckets = Object.entries(counts).map(([key, count]) => ({ key, count })).sort((a, b) => b.count - a.count);
+    return { groupBy, total: filterProfiles(params).length, buckets };
+  }
+
+  function auditFiltered(params = {}) {
+    return audit.filter(a => {
+      if (!tenantEq(a.tenant, params.tenant)) return false;
+      if (params.interface && a.interface !== params.interface) return false;
+      if (params.function && !String(a.function).includes(params.function)) return false;
+      if (params.subject && !String(a.subject).includes(params.subject)) return false;
+      if (params.actor && !String(a.actor).includes(params.actor)) return false;
+      if (params.outcome && a.outcome !== params.outcome) return false;
+      if (params.from && new Date(a.time) < new Date(params.from)) return false;
+      if (params.to && new Date(a.time) > new Date(params.to)) return false;
+      return true;
+    });
+  }
+  function auditStats(params) {
+    const groupBy = params?.groupBy || 'function';
+    const counts = {};
+    for (const a of auditFiltered(params)) {
+      const k = groupBy === 'tenant' ? (a.tenant || '') : groupBy === 'interface' ? a.interface
+        : groupBy === 'outcome' ? a.outcome : groupBy === 'actor' ? (a.actor || '')
+        : groupBy === 'day' ? new Date(a.time).toISOString().slice(0, 10) : (a.function || '');
+      counts[k] = (counts[k] || 0) + 1;
+    }
+    return { groupBy, total: auditFiltered(params).length, buckets: Object.entries(counts).map(([key, count]) => ({ key, count })).sort((a, b) => b.count - a.count) };
+  }
+
+  function csv(rows) {
+    const cell = (v) => { const s = v === undefined || v === null ? '' : String(v); return /[",\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s; };
+    return rows.map(r => r.map(cell).join(',')).join('\n') + '\n';
+  }
+
+  function resolveTemplate(name, params) {
+    const tenant = params?.tenant ?? '';
+    let t = upp.find(x => x.name === name && (x.tenant || '') === tenant);
+    if (!t) t = upp.find(x => x.name === name && x.tenant === '');
+    if (!t) notFound('unknown template');
+    return t;
+  }
+
+  function validateTenant(tenant) {
+    if (tenant && !find(tenants, 'id', tenant)) err(400, 'unknown_tenant', `unknown tenant "${tenant}"`);
+  }
+
+  async function request(method, path, opts = {}) {
+    const { body, params = {}, idem } = opts;
+    await new Promise(r => setTimeout(r, 90));
+    const seg = path.split('/').filter(Boolean).map(decodeURIComponent);
+    const p = params || {};
+
+    if (idem) {
+      // Mirrors the server's replay semantics closely enough for the UI.
+      const used = request._keys || (request._keys = new Map());
+      const hash = JSON.stringify({ method, path, body });
+      const prev = used.get(idem);
+      if (prev && prev.hash !== hash) conflict('Idempotency-Key was already used with a different request');
+      if (prev) return { data: prev.data, status: prev.status, replayed: true };
+      const out = await request(method, path, { ...opts, idem: null });
+      used.set(idem, { hash, data: out.data, status: out.status });
+      return out;
+    }
+
+    // ---- tenants
+    if (seg[0] === 'tenants') {
+      if (!seg[1]) {
+        if (method === 'GET') {
+          let items = tenants.filter(t => tenantEq(t.id, p.tenant));
+          return { data: { items, total: items.length }, status: 200 };
+        }
+        if (method === 'POST') {
+          if (!body?.id) bad('id is required');
+          const t = upsertTenant(body.id, body);
+          return { data: t, status: 200 };
+        }
+      }
+      const t = find(tenants, 'id', seg[1]);
+      if (!t) notFound('unknown tenant');
+      if (method === 'GET') return { data: t, status: 200 };
+      if (method === 'PATCH') return { data: upsertTenant(seg[1], body), status: 200 };
+      if (method === 'DELETE') { tenants.splice(tenants.indexOf(t), 1); return { data: null, status: 204 }; }
+    }
+    function upsertTenant(id, b) {
+      let t = find(tenants, 'id', id);
+      if (!t) { t = { id, status: 'active', createdAt: nowIso() }; tenants.push(t); }
+      Object.assign(t, {
+        name: b.name || t.name || id, status: b.status || t.status || 'active',
+        templateQuota: 'templateQuota' in b ? b.templateQuota : t.templateQuota,
+        profileQuota: 'profileQuota' in b ? b.profileQuota : t.profileQuota,
+        hasProfileQuota: ('profileQuota' in b ? b.profileQuota : t.profileQuota) != null,
+        defaultUpp: b.defaultUpp ?? t.defaultUpp ?? '', callbackUrl: b.callbackUrl ?? t.callbackUrl ?? '',
+        updatedAt: nowIso(),
+      }, );
+      return t;
+    }
+
+    // ---- profiles
+    if (seg[0] === 'profiles') {
+      if (seg[1] === 'stats' && method === 'GET') return { data: profileStats(p), status: 200 };
+      if (seg[1] === 'bulk' && method === 'POST') {
+        const results = (body?.iccids || []).map(raw => {
+          const iccid = String(raw).replace(/[fF]+$/, '');
+          const rec = find(profiles, 'iccid', iccid);
+          if (!rec) return { iccid, ok: false, error: 'unknown ICCID' };
+          if (body.action === 'delete') profiles.splice(profiles.indexOf(rec), 1);
+          else if (body.action === 'confirm') { rec.state = body.release ? 'Released' : 'Confirmed'; rec.updatedAt = nowIso(); }
+          else if (body.action === 'cancel') { rec.state = String(body.finalStatus).toLowerCase() === 'unavailable' ? 'Unavailable' : 'Available'; rec.updatedAt = nowIso(); }
+          else if (body.action === 'release') { rec.state = 'Released'; rec.updatedAt = nowIso(); }
+          else return { iccid, ok: false, error: 'unknown action ' + body.action };
+          return { iccid, ok: true };
+        });
+        return { data: { action: body?.action, results }, status: 200 };
+      }
+      if (seg[1] === 'export' && method === 'GET') {
+        const items = filterProfiles(p);
+        if (p.format === 'json') return { data: { items, total: items.length }, status: 200 };
+        const rows = [['iccid', 'tenant', 'externalRef', 'imsi', 'profileType', 'eid', 'state', 'matchingId', 'ccRequired',
+          'smdsAddress', 'uppTemplate', 'pprIds', 'downloadAttempts', 'ccAttempts', 'batchId', 'createdAt', 'updatedAt', 'installedAt', 'errorReason']];
+        for (const x of items) rows.push([x.iccid, x.tenant, x.externalRef, x.imsi, x.profileType, x.eid, x.state, x.matchingId,
+          x.ccRequired, x.smdsAddress, x.uppTemplate, x.pprIds, x.downloadAttempts, x.ccAttempts, x.batchId ?? '', x.createdAt,
+          x.updatedAt, x.installedAt || '', x.errorReason]);
+        return { data: csv(rows), status: 200, contentType: 'text/csv' };
+      }
+      if (seg[1] === 'import' && method === 'POST') {
+        let records = [];
+        if (typeof body === 'string') {
+          const lines = body.split(/\r?\n/).filter(l => l.trim());
+          const head = (lines.shift() || '').split(',').map(s => s.trim().toLowerCase());
+          const col = { iccid: 'iccid', eid: 'eid', profiletype: 'profileType', matchingid: 'matchingId',
+            smdsaddress: 'smdsAddress', upptemplate: 'uppTemplate', externalref: 'externalRef', tenant: 'tenant' };
+          records = lines.map(l => { const cells = l.split(','); const o = {}; head.forEach((h, i) => o[col[h] || h] = (cells[i] || '').trim()); return o; });
+        } else records = body?.records || [];
+        const fallback = body?.tenant ?? p.tenant ?? '';
+        const results = records.map(r => {
+          if (!r.iccid) return { iccid: '', ok: false, error: 'missing iccid' };
+          materials(Object.assign({ tenant: fallback }, r));
+          return { iccid: r.iccid, ok: true };
+        });
+        return { data: { imported: results.filter(r => r.ok).length, results }, status: 200 };
+      }
+      if (!seg[1]) {
+        if (method === 'GET') return { data: page(filterProfiles(p), p), status: 200 };
+        if (method === 'POST') { const rec = materials(Object.assign({ tenant: p.tenant ?? '' }, body), true); return { data: rec, status: 201 }; }
+      }
+      const rec = find(profiles, 'iccid', seg[1].replace(/[fF]+$/, ''));
+      if (!rec) notFound('unknown ICCID');
+      const sub = seg[2];
+      if (!sub) {
+        if (method === 'GET') return { data: rec, status: 200 };
+        if (method === 'PATCH') {
+          for (const k of ['eid', 'externalRef', 'matchingId', 'smdsAddress', 'uppTemplate', 'tenant']) if (k in body) rec[k] = body[k];
+          if ('pprIds' in body && Array.isArray(body.pprIds)) rec.pprIds = body.pprIds.map(n => (+n).toString(16).padStart(2, '0')).join('');
+          rec.updatedAt = nowIso();
+          return { data: rec, status: 200 };
+        }
+        if (method === 'DELETE') { profiles.splice(profiles.indexOf(rec), 1); return { data: null, status: 204 }; }
+      }
+      if (sub === 'confirm') { rec.state = body?.release ? 'Released' : 'Confirmed'; if (body?.matchingId) rec.matchingId = body.matchingId; if (body?.confirmationCode) rec.ccRequired = true; rec.updatedAt = nowIso(); return { data: rec, status: 200 }; }
+      if (sub === 'cancel') { rec.state = String(body?.finalStatus).toLowerCase() === 'unavailable' ? 'Unavailable' : 'Available'; rec.updatedAt = nowIso(); return { data: rec, status: 200 }; }
+      if (sub === 'release') { rec.state = 'Released'; rec.updatedAt = nowIso(); return { data: rec, status: 200 }; }
+      if (sub === 'activation-code') {
+        if (p.rotate === '1' || p.rotate === 1) rec.matchingId = 'MATCH-' + Math.random().toString(16).slice(2, 18).toUpperCase();
+        if (!rec.matchingId) bad('profile has no matchingId; confirm the order first');
+        const ac = `1$testsmdpplus1.example.com$${rec.matchingId}`;
+        return { data: { matchingId: rec.matchingId, activationCode: ac, qrContent: 'LPA:1$testsmdpplus1.example.com$' + rec.matchingId }, status: 200 };
+      }
+      if (sub === 'timeline') {
+        const ev = [
+          { time: rec.updatedAt, kind: 'order', action: 'downloadOrder', detail: rec.matchingId },
+          { time: rec.updatedAt, kind: 'notification', action: 'install', detail: 'A1B2C3D4', signed: true, processed: rec.state === 'Installed' },
+          { time: rec.createdAt, kind: 'audit', action: 'admin:createProfile', detail: 'Executed-Success' },
+        ];
+        return { data: { iccid: rec.iccid, events: ev }, status: 200 };
+      }
+    }
+    function materials(b, create = false) {
+      const iccid = (b?.iccid || '8900012' + String(++seq).padStart(11, '0')).replace(/[fF]+$/, '');
+      if (create && find(profiles, 'iccid', iccid)) conflict('ICCID already exists');
+      const rec = mkProfile({
+        iccid, tenant: b?.tenant ?? '', eid: b?.eid || '', profileType: b?.profileType || 'operational',
+        matchingId: b?.matchingId || '', smdsAddress: b?.smdsAddress || '', uppTemplate: b?.uppTemplate || '',
+        externalRef: b?.externalRef || '', state: 'Allocated', createdAt: nowIso(), updatedAt: nowIso(),
+      });
+      profiles.unshift(rec);
+      return rec;
+    }
+
+    // ---- batches
+    if (seg[0] === 'batches') {
+      if (!seg[1]) {
+        if (method === 'GET') {
+          const items = batches.filter(b => (b.tenant || '') === (p.tenant ?? ''));
+          return { data: page(items, p), status: 200 };
+        }
+        if (method === 'POST') {
+          if (!(body?.count >= 1)) bad('count must be between 1 and 1000');
+          const b = { id: batches.length + 1, name: body.name || '', profileType: body.profileType || '', state: 'Open',
+            total: body.count, note: body.note || '', createdAt: nowIso(), updatedAt: nowIso() };
+          for (let i = 0; i < body.count; i++) { const r = materials({ tenant: p.tenant ?? '', eid: body.eid || '', profileType: body.profileType, uppTemplate: body.uppTemplate }, true); r.batchId = b.id; }
+          batches.unshift(b);
+          return { data: b, status: 201 };
+        }
+      }
+      const b = find(batches, 'id', seg[1]);
+      if (!b) notFound('unknown batch');
+      if (!seg[2]) {
+        if (method === 'GET') {
+          const states = {};
+          for (const x of profiles.filter(x => x.batchId === b.id)) states[x.state] = (states[x.state] || 0) + 1;
+          return { data: { batch: b, states }, status: 200 };
+        }
+        if (method === 'DELETE') { batches.splice(batches.indexOf(b), 1); return { data: null, status: 204 }; }
+      }
+      if (seg[2] === 'items') return { data: page(profiles.filter(x => x.batchId === b.id), p), status: 200 };
+      if (seg[2] === 'confirm' || seg[2] === 'cancel') {
+        let applied = 0, failed = 0;
+        for (const x of profiles.filter(x => x.batchId === b.id)) {
+          if (seg[2] === 'confirm') { x.state = body?.release ? 'Released' : 'Confirmed'; applied++; }
+          else { x.state = String(body?.finalStatus).toLowerCase() === 'unavailable' ? 'Unavailable' : 'Available'; applied++; }
+          x.updatedAt = nowIso();
+        }
+        b.state = seg[2] === 'confirm' ? 'Completed' : 'Cancelled'; b.updatedAt = nowIso();
+        return { data: { applied, failed }, status: 200 };
+      }
+    }
+
+    // ---- upp
+    if (seg[0] === 'upp') {
+      if (!seg[1]) {
+        if (method === 'GET') {
+          const items = upp.filter(x => p.tenant === undefined ? true : ((x.tenant || '') === p.tenant || x.tenant === ''));
+          return { data: { items, total: items.length }, status: 200 };
+        }
+        if (method === 'POST') {
+          if (!body?.name) bad('name is required');
+          if (!body?.data) bad('data must be base64-encoded DER');
+          const t = { name: body.name, tenant: body.tenant ?? p.tenant ?? '', saipMajor: 2, saipMinor: 3, saip: '2.3',
+            sha256: (body.data.slice(0, 64) + '0'.repeat(64)).slice(0, 64).toLowerCase(), active: true,
+            size: Math.ceil(body.data.length * 3 / 4), createdAt: nowIso(), updatedAt: nowIso(), bytes: uppBytes(400) };
+          const i = upp.findIndex(x => x.name === t.name && (x.tenant || '') === (t.tenant || ''));
+          if (i >= 0) upp[i] = t; else upp.unshift(t);
+          (versions[t.name] = versions[t.name] || []).unshift({ id: ++versionSeq, tenant: t.tenant, name: t.name, versionNo: (versions[t.name]?.length || 0) + 1, saip: t.saip, sha256: t.sha256, size: t.size, note: 'uploaded through the management API', createdAt: nowIso() });
+          return { data: t, status: 200 };
+        }
+      }
+      if (seg[1] === 'validate' && method === 'POST') {
+        if (!body?.data) bad('data must be base64-encoded DER');
+        return { data: { valid: true, inspection: inspection() }, status: 200 };
+      }
+      if (seg[1] === 'render' && method === 'POST') {
+        if (!body?.name) bad('name is required');
+        const t = resolveTemplate(body.name, p);
+        if (!body.imsi && !body.k) return { data: { rendered: false, error: 'personalization has no usable field' }, status: 200 };
+        return { data: { rendered: true, template: t, inspection: inspection(t), bytes: t.size + 17 }, status: 200 };
+      }
+      const t = resolveTemplate(seg[1], p);
+      if (!seg[2]) {
+        if (method === 'GET') return { data: t, status: 200 };
+        if (method === 'DELETE') { upp.splice(upp.indexOf(t), 1); return { data: null, status: 204 }; }
+      }
+      if (seg[2] === 'bytes') return { data: null, status: 200, binary: true, bytes: t.bytes, filename: t.name };
+      if (seg[2] === 'decoded') return { data: decoded(t), status: 200 };
+      if (seg[2] === 'schema') return { data: { template: t, inspection: inspection(t), fields: schemaFields() }, status: 200 };
+      if (seg[2] === 'activate') { t.active = true; t.updatedAt = nowIso(); return { data: t, status: 200 }; }
+      if (seg[2] === 'deactivate') { t.active = false; t.updatedAt = nowIso(); return { data: t, status: 200 }; }
+      if (seg[2] === 'clone' && method === 'POST') {
+        const tenant = body?.tenant ?? p.tenant ?? '';
+        validateTenant(tenant);
+        if (!tenant) bad('tenant is required for a clone (use promote to make a global template)');
+        const name = body?.name || t.name;
+        const q = { name, tenant, saipMajor: t.saipMajor, saipMinor: t.saipMinor, saip: t.saip, sha256: t.sha256,
+          active: true, size: t.size, createdAt: nowIso(), updatedAt: nowIso(), bytes: t.bytes };
+        upp.push(q);
+        return { data: q, status: 201 };
+      }
+      if (seg[2] === 'promote' && method === 'POST') {
+        const tenant = p.tenant ?? '';
+        if (!tenant) bad('tenant is required (only a tenant template can be promoted)');
+        if (upp.some(x => x.name === t.name && x.tenant === '') && p.overwrite !== '1')
+          conflict(`a global template named "${t.name}" already exists (pass overwrite=1 to replace it)`);
+        const g = { ...t, tenant: '' };
+        const i = upp.findIndex(x => x.name === t.name && x.tenant === '');
+        if (i >= 0) upp[i] = g; else upp.push(g);
+        return { data: g, status: 200 };
+      }
+      if (seg[2] === 'versions') {
+        if (!seg[3]) return { data: { items: versions[t.name] || [], total: (versions[t.name] || []).length }, status: 200 };
+        if (seg[4] === 'restore' && method === 'POST') {
+          const v = (versions[t.name] || []).find(x => String(x.id) === seg[3]);
+          if (!v) notFound('unknown template version');
+          Object.assign(t, { saipMajor: 2, saipMinor: 3, saip: v.saip, sha256: v.sha256, size: v.size, active: true, updatedAt: nowIso() });
+          return { data: t, status: 200 };
+        }
+      }
+    }
+    function inspection(t) {
+      return { saipMajor: t?.saipMajor ?? 2, saipMinor: t?.saipMinor ?? 3, saip: t?.saip ?? '2.3',
+        sha256: t?.sha256 ?? '43af15322855', size: t?.size ?? 42000, profileType: 'GSMA Generic eUICC Test Profile',
+        iccid: '89000123456789012341', services: ['usim', 'isim', 'javacard'],
+        gfste: ['2.23.143.1.2.1', '2.23.143.1.2.3'],
+        elements: [{ tag: 'A0', name: 'header', size: 137 }, { tag: 'B0', name: 'mf', size: 761 }],
+        files: [{ fid: '2FE2', pename: 'mf', bodySize: 10 }, { fid: '6F07', pename: 'usim', bodySize: 9 }],
+        warnings: [] };
+    }
+    function decoded(t) {
+      const i = inspection(t);
+      return { name: t.name, major: i.saipMajor, minor: i.saipMinor, profileType: i.profileType, iccid: i.iccid,
+        services: i.services, gfste: i.gfste, elements: i.elements, files: i.files };
+    }
+    function schemaFields() {
+      return [
+        { name: 'iccid', type: 'string', required: true, pattern: '^[0-9]{19,20}$', description: '19-20 digits with a valid Luhn check digit.' },
+        { name: 'imsi', type: 'string', required: false, pattern: '^[0-9]{14,15}$', description: 'Also the credentials-pool key when no ICCID is set yet.' },
+        { name: 'k', type: 'string', required: false, minLength: 32, maxLength: 32, description: 'Hex-encoded 128-bit Ki.' },
+        { name: 'opc', type: 'string', required: false, minLength: 32, maxLength: 32, description: 'Hex-encoded 128-bit OPc.' },
+        { name: 'algorithm', type: 'string', required: false, enum: ['milenage', 'tuak', 'usim-test-algorithm'] },
+        { name: 'pin1', type: 'string', required: false, minLength: 4, maxLength: 8 },
+        { name: 'puk1', type: 'string', required: false, minLength: 8, maxLength: 8 },
+        { name: 'adm1', type: 'string', required: false, minLength: 4, maxLength: 8 },
+        { name: 'adm2', type: 'string', required: false, minLength: 4, maxLength: 8 },
+        { name: 'spn', type: 'string', required: false, maxLength: 16, description: 'Service provider name written to EF.SPN.' },
+        { name: 'plmn', type: 'array', required: false, description: 'Preferred PLMN list: {mcc, mnc, act}.' },
+        { name: 'msisdn', type: 'string', required: false, pattern: '^[0-9]{1,15}$' },
+        { name: 'acc', type: 'integer', required: false, description: 'EF.ACC value (0-65535).' },
+        { name: 'filePatches', type: 'array', required: false, description: 'Raw EF overrides: {fid, hex}.' },
+        { name: 'rotation', type: 'string', required: false, description: 'Hex Milenage/TUAK rotation constants (5 bytes).' },
+        { name: 'xoring', type: 'string', required: false, description: 'Hex Milenage/TUAK xoring constants (80 bytes).' },
+        { name: 'numberOfKeccak', type: 'integer', required: false },
+      ];
+    }
+
+    // ---- audit / notifications / eids / events
+    if (seg[0] === 'audit') {
+      if (seg[1] === 'stats') return { data: auditStats(p), status: 200 };
+      if (method === 'GET') return { data: page(auditFiltered(p), p), status: 200 };
+    }
+    if (seg[0] === 'notifications' && method === 'GET') {
+      const items = notifications.filter(n =>
+        (!p.iccid || String(n.iccid || '').startsWith(p.iccid)) &&
+        (!p.eid || String(n.eid || '').includes(p.eid)) &&
+        (!p.from || new Date(n.receivedAt) >= new Date(p.from)) &&
+        (!p.to || new Date(n.receivedAt) <= new Date(p.to)));
+      return { data: page(items, p), status: 200 };
+    }
+    if (seg[0] === 'eids' && method === 'GET') {
+      const byEid = new Map();
+      for (const x of filterProfiles(p)) {
+        if (!x.eid) continue;
+        const e = byEid.get(x.eid) || { eid: x.eid, profileCount: 0, installedCount: 0, lastUpdatedAt: x.updatedAt };
+        e.profileCount++;
+        if (x.state === 'Installed') e.installedCount++;
+        if (new Date(x.updatedAt) > new Date(e.lastUpdatedAt)) e.lastUpdatedAt = x.updatedAt;
+        byEid.set(x.eid, e);
+      }
+      return { data: page([...byEid.values()], p), status: 200 };
+    }
+    if (seg[0] === 'events' && method === 'GET') {
+      const now = Date.now();
+      const statusOf = (e) => e.deletedAt ? 'deleted' : (e.expiresAt && new Date(e.expiresAt).getTime() < now ? 'expired' : 'active');
+      let items = events.filter(e => {
+        if (!tenantEq(e.tenant, p.tenant)) return false;
+        if (p.eid && !String(e.eid).includes(p.eid)) return false;
+        if (p.eventId && e.eventId !== p.eventId) return false;
+        if (p.iccid && String(e.iccid || '') !== p.iccid) return false;
+        if (p.matchingId && e.matchingId !== p.matchingId) return false;
+        if (p.status && p.status !== 'any' && statusOf(e) !== p.status) return false;
+        if (p.from && new Date(e.registeredAt) < new Date(p.from)) return false;
+        if (p.to && new Date(e.registeredAt) > new Date(p.to)) return false;
+        return true;
+      }).map(e => ({ ...e, status: statusOf(e) }));
+      items = items.sort((a, b) => String(a.registeredAt).localeCompare(String(b.registeredAt)));
+      if (!p.sort || !p.sort.startsWith('-')) items.reverse();
+      return { data: page(items, p), status: 200 };
+    }
+
+    // ---- personalization
+    if (seg[0] === 'personalization') {
+      if (seg[1] === 'export' && method === 'GET') {
+        const items = perso.filter(x => tenantEq(x.tenant, p.tenant === undefined ? undefined : p.tenant) && (!p.iccid || String(x.iccid || '').startsWith(p.iccid)));
+        if (p.format === 'json') return { data: { items, total: items.length }, status: 200 };
+        const rows = [['iccid', 'imsi', 'k', 'opc', 'pin1', 'puk1', 'adm1', 'adm2', 'spn', 'algorithm', 'rotation', 'xoring', 'numberOfKeccak', 'plmn', 'msisdn', 'acc', 'filePatches']];
+        for (const d of items) rows.push([d.iccid, d.imsi, d.k, d.opc, d.pin1, d.puk1, d.adm1, d.adm2, d.spn, d.algorithm,
+          d.rotation, d.xoring, d.numberOfKeccak ?? '', JSON.stringify(d.plmn || []), d.msisdn, d.acc ?? '', JSON.stringify(d.filePatches || [])]);
+        return { data: csv(rows), status: 200, contentType: 'text/csv' };
+      }
+      if (seg[1] === 'import' && method === 'POST') {
+        const records = body?.records || [];
+        let n = 0;
+        for (const r of records) {
+          if (!r.iccid) continue;
+          putPerso(r.iccid, r, p.tenant ?? '');
+          n++;
+        }
+        return { data: { imported: n }, status: 200 };
+      }
+      if (seg[1] === 'pool' && seg[2] === 'import' && method === 'POST') {
+        const records = body?.records || [];
+        const results = [];
+        let ok = 0;
+        for (const r of records) {
+          if (!r.imsi) { results.push({ imsi: '', ok: false, error: 'record has no imsi' }); continue; }
+          putPerso('', r, body?.tenant ?? p.tenant ?? '');
+          results.push({ imsi: r.imsi, ok: true }); ok++;
+        }
+        return { data: { imported: ok, results }, status: 200 };
+      }
+      if (!seg[1] && method === 'GET') {
+        const reveal = p.reveal === '1' || p.reveal === 1 || p.reveal === true;
+        const items = perso.filter(x => (p.tenant === undefined || (x.tenant || '') === p.tenant) && (!p.iccid || String(x.iccid || '').startsWith(p.iccid)))
+          .map(x => reveal ? x : { ...x, k: undefined, opc: undefined, rotation: undefined, xoring: undefined });
+        return { data: page(items, p), status: 200 };
+      }
+      const iccid = seg[1].replace(/[fF]+$/, '');
+      let rec = perso.find(x => x.iccid === iccid && String(x.iccid) !== '');
+      if (method === 'GET') {
+        if (!rec) notFound('no personalization for ICCID');
+        const reveal = p.reveal === '1' || p.reveal === 1 || p.reveal === true;
+        return { data: reveal ? rec : { ...rec, k: undefined, opc: undefined, rotation: undefined, xoring: undefined }, status: 200 };
+      }
+      if (method === 'PUT') return { data: putPerso(iccid, body, p.tenant ?? ''), status: 200 };
+      if (method === 'DELETE') {
+        const i = perso.findIndex(x => x.iccid === iccid);
+        if (i < 0) notFound('no personalization for ICCID');
+        perso.splice(i, 1);
+        return { data: null, status: 204 };
+      }
+    }
+    function putPerso(iccid, b, tenant) {
+      const rec = {
+        iccid, tenant: tenant || '', imsi: b.imsi || '', spn: b.spn || '', algorithm: b.algorithm || 'milenage',
+        hasK: !!b.k, hasOPc: !!b.opc, k: b.k || '', opc: b.opc || '', pin1: b.pin1 || '', puk1: b.puk1 || '',
+        adm1: b.adm1 || '', adm2: b.adm2 || '', numberOfKeccak: b.numberOfKeccak, plmn: b.plmn || [],
+        msisdn: b.msisdn || '', acc: b.acc, filePatches: b.filePatches || [], rotation: b.rotation || '',
+        xoring: b.xoring || '', pool: iccid === '',
+      };
+      const i = perso.findIndex(x => x.iccid === iccid);
+      if (i >= 0) perso[i] = rec; else perso.unshift(rec);
+      return rec;
+    }
+
+    // ---- iccid pool + ranges
+    if (seg[0] === 'iccid-pool') {
+      if (seg[1] === 'stats') {
+        const counts = {};
+        for (const x of pool.filter(x => tenantEq(x.tenant, p.tenant))) counts[x.state] = (counts[x.state] || 0) + 1;
+        counts.reservation_expired = pool.filter(x => x.state === 'allocated' && x.reservedUntil && new Date(x.reservedUntil) < new Date() && tenantEq(x.tenant, p.tenant)).length;
+        const out = { states: counts, ranges: ranges.filter(r => tenantEq(r.tenant, p.tenant)).length, available: counts.available || 0 };
+        if (p.tenant !== undefined) out.credentials_unbound = perso.filter(x => x.iccid === '' && (x.tenant || '') === p.tenant).length;
+        return { data: out, status: 200 };
+      }
+      if (seg[1] === 'reserve' && method === 'POST') {
+        const tenant = body?.tenant ?? p.tenant ?? '';
+        validateTenant(tenant);
+        const e = pool.find(x => x.state === 'available' && (x.tenant || '') === tenant);
+        if (!e) conflict('no available ICCID in the pool');
+        e.state = 'allocated'; e.tenant = tenant; e.eid = body?.eid || ''; e.reference = body?.reference || '';
+        const ttl = body?.ttlSeconds > 0 ? body.ttlSeconds : 900;
+        e.reservedUntil = new Date(Date.now() + ttl * 1000).toISOString();
+        const resp = { iccid: e.iccid, state: 'allocated', tenant };
+        const cred = perso.find(x => x.iccid === '' && (x.tenant || '') === tenant);
+        if (cred) { cred.iccid = e.iccid; cred.pool = false; resp.imsi = cred.imsi; }
+        return { data: resp, status: 200 };
+      }
+      if ((seg[1] === 'release' || seg[1] === 'block') && method === 'POST') {
+        const e = find(pool, 'iccid', body?.iccid);
+        if (!e) notFound('unknown ICCID');
+        e.state = seg[1] === 'release' ? 'available' : 'blocked';
+        e.reservedUntil = undefined;
+        if (seg[1] === 'release') { const c = perso.find(x => x.iccid === e.iccid); if (c) { c.iccid = ''; c.pool = true; } }
+        return { data: { iccid: e.iccid, state: e.state }, status: 200 };
+      }
+      if (method === 'GET') {
+        const items = pool.filter(x => tenantEq(x.tenant, p.tenant) && (!p.state || x.state === p.state) && (!p.iccid || x.iccid.startsWith(p.iccid)));
+        return { data: page(items, p), status: 200 };
+      }
+    }
+    if (seg[0] === 'iccid-ranges') {
+      if (method === 'GET') {
+        const items = ranges.filter(r => tenantEq(r.tenant, p.tenant));
+        return { data: { items }, status: 200 };
+      }
+      if (method === 'POST') {
+        const tenant = body?.tenant ?? p.tenant ?? '';
+        validateTenant(tenant);
+        if (!body?.start || !body?.end) bad('start and end are required');
+        const r = { id: ranges.length + 1, tenant, start: body.start, end: body.end, note: body.note || '', createdAt: nowIso() };
+        ranges.push(r);
+        return { data: { rangeId: r.id, inserted: 100, skipped: 0, tenant }, status: 201 };
+      }
+      if (method === 'DELETE') {
+        const i = ranges.findIndex(x => String(x.id) === seg[1]);
+        if (i < 0) notFound('unknown range');
+        ranges.splice(i, 1);
+        return { data: { removed: 100 }, status: 200 };
+      }
+    }
+
+    if (seg[0] === 'openapi.json') {
+      return { data: { openapi: '3.0.3', info: { title: 'rsp42 SM-DP+ management API', version: '0.2.0' }, paths: {} }, status: 200 };
+    }
+    err(404, 'not_found', `demo: ${method} ${path} not implemented`);
+  }
+
+  async function download(path, params) {
+    const out = await request('GET', path, { params });
+    if (out.contentType === 'text/csv') return new Blob([out.data], { type: 'text/csv' });
+    if (path.endsWith('/bytes')) return new Blob([out.bytes], { type: 'application/octet-stream' });
+    return new Blob([JSON.stringify(out.data, null, 2)], { type: 'application/json' });
+  }
+
+  return { request, download, kind: 'demo data' };
+}
+
+// ===================================================================== API calls
+function tenantParams() { return S.tenant === null ? {} : { tenant: S.tenant }; }
+
+async function apiReq(method, path, opts = {}) {
+  if (!S.transport) throw new Error('not connected');
+  const params = Object.assign({}, tenantParams(), opts.params || {});
+  const out = await S.transport.request(method, path, { body: opts.body, params, idem: opts.idem, contentType: opts.contentType });
+  if (out.replayed) toast('Idempotent replay', method + ' ' + path + ' replayed the recorded response');
+  return out.data;
+}
+const apiGet = (p, params) => apiReq('GET', p, { params });
+const apiWrite = (m, p, body, opts = {}) => apiReq(m, p, { body, ...opts });
+
+// ===================================================================== shell
 function renderNav() {
   $('#nav').innerHTML = SECTIONS.map(s =>
     `<button data-section="${s.id}" class="${S.section === s.id ? 'active' : ''}"><span class="ico">${s.icon}</span>${s.label}</button>`).join('');
@@ -475,9 +1077,26 @@ function setStatus(text, cls = '') {
 }
 function banner(msg, kind = 'warn') {
   const b = $('#banner');
-  if (!msg) { b.className = 'banner'; return; }
+  if (!msg) { b.className = 'banner'; b.innerHTML = ''; return; }
   b.className = 'banner show ' + kind;
   b.innerHTML = `<span>⚠️</span><div>${msg}</div>`;
+}
+function renderTenantOptions() {
+  const sel = $('#tenant');
+  const val = S.tenant === null ? '*' : S.tenant;
+  sel.innerHTML = `<option value="*">All tenants</option><option value="">(platform default)</option>` +
+    S.tenants.items.map(t => `<option value="${attr(t.id)}">${esc(t.id)}${t.status === 'disabled' ? ' (disabled)' : ''}</option>`).join('');
+  sel.value = [...sel.options].some(o => o.value === val) ? val : '*';
+  if (sel.value !== val) S.tenant = null;
+  $('#tenantScope').textContent = S.tenant === null ? 'all tenants' : (S.tenant === '' ? '(platform default)' : S.tenant);
+}
+function render() {
+  renderNav();
+  const v = {
+    dashboard: viewDashboard, profiles: viewProfiles, batches: viewBatches, upp: viewUPP, perso: viewPerso,
+    pool: viewPool, eids: viewEids, notifs: viewNotifs, audit: viewAudit, events: viewEvents, tenants: viewTenants,
+  }[S.section];
+  $('#view').innerHTML = v ? v() : '';
 }
 
 async function connect() {
@@ -487,257 +1106,549 @@ async function connect() {
   localStorage.setItem('rsp42.mode', S.mode);
   setStatus('connecting…');
   banner('');
+  S.connected = false; S.specServed = false;
   try {
-    if (S.mode === 'demo') {
-      const t = makeDemoTransport();
-      S.client = rspClient(t); S.kind = 'demo data';
-    } else {
-      let t, kind;
-      try { t = await makeOpenAPI(S.base); kind = 'openapi-client-axios'; }
-      catch (e) { t = makeFetchTransport(S.base); kind = 'fetch fallback'; }
-      S.client = rspClient(t); S.kind = kind;
-    }
-    // connectivity probe
-    try { await api('GET', '/profiles', null, { size: 1 }); }
-    catch (e) {
-      if (S.mode === 'api' && (e.network || /Failed to fetch|CORS|network/i.test(e.message))) {
-        throw new Error('the API did not answer (CORS or server not running). Serve this page from the same origin, or switch to Demo data.');
-      }
-      throw e;
+    S.transport = S.mode === 'demo' ? makeDemoTransport() : makeFetchTransport(S.base);
+    S.kind = S.transport.kind;
+    // Probe: the SM-DS listener serves only /openapi.json and /events, the
+    // SM-DP+ listener serves the whole management API. Either answers openapi.
+    try {
+      await apiGet('/openapi.json');
+      S.specServed = true;
+    } catch (e) {
+      if (S.mode === 'api') await apiGet('/profiles', { size: 1 });
     }
     S.connected = true;
+    $('#clientKind').textContent = S.kind + (S.specServed ? ' · openapi' : '');
+    $('#specLink').href = S.mode === 'demo' ? '#' : S.base.replace(/\/+$/, '') + '/openapi.json';
     setStatus('connected · ' + S.kind, 'ok');
-    $('#clientKind').textContent = S.kind;
+    await loadTenants().catch(() => {});
+    renderTenantOptions();
     await refresh();
   } catch (e) {
     S.connected = false;
     setStatus('offline', 'bad');
-    banner(esc(e.message) + ' — you can switch the data source to <b>Demo data</b> to explore the UI.', 'err');
-    if (S.mode === 'demo') { render(); } else { render(); }
+    banner(esc(e.message) + ' — check that the admin listener is running and, for a browser origin, that CORS is enabled ' +
+      '(<span class="mono">smdpp.server.cors.allowed_origins</span>). Switch the data source to <b>Demo data</b> to explore the UI.', 'err');
+    render();
     toast('Connect failed', e.message, 'err');
   }
 }
 
+async function run(state, label, fn) {
+  state.loading = true; state.error = '';
+  render();
+  try { await fn(); }
+  catch (e) { state.error = e.message; toast(label, e.message, 'err'); }
+  state.loading = false;
+  render();
+}
+
 async function refresh() {
   switch (S.section) {
+    case 'dashboard': return loadDashboard();
     case 'profiles': return loadProfiles();
     case 'batches': return loadBatches();
     case 'upp': return loadUPP();
     case 'perso': return loadPerso();
     case 'pool': return loadPool();
+    case 'eids': return loadEids();
+    case 'notifs': return loadNotifs();
     case 'audit': return loadAudit();
+    case 'events': return loadEvents();
+    case 'tenants': return loadTenants();
   }
 }
 
-// ------------------------------------------------------------------ sections
-function profilesQuery() {
-  const p = S.profiles;
-  return { page: p.page, size: p.size, q: p.q || undefined, state: p.state || undefined };
+// ===================================================================== sections
+// ---------------------------------------------------------------- overview
+async function loadDashboard() {
+  await run(S.dashboard, 'Overview', async () => {
+    const [byState, byTenant, auditByFn, poolStats, tenants] = await Promise.all([
+      apiGet('/profiles/stats', { groupBy: 'state' }),
+      apiGet('/profiles/stats', { groupBy: 'tenant' }),
+      apiGet('/audit/stats', { groupBy: 'function' }),
+      apiGet('/iccid-pool/stats'),
+      apiGet('/tenants'),
+    ]);
+    S.dashboard.data = { byState, byTenant, auditByFn, poolStats, tenants: tenants.items || [] };
+  });
 }
-async function loadProfiles() {
-  S.profiles.loading = true; render();
-  try { const d = await api('GET', '/profiles', null, profilesQuery()); S.profiles.items = d.items || []; S.profiles.total = d.total || 0; }
-  catch (e) { toast('Profiles', e.message, 'err'); }
-  S.profiles.loading = false; render();
+function viewDashboard() {
+  const d = S.dashboard;
+  if (d.loading && !d.data) return `<div class="page-head"><div><h1>Overview</h1><p>Inventory, audit and pool aggregates.</p></div></div>` + loading();
+  if (!d.data) return `<div class="page-head"><div><h1>Overview</h1></div></div>` + errBox(d.error || 'No data.');
+  const { byState, byTenant, auditByFn, poolStats, tenants } = d.data;
+  const st = poolStats.states || {};
+  const cards = [
+    ['profiles', byState.total, 'in inventory'],
+    ['available ICCIDs', poolStats.available ?? st.available ?? 0, `${poolStats.ranges ?? 0} ranges imported`],
+    ['allocated', st.allocated || 0, 'pool entries'],
+    ['expired reservations', st.reservation_expired || 0, 'claimable again'],
+    ['unbound credentials', poolStats.credentials_unbound ?? '–', 'IMSI + K/OPc pool'],
+    ['tenants', tenants.length, `${tenants.filter(t => t.status === 'active').length} active`],
+    ['audit rows', auditByFn.total, 'matching the default filter'],
+  ];
+  return `<div class="page-head"><div><h1>Overview</h1><p>Profile states, tenant split, pool health and audit volume.</p></div>
+      <div class="spacer"></div><button class="btn" data-action="dashboard-reload">Reload</button></div>
+    <div class="grid cols">${cards.map(([k, v, s]) => `<div class="stat"><div class="k">${esc(k)}</div><div class="v">${esc(v)}</div><div class="s">${esc(s)}</div></div>`).join('')}</div>
+    <div class="grid two" style="margin-top:14px">
+      <div class="card"><div class="pad"><b>Profiles by state</b></div><div class="pad">${bars(byState.buckets)}</div></div>
+      <div class="card"><div class="pad"><b>Profiles by tenant</b></div><div class="pad">${bars(byTenant.buckets)}</div></div>
+      <div class="card"><div class="pad"><b>Audit by function</b></div><div class="pad">${bars(auditByFn.buckets)}</div></div>
+      <div class="card"><div class="pad"><b>Tenants</b></div><table><thead><tr><th>ID</th><th>Name</th><th>Status</th><th>Quotas</th></tr></thead><tbody>
+        ${tenants.map(t => `<tr><td class="mono">${esc(t.id)}</td><td>${esc(t.name)}</td><td>${badge(t.status)}</td>
+          <td class="mono">${t.templateQuota ?? '∞'} templates · ${t.profileQuota ?? '∞'} profiles</td></tr>`).join('') || `<tr><td colspan="4">${empty('No tenants registered.')}</td></tr>`}
+      </tbody></table></div>
+    </div>`;
 }
 
+// ---------------------------------------------------------------- profiles
+const PROFILE_STATES = ['', 'Available', 'Allocated', 'Linked', 'Confirmed', 'Released', 'Downloaded', 'Installed', 'Error', 'Unavailable'];
+const PROFILE_SORTS = [['-created_at', 'Newest first'], ['created_at', 'Oldest first'], ['-updated_at', 'Recently updated'],
+  ['iccid', 'ICCID ↑'], ['-iccid', 'ICCID ↓'], ['state', 'State ↑'], ['-state', 'State ↓'], ['-installed_at', 'Recently installed']];
+
+function profilesQuery(extra = {}) {
+  const p = S.profiles;
+  return Object.assign({
+    q: p.q || undefined, state: p.state || undefined, eid: p.eid || undefined, iccid: p.iccid || undefined,
+    externalRef: p.externalRef || undefined, batchId: p.batchId || undefined, from: p.from || undefined,
+    to: p.to || undefined, sort: p.sort || undefined,
+  }, extra);
+}
+async function loadProfiles() {
+  await run(S.profiles, 'Profiles', async () => {
+    const [list, stats] = await Promise.all([
+      apiGet('/profiles', profilesQuery({ page: S.profiles.page, size: S.profiles.size })),
+      apiGet('/profiles/stats', profilesQuery({ groupBy: 'state' })).catch(() => ({ buckets: [] })),
+    ]);
+    S.profiles.items = list.items || [];
+    S.profiles.total = list.total || 0;
+    S.profiles.stats = stats.buckets || [];
+    for (const iccid of [...S.profiles.selected]) if (!S.profiles.items.some(x => x.iccid === iccid)) S.profiles.selected.delete(iccid);
+  });
+}
 function viewProfiles() {
   const p = S.profiles;
-  const states = ['', 'Available', 'Allocated', 'Linked', 'Confirmed', 'Released', 'Downloaded', 'Installed', 'Error', 'Unavailable'];
-  const head = `<div class="page-head"><div><h1>Profiles</h1><p>Inventory and download orders.</p></div><div class="spacer"></div>
+  const head = `<div class="page-head"><div><h1>Profiles</h1><p>Inventory and download orders. Every list accepts <span class="mono">tenant</span>, <span class="mono">state</span>,
+      <span class="mono">eid</span>, <span class="mono">iccid</span> (prefix), <span class="mono">externalRef</span>, <span class="mono">batchId</span>,
+      <span class="mono">q</span>, <span class="mono">from</span>/<span class="mono">to</span> and <span class="mono">sort</span>.</p></div>
+    <div class="spacer"></div>
+    <button class="btn" data-action="profiles-export" data-format="csv">⬇ CSV</button>
+    <button class="btn" data-action="profiles-export" data-format="json">⬇ JSON</button>
+    <button class="btn" data-action="profiles-import">⬆ Import</button>
     <button class="btn primary" data-action="profile-new">+ New profile</button></div>
     <div class="toolbar">
-      <input class="input" style="flex:1;min-width:180px" placeholder="Search ICCID / IMSI / EID / matchingId" value="${esc(p.q)}" data-input="profiles-q" />
-      <select data-input="profiles-state">${states.map(s => `<option ${s === p.state ? 'selected' : ''} value="${s}">${s || 'Any state'}</option>`).join('')}</select>
+      <input class="input" style="flex:1;min-width:170px" placeholder="Search ICCID / IMSI / EID / matchingId / externalRef" value="${attr(p.q)}" data-input="profiles-q" />
+      <select data-input="profiles-state">${PROFILE_STATES.map(s => `<option ${s === p.state ? 'selected' : ''} value="${attr(s)}">${s || 'Any state'}</option>`).join('')}</select>
+      <select data-input="profiles-sort">${PROFILE_SORTS.map(([v, l]) => `<option value="${v}" ${v === p.sort ? 'selected' : ''}>${l}</option>`).join('')}</select>
+      <button class="btn" data-action="profiles-advanced">More filters</button>
       <button class="btn" data-action="profiles-reload">Reload</button>
-    </div>`;
+    </div>
+    ${p.stats.length ? `<div class="toolbar">${p.stats.map(b => `<span class="pill">${esc(b.key || '(none)')} · ${b.count}</span>`).join('')}</div>` : ''}
+    ${p.selected.size ? `<div class="bulkbar"><b>${p.selected.size}</b> selected
+      <button class="btn sm" data-action="profiles-bulk" data-mode="confirm">Confirm</button>
+      <button class="btn sm" data-action="profiles-bulk" data-mode="cancel">Cancel</button>
+      <button class="btn sm" data-action="profiles-bulk" data-mode="release">Release</button>
+      <button class="btn sm danger" data-action="profiles-bulk" data-mode="delete">Delete</button>
+      <span class="spacer"></span><button class="btn sm ghost" data-action="profiles-clear">Clear</button></div>` : ''}`;
   if (p.loading && !p.items.length) return head + loading();
+  if (p.error && !p.items.length) return head + errBox(p.error);
   if (!p.items.length) return head + `<div class="card">${empty('No profiles match.', '📇')}</div>`;
   const rows = p.items.map(x => `<tr>
+    <td class="narrow"><input type="checkbox" data-input="profiles-select" data-iccid="${attr(x.iccid)}" ${p.selected.has(x.iccid) ? 'checked' : ''} /></td>
     <td class="mono">${esc(x.iccid)}</td>
+    <td>${x.tenant ? `<span class="tag">${esc(x.tenant)}</span>` : '<span class="tag">(default)</span>'}</td>
     <td class="mono">${esc(x.imsi || '–')}</td>
     <td>${badge(x.state)}</td>
-    <td class="mono">${esc(short(x.eid) || '–')}</td>
+    <td class="mono">${esc(short(x.eid, 14) || '–')}</td>
     <td>${esc(x.matchingId || '–')}</td>
     <td>${x.ccRequired ? badge('CC') : ''}</td>
+    <td class="mono">${esc(x.externalRef || '')}</td>
     <td><div class="actions">
-      <button class="btn sm" data-action="profile-open" data-iccid="${esc(x.iccid)}">Open</button>
-      ${['Allocated','Linked','Confirmed'].includes(x.state) ? `<button class="btn sm" data-action="profile-confirm" data-iccid="${esc(x.iccid)}">Confirm</button>` : ''}
-      ${x.state === 'Confirmed' ? `<button class="btn sm" data-action="profile-release" data-iccid="${esc(x.iccid)}">Release</button>` : ''}
-      ${x.matchingId && x.state !== 'Available' && x.state !== 'Unavailable' ? `<button class="btn sm" data-action="profile-ac" data-iccid="${esc(x.iccid)}">Activation code</button>` : ''}
-      <button class="btn sm danger" data-action="profile-delete" data-iccid="${esc(x.iccid)}">Delete</button>
+      <button class="btn sm" data-action="profile-open" data-iccid="${attr(x.iccid)}">Open</button>
+      ${['Allocated', 'Linked', 'Confirmed'].includes(x.state) ? `<button class="btn sm" data-action="profile-confirm" data-iccid="${attr(x.iccid)}">Confirm</button>` : ''}
+      ${['Allocated', 'Linked', 'Confirmed'].includes(x.state) ? `<button class="btn sm" data-action="profile-cancel" data-iccid="${attr(x.iccid)}">Cancel</button>` : ''}
+      ${x.state === 'Confirmed' || x.state === 'Downloaded' || x.state === 'Installed' ? `<button class="btn sm" data-action="profile-release" data-iccid="${attr(x.iccid)}">Release</button>` : ''}
+      ${x.matchingId ? `<button class="btn sm" data-action="profile-ac" data-iccid="${attr(x.iccid)}">Activation code</button>` : ''}
+      <button class="btn sm danger" data-action="profile-delete" data-iccid="${attr(x.iccid)}">Delete</button>
     </div></td></tr>`).join('');
   return head + `<div class="card"><table><thead><tr>
-    <th>ICCID</th><th>IMSI</th><th>State</th><th>EID</th><th>Matching ID</th><th></th><th></th>
+    <th class="narrow"><input type="checkbox" data-input="profiles-select-all" ${p.items.every(x => p.selected.has(x.iccid)) ? 'checked' : ''} /></th>
+    <th>ICCID</th><th>Tenant</th><th>IMSI</th><th>State</th><th>EID</th><th>Matching ID</th><th>CC</th><th>Ref</th><th></th>
     </tr></thead><tbody>${rows}</tbody></table>${pager(p)}</div>`;
 }
 
 async function openProfile(iccid) {
   try {
-    const p = await api('GET', '/profiles/' + encodeURIComponent(iccid));
-    const tl = await api('GET', `/profiles/${encodeURIComponent(iccid)}/timeline`).catch(() => ({ events: [] }));
+    const [prof, tl] = await Promise.all([
+      apiGet('/profiles/' + encodeURIComponent(iccid)),
+      apiGet(`/profiles/${encodeURIComponent(iccid)}/timeline`).catch(() => ({ events: [] })),
+    ]);
     showDrawer(`Profile ${esc(iccid)}`, `
+      <div class="toolbar"><button class="btn sm" data-action="profile-edit" data-iccid="${attr(iccid)}">Edit</button>
+        <button class="btn sm" data-action="profile-ac" data-iccid="${attr(iccid)}">Activation code</button>
+        <button class="btn sm" data-action="profile-ac" data-iccid="${attr(iccid)}" data-rotate="1">Rotate matching id</button></div>
       <dl class="kv">
-        <dt>State</dt><dd>${badge(p.state)}</dd>
-        <dt>IMSI</dt><dd>${esc(p.imsi || '–')}</dd>
-        <dt>Profile type</dt><dd>${esc(p.profileType || '–')}</dd>
-        <dt>EID</dt><dd>${esc(p.eid || '–')}</dd>
-        <dt>Matching ID</dt><dd>${esc(p.matchingId || '–')}</dd>
-        <dt>UPP template</dt><dd>${esc(p.uppTemplate || '–')}</dd>
-        <dt>PPR ids</dt><dd>${esc(p.pprIds || '–')}</dd>
-        <dt>Attempts</dt><dd>download ${p.downloadAttempts} · cc ${p.ccAttempts}</dd>
-        <dt>Created</dt><dd>${fmtTime(p.createdAt)}</dd>
-        <dt>Installed</dt><dd>${fmtTime(p.installedAt)}</dd>
-        ${p.errorReason ? `<dt>Error</dt><dd style="color:var(--red)">${esc(p.errorReason)}</dd>` : ''}
+        <dt>State</dt><dd>${badge(prof.state)}</dd>
+        <dt>Tenant</dt><dd>${esc(prof.tenant || '(default)')}</dd>
+        <dt>External ref</dt><dd>${esc(prof.externalRef || '–')}</dd>
+        <dt>IMSI</dt><dd>${esc(prof.imsi || '–')}</dd>
+        <dt>Profile type</dt><dd>${esc(prof.profileType || '–')}</dd>
+        <dt>EID</dt><dd>${esc(prof.eid || '–')}</dd>
+        <dt>Matching ID</dt><dd>${esc(prof.matchingId || '–')}</dd>
+        <dt>UPP template</dt><dd>${esc(prof.uppTemplate || '–')}</dd>
+        <dt>SM-DS address</dt><dd>${esc(prof.smdsAddress || '–')}</dd>
+        <dt>PPR ids</dt><dd>${esc(prof.pprIds || '–')}</dd>
+        <dt>Batch</dt><dd>${prof.batchId ?? '–'}</dd>
+        <dt>Attempts</dt><dd>download ${prof.downloadAttempts} · cc ${prof.ccAttempts}</dd>
+        <dt>CC required</dt><dd>${prof.ccRequired ? 'yes' : 'no'}</dd>
+        <dt>Created</dt><dd>${fmtTime(prof.createdAt)}</dd>
+        <dt>Updated</dt><dd>${fmtTime(prof.updatedAt)}</dd>
+        <dt>Installed</dt><dd>${fmtTime(prof.installedAt)}</dd>
+        ${prof.errorReason ? `<dt>Error</dt><dd style="color:var(--red)">${esc(prof.errorReason)}</dd>` : ''}
       </dl>
-      <h3 style="margin:18px 0 6px;font-size:13px;color:var(--muted);text-transform:uppercase;letter-spacing:.05em">Timeline</h3>
+      <h4 class="sec">Timeline — orders · notifications · sessions · audit</h4>
       <ul class="timeline">${(tl.events || []).map(e => `<li>
         <div class="when">${fmtTime(e.time)} · ${esc(e.kind)}</div>
         <div class="what">${esc(e.action)} ${e.detail ? `<span class="mono" style="color:var(--muted)">${esc(e.detail)}</span>` : ''}</div>
-        ${e.kind === 'notification' ? `<div>${e.signed ? badge('signed') : '<span class="badge error">unsigned</span>'} ${e.success ? '' : '<span class="badge error">failed</span>'}</div>` : ''}
+        ${e.kind === 'notification' ? `<div>${e.signed ? badge('signed') : '<span class="badge error">unsigned</span>'} ${e.processed ? badge('processed') : '<span class="badge expired">unprocessed</span>'}</div>` : ''}
       </li>`).join('') || '<li>no events</li>'}</ul>`);
   } catch (e) { toast('Profile', e.message, 'err'); }
 }
 
+// ---------------------------------------------------------------- batches
 async function loadBatches() {
-  S.batches.loading = true; render();
-  try { const d = await api('GET', '/batches', null, { page: S.batches.page, size: S.batches.size }); S.batches.items = d.items || []; S.batches.total = d.total || 0; }
-  catch (e) { toast('Batches', e.message, 'err'); }
-  S.batches.loading = false; render();
+  await run(S.batches, 'Download lists', async () => {
+    const d = await apiGet('/batches', { page: S.batches.page, size: S.batches.size });
+    S.batches.items = d.items || [];
+    S.batches.total = d.total || 0;
+  });
 }
 function viewBatches() {
   const b = S.batches;
-  const head = `<div class="page-head"><div><h1>Download lists</h1><p>Batches of profiles managed and provisioned together.</p></div>
+  const head = `<div class="page-head"><div><h1>Download lists</h1><p>Batches allocate N profiles at once; confirm/cancel applies to every item.
+    Batches are scoped to one tenant — the selector's <b>platform default</b> is used when <b>All tenants</b> is selected.</p></div>
     <div class="spacer"></div><button class="btn primary" data-action="batch-new">+ New batch</button></div>`;
   if (b.loading && !b.items.length) return head + loading();
-  if (!b.items.length) return head + `<div class="card">${empty('No batches yet.', '🗂️')}</div>`;
+  if (b.error && !b.items.length) return head + errBox(b.error);
+  if (!b.items.length) return head + `<div class="card">${empty('No batches for this tenant.', '🗂️')}</div>`;
   const rows = b.items.map(x => `<tr>
     <td>#${x.id}</td><td>${esc(x.name || '–')}</td><td>${esc(x.profileType || '–')}</td>
-    <td>${badge(x.state)}</td><td>${x.total}</td><td>${fmtTime(x.createdAt)}</td>
+    <td>${badge(x.state)}</td><td>${x.total}</td><td class="mono">${esc(short(x.note, 20))}</td><td>${fmtTime(x.createdAt)}</td>
     <td><div class="actions">
-      <button class="btn sm" data-action="batch-items" data-id="${x.id}">Items</button>
+      <button class="btn sm" data-action="batch-open" data-id="${x.id}">Open</button>
       <button class="btn sm" data-action="batch-confirm" data-id="${x.id}">Confirm all</button>
       <button class="btn sm" data-action="batch-cancel" data-id="${x.id}">Cancel all</button>
       <button class="btn sm danger" data-action="batch-delete" data-id="${x.id}">Delete</button>
     </div></td></tr>`).join('');
-  return head + `<div class="card"><table><thead><tr><th>ID</th><th>Name</th><th>Type</th><th>State</th><th>Total</th><th>Created</th><th></th></tr></thead><tbody>${rows}</tbody></table>${pager(b)}</div>`;
+  return head + `<div class="card"><table><thead><tr><th>ID</th><th>Name</th><th>Type</th><th>State</th><th>Total</th><th>Note</th><th>Created</th><th></th></tr></thead><tbody>${rows}</tbody></table>${pager(b)}</div>`;
 }
 
+// ---------------------------------------------------------------- upp
 async function loadUPP() {
-  S.upp.loading = true; render();
-  try { const d = await api('GET', '/upp'); S.upp.items = d.items || []; } catch (e) { toast('UPP', e.message, 'err'); }
-  S.upp.loading = false; render();
+  await run(S.upp, 'UPP templates', async () => {
+    const d = await apiGet('/upp');
+    S.upp.items = d.items || [];
+  });
 }
 function viewUPP() {
   const u = S.upp;
-  const head = `<div class="page-head"><div><h1>UPP templates</h1><p>SAIP profile packages resolved from the registry.</p></div>
-    <div class="spacer"></div><button class="btn" data-action="upp-upload">⬆ Upload template</button></div>`;
+  const head = `<div class="page-head"><div><h1>UPP templates</h1><p>SAIP registry. Templates are global (empty tenant) or tenant-local; a tenant sees its own plus the global ones.</p></div>
+    <div class="spacer"></div>
+    <button class="btn" data-action="upp-render">Dry-run render</button>
+    <button class="btn primary" data-action="upp-upload">⬆ Upload template</button></div>`;
   if (u.loading && !u.items.length) return head + loading();
+  if (u.error && !u.items.length) return head + errBox(u.error);
   const rows = u.items.map(x => `<tr>
     <td class="mono">${esc(x.name)}</td>
-    <td><span class="badge">${x.saip || (x.saipMajor + '.' + x.saipMinor)}</span></td>
-    <td>${x.active ? badge('available') : badge('Unavailable')}</td>
-    <td class="mono">${esc(short(x.sha256, 20))}</td><td>${x.size ?? ''}</td>
+    <td>${x.tenant ? `<span class="tag">${esc(x.tenant)}</span>` : badge('global')}</td>
+    <td><span class="badge">${esc(x.saip || (x.saipMajor + '.' + x.saipMinor))}</span></td>
+    <td>${x.active ? badge('active') : badge('disabled')}</td>
+    <td class="mono">${esc(short(x.sha256, 18))}</td><td>${x.size}</td>
     <td><div class="actions">
-      <button class="btn sm" data-action="upp-decoded" data-name="${esc(x.name)}">Decoded</button>
-      <button class="btn sm" data-action="upp-toggle" data-name="${esc(x.name)}" data-on="${x.active ? '0' : '1'}">${x.active ? 'Disable' : 'Enable'}</button>
-      <button class="btn sm danger" data-action="upp-delete" data-name="${esc(x.name)}">Delete</button>
+      <button class="btn sm" data-action="upp-decoded" data-name="${attr(x.name)}" data-tenant="${attr(x.tenant || '')}">Decoded</button>
+      <button class="btn sm" data-action="upp-schema" data-name="${attr(x.name)}" data-tenant="${attr(x.tenant || '')}">Schema</button>
+      <button class="btn sm" data-action="upp-versions" data-name="${attr(x.name)}" data-tenant="${attr(x.tenant || '')}">Versions</button>
+      <button class="btn sm" data-action="upp-bytes" data-name="${attr(x.name)}" data-tenant="${attr(x.tenant || '')}">DER</button>
+      <button class="btn sm" data-action="upp-toggle" data-name="${attr(x.name)}" data-tenant="${attr(x.tenant || '')}" data-on="${x.active ? '0' : '1'}">${x.active ? 'Disable' : 'Enable'}</button>
+      <button class="btn sm" data-action="upp-clone" data-name="${attr(x.name)}">Clone</button>
+      ${x.tenant ? `<button class="btn sm" data-action="upp-promote" data-name="${attr(x.name)}" data-tenant="${attr(x.tenant)}">Promote</button>` : ''}
+      <button class="btn sm danger" data-action="upp-delete" data-name="${attr(x.name)}" data-tenant="${attr(x.tenant || '')}">Delete</button>
     </div></td></tr>`).join('');
   return head + (u.items.length
-    ? `<div class="card"><table><thead><tr><th>Name</th><th>SAIP</th><th>Active</th><th>SHA-256</th><th>Size</th><th></th></tr></thead><tbody>${rows}</tbody></table></div>`
-    : `<div class="card">${empty('No templates. Import one with `rsp42 admin upp import`.', '🧩')}</div>`);
+    ? `<div class="card"><table><thead><tr><th>Name</th><th>Tenant</th><th>SAIP</th><th>State</th><th>SHA-256</th><th>Size</th><th></th></tr></thead><tbody>${rows}</tbody></table></div>`
+    : `<div class="card">${empty('No templates. Upload a .der or import one with the CLI.', '🧩')}</div>`);
 }
 
+// ---------------------------------------------------------------- perso
 async function loadPerso() {
-  S.perso.loading = true; render();
-  try { const d = await api('GET', '/personalization', null, { page: S.perso.page, size: S.perso.size }); S.perso.items = d.items || []; S.perso.total = d.total || 0; }
-  catch (e) { toast('Personalization', e.message, 'err'); }
-  S.perso.loading = false; render();
+  await run(S.perso, 'Personalization', async () => {
+    const d = await apiGet('/personalization', { page: S.perso.page, size: S.perso.size, iccid: S.perso.iccid || undefined, reveal: S.perso.reveal ? '1' : undefined });
+    S.perso.items = d.items || [];
+    S.perso.total = d.total || 0;
+  });
 }
 function viewPerso() {
   const p = S.perso;
-  const head = `<div class="page-head"><div><h1>Personalization</h1><p>Per-ICCID values (K/OPc encrypted at rest).</p></div>
-    <div class="spacer"></div><button class="btn primary" data-action="perso-new">+ New record</button></div>`;
+  const head = `<div class="page-head"><div><h1>Personalization</h1><p>Per-ICCID values (K/OPc encrypted at rest). Entries with no ICCID form the credentials pool,
+    paired with an ICCID when one is reserved.</p></div>
+    <div class="spacer"></div>
+    <button class="btn" data-action="perso-export" data-format="csv">⬇ CSV</button>
+    <button class="btn" data-action="perso-import">⬆ Import</button>
+    <button class="btn" data-action="perso-pool-import">⬆ Import pool</button>
+    <button class="btn primary" data-action="perso-new">+ New record</button></div>
+    <div class="toolbar">
+      <input class="input" style="flex:1;min-width:180px" placeholder="ICCID prefix" value="${attr(p.iccid)}" data-input="perso-iccid" />
+      <label class="inline"><input type="checkbox" data-input="perso-reveal" ${p.reveal ? 'checked' : ''} /> reveal K/OPc</label>
+      <button class="btn" data-action="perso-reload">Reload</button>
+    </div>`;
   if (p.loading && !p.items.length) return head + loading();
+  if (p.error && !p.items.length) return head + errBox(p.error);
   if (!p.items.length) return head + `<div class="card">${empty('No personalization records.', '🔑')}</div>`;
   const rows = p.items.map(x => `<tr>
-    <td class="mono">${esc(x.iccid)}</td><td class="mono">${esc(x.imsi || '–')}</td>
+    <td>${x.pool || !x.iccid ? badge('pool') : `<span class="mono">${esc(x.iccid)}</span>`}</td>
+    <td>${x.tenant ? `<span class="tag">${esc(x.tenant)}</span>` : '<span class="tag">(default)</span>'}</td>
+    <td class="mono">${esc(x.imsi || '–')}</td>
     <td>${x.hasK ? badge('K') : ''} ${x.hasOPc ? badge('OPc') : ''}</td>
     <td>${esc(x.algorithm || '–')}</td>
+    <td>${esc(x.spn || '–')}</td>
+    <td>${x.msisdn ? `<span class="mono">${esc(x.msisdn)}</span>` : '–'}</td>
     <td><div class="actions">
-      <button class="btn sm" data-action="perso-edit" data-iccid="${esc(x.iccid)}">Open</button>
-      <button class="btn sm danger" data-action="perso-delete" data-iccid="${esc(x.iccid)}">Delete</button>
+      <button class="btn sm" data-action="perso-open" data-iccid="${attr(x.iccid || '')}" data-imsi="${attr(x.imsi || '')}">Open</button>
+      ${x.iccid ? `<button class="btn sm danger" data-action="perso-delete" data-iccid="${attr(x.iccid)}">Delete</button>` : ''}
     </div></td></tr>`).join('');
-  return head + `<div class="card"><table><thead><tr><th>ICCID</th><th>IMSI</th><th>Keys</th><th>Algorithm</th><th></th></tr></thead><tbody>${rows}</tbody></table>${pager(p)}</div>`;
+  return head + `<div class="card"><table><thead><tr><th>ICCID</th><th>Tenant</th><th>IMSI</th><th>Keys</th><th>Algorithm</th><th>SPN</th><th>MSISDN</th><th></th></tr></thead><tbody>${rows}</tbody></table>${pager(p)}</div>`;
 }
 
+// ---------------------------------------------------------------- pool
 async function loadPool() {
-  S.pool.loading = true; render();
-  try {
+  await run(S.pool, 'ICCID pool', async () => {
     const [stats, items, ranges] = await Promise.all([
-      api('GET', '/iccid-pool/stats'),
-      api('GET', '/iccid-pool', null, { page: S.pool.page, size: S.pool.size }),
-      api('GET', '/iccid-ranges'),
+      apiGet('/iccid-pool/stats'),
+      apiGet('/iccid-pool', { page: S.pool.page, size: S.pool.size, state: S.pool.state || undefined, iccid: S.pool.iccid || undefined }),
+      apiGet('/iccid-ranges'),
     ]);
-    S.pool.stats = stats; S.pool.items = items.items || []; S.pool.total = items.total || 0; S.pool.ranges = ranges.items || [];
-  } catch (e) { toast('ICCID pool', e.message, 'err'); }
-  S.pool.loading = false; render();
+    S.pool.stats = stats;
+    S.pool.items = items.items || [];
+    S.pool.total = items.total || 0;
+    S.pool.ranges = ranges.items || [];
+  });
 }
 function viewPool() {
-  const p = S.pool, st = p.stats || { states: {}, ranges: 0 };
-  const cards = ['available', 'allocated', 'blocked'].map(k => `<div class="stat"><div class="k">${k}</div><div class="v">${st.states[k] || 0}</div><div class="s">ICCIDs</div></div>`).join('')
-    + `<div class="stat"><div class="k">ranges</div><div class="v">${st.ranges || 0}</div><div class="s">imported</div></div>`;
-  const head = `<div class="page-head"><div><h1>ICCID pool</h1><p>Imported ranges and allocation state.</p></div>
+  const p = S.pool, st = (p.stats && p.stats.states) || {};
+  const cards = ['available', 'allocated', 'blocked', 'reservation_expired'].map(k =>
+    `<div class="stat"><div class="k">${esc(k.replace('_', ' '))}</div><div class="v">${st[k] || 0}</div><div class="s">ICCIDs</div></div>`).join('')
+    + `<div class="stat"><div class="k">ranges</div><div class="v">${p.stats?.ranges ?? 0}</div><div class="s">imported</div></div>`
+    + (p.stats && 'credentials_unbound' in p.stats ? `<div class="stat"><div class="k">unbound credentials</div><div class="v">${p.stats.credentials_unbound}</div><div class="s">IMSI + K/OPc</div></div>` : '');
+  const head = `<div class="page-head"><div><h1>ICCID pool</h1><p>Imported ranges and allocation state. A reservation carries a TTL; expired reservations are counted separately and can be claimed again.</p></div>
     <div class="spacer"></div><button class="btn" data-action="pool-reserve">Reserve one</button>
     <button class="btn primary" data-action="range-new">+ Import range</button></div>
-    <div class="grid cols">${cards}</div>`;
-  const rangeRows = p.ranges.map(r => `<tr><td>#${r.id}</td><td class="mono">${esc(r.start)}</td><td class="mono">${esc(r.end)}</td><td>${esc(r.note || '–')}</td>
+    <div class="grid cols">${cards}</div>
+    <div class="toolbar" style="margin-top:14px">
+      <input class="input" style="min-width:180px" placeholder="ICCID prefix" value="${attr(p.iccid)}" data-input="pool-iccid" />
+      <select data-input="pool-state">${['', 'available', 'allocated', 'blocked'].map(s => `<option ${s === p.state ? 'selected' : ''} value="${s}">${s || 'Any state'}</option>`).join('')}</select>
+      <button class="btn" data-action="pool-reload">Reload</button>
+    </div>`;
+  const rangeRows = p.ranges.map(r => `<tr><td>#${r.id}</td><td>${r.tenant ? `<span class="tag">${esc(r.tenant)}</span>` : '<span class="tag">(default)</span>'}</td>
+    <td class="mono">${esc(r.start)}</td><td class="mono">${esc(r.end)}</td><td>${esc(r.note || '–')}</td>
     <td><div class="actions"><button class="btn sm danger" data-action="range-delete" data-id="${r.id}">Delete</button></div></td></tr>`).join('');
-  const poolRows = p.items.map(x => `<tr><td class="mono">${esc(x.iccid)}</td><td>${badge(x.state)}</td><td class="mono">${esc(short(x.eid) || '–')}</td><td>${fmtTime(x.allocatedAt)}</td>
+  const poolRows = p.items.map(x => `<tr>
+    <td class="mono">${esc(x.iccid)}</td>
+    <td>${x.tenant ? `<span class="tag">${esc(x.tenant)}</span>` : '<span class="tag">(default)</span>'}</td>
+    <td>${badge(x.state)}</td>
+    <td class="mono">${esc(short(x.eid, 14) || '–')}</td>
+    <td>${esc(x.reference || '–')}</td>
+    <td>${x.reservedUntil ? fmtTime(x.reservedUntil) : '–'}</td>
+    <td>${fmtTime(x.allocatedAt)}</td>
     <td><div class="actions">
-      ${x.state !== 'available' ? `<button class="btn sm" data-action="pool-release" data-iccid="${esc(x.iccid)}">Release</button>` : ''}
-      ${x.state !== 'blocked' ? `<button class="btn sm danger" data-action="pool-block" data-iccid="${esc(x.iccid)}">Block</button>` : ''}
+      ${x.state !== 'available' ? `<button class="btn sm" data-action="pool-release" data-iccid="${attr(x.iccid)}">Release</button>` : ''}
+      ${x.state !== 'blocked' ? `<button class="btn sm danger" data-action="pool-block" data-iccid="${attr(x.iccid)}">Block</button>` : ''}
     </div></td></tr>`).join('');
   return head + `
     <div class="card" style="margin-top:14px"><div class="pad"><b>Ranges</b></div>
-      ${p.ranges.length ? `<table><thead><tr><th>ID</th><th>Start</th><th>End</th><th>Note</th><th></th></tr></thead><tbody>${rangeRows}</tbody></table>` : empty('No ranges imported.', '🔢')}
+      ${p.ranges.length ? `<table><thead><tr><th>ID</th><th>Tenant</th><th>Start</th><th>End</th><th>Note</th><th></th></tr></thead><tbody>${rangeRows}</tbody></table>` : empty('No ranges imported.', '🔢')}
     </div>
     <div class="card" style="margin-top:14px">
-      ${p.items.length ? `<table><thead><tr><th>ICCID</th><th>State</th><th>EID</th><th>Allocated</th><th></th></tr></thead><tbody>${poolRows}</tbody></table>${pager(p)}` : empty('Pool is empty.', '🔢')}
+      ${p.items.length ? `<table><thead><tr><th>ICCID</th><th>Tenant</th><th>State</th><th>EID</th><th>Reference</th><th>Reserved until</th><th>Allocated</th><th></th></tr></thead><tbody>${poolRows}</tbody></table>${pager(p)}` : empty('Pool is empty.', '🔢')}
     </div>`;
 }
 
+// ---------------------------------------------------------------- eids
+async function loadEids() {
+  await run(S.eids, 'eUICCs', async () => {
+    const d = await apiGet('/eids', { page: S.eids.page, size: S.eids.size, state: S.eids.state || undefined, from: S.eids.from || undefined, to: S.eids.to || undefined });
+    S.eids.items = d.items || [];
+    S.eids.total = d.total || 0;
+  });
+}
+function viewEids() {
+  const e = S.eids;
+  const head = `<div class="page-head"><div><h1>eUICCs</h1><p>The inventory aggregated per eUICC (EID): how many profiles a device holds and how many are installed.</p></div>
+    <div class="spacer"></div></div>
+    <div class="toolbar">
+      <select data-input="eids-state">${PROFILE_STATES.map(s => `<option ${s === e.state ? 'selected' : ''} value="${attr(s)}">${s || 'Any state'}</option>`).join('')}</select>
+      <input class="input" type="date" value="${attr(e.from)}" data-input="eids-from" title="created from" />
+      <input class="input" type="date" value="${attr(e.to)}" data-input="eids-to" title="created to" />
+      <button class="btn" data-action="eids-reload">Reload</button>
+    </div>`;
+  if (e.loading && !e.items.length) return head + loading();
+  if (e.error && !e.items.length) return head + errBox(e.error);
+  if (!e.items.length) return head + `<div class="card">${empty('No EIDs in the inventory.', '📱')}</div>`;
+  const rows = e.items.map(x => `<tr>
+    <td class="mono">${esc(x.eid)}</td><td>${x.profileCount}</td><td>${x.installedCount}</td><td>${x.profileCount - x.installedCount}</td>
+    <td>${fmtTime(x.lastUpdatedAt)}</td>
+    <td><div class="actions"><button class="btn sm" data-action="eids-filter" data-eid="${attr(x.eid)}">Profiles</button></div></td></tr>`).join('');
+  return head + `<div class="card"><table><thead><tr><th>EID</th><th>Profiles</th><th>Installed</th><th>Other</th><th>Last update</th><th></th></tr></thead><tbody>${rows}</tbody></table>${pager(e)}</div>`;
+}
+
+// ---------------------------------------------------------------- notifications
+async function loadNotifs() {
+  await run(S.notifs, 'Notifications', async () => {
+    const d = await apiGet('/notifications', { page: S.notifs.page, size: S.notifs.size, iccid: S.notifs.iccid || undefined, eid: S.notifs.eid || undefined, from: S.notifs.from || undefined, to: S.notifs.to || undefined });
+    S.notifs.items = d.items || [];
+    S.notifs.total = d.total || 0;
+  });
+}
+function viewNotifs() {
+  const n = S.notifs;
+  const head = `<div class="page-head"><div><h1>Notifications</h1><p>ES9+ notifications received from the LPA, with the signature verdict and processing result.</p></div>
+    <div class="spacer"></div></div>
+    <div class="toolbar">
+      <input class="input" style="min-width:170px" placeholder="ICCID" value="${attr(n.iccid)}" data-input="notifs-iccid" />
+      <input class="input" style="min-width:170px" placeholder="EID" value="${attr(n.eid)}" data-input="notifs-eid" />
+      <input class="input" type="date" value="${attr(n.from)}" data-input="notifs-from" title="from" />
+      <input class="input" type="date" value="${attr(n.to)}" data-input="notifs-to" title="to" />
+      <button class="btn" data-action="notifs-reload">Reload</button>
+    </div>`;
+  if (n.loading && !n.items.length) return head + loading();
+  if (n.error && !n.items.length) return head + errBox(n.error);
+  if (!n.items.length) return head + `<div class="card">${empty('No notifications.', '🔔')}</div>`;
+  const rows = n.items.map(x => `<tr>
+    <td>${fmtTime(x.receivedAt)}</td><td><b>${esc(x.operation || '–')}</b></td><td>${x.seqNumber}</td>
+    <td class="mono">${esc(x.iccid || '–')}</td><td class="mono">${esc(short(x.eid, 16) || '–')}</td>
+    <td class="mono">${esc(x.transactionId || '–')}</td>
+    <td>${x.signatureOk ? badge('signed') : badge('unsigned')}</td>
+    <td>${x.processed ? badge('processed') : badge('unprocessed')}</td></tr>`).join('');
+  return head + `<div class="card"><table><thead><tr><th>Received</th><th>Operation</th><th>Seq</th><th>ICCID</th><th>EID</th><th>Transaction</th><th>Signature</th><th>Processing</th></tr></thead><tbody>${rows}</tbody></table>${pager(n)}</div>`;
+}
+
+// ---------------------------------------------------------------- audit
 async function loadAudit() {
-  S.audit.loading = true; render();
-  try { const d = await api('GET', '/audit', null, { page: S.audit.page, size: S.audit.size, interface: S.audit.interface || undefined, subject: S.audit.subject || undefined }); S.audit.items = d.items || []; S.audit.total = d.total || 0; }
-  catch (e) { toast('Audit', e.message, 'err'); }
-  S.audit.loading = false; render();
+  await run(S.audit, 'Audit log', async () => {
+    const f = { interface: S.audit.interface || undefined, function: S.audit.function || undefined, subject: S.audit.subject || undefined,
+      actor: S.audit.actor || undefined, outcome: S.audit.outcome || undefined, from: S.audit.from || undefined, to: S.audit.to || undefined };
+    const [list, stats] = await Promise.all([
+      apiGet('/audit', Object.assign({ page: S.audit.page, size: S.audit.size }, f)),
+      apiGet('/audit/stats', Object.assign({ groupBy: 'function' }, f)).catch(() => null),
+    ]);
+    S.audit.items = list.items || [];
+    S.audit.total = list.total || 0;
+    S.audit.stats = stats;
+  });
 }
 function viewAudit() {
   const a = S.audit;
-  const head = `<div class="page-head"><div><h1>Audit log</h1><p>Management edits and interface requests.</p></div></div>
+  const head = `<div class="page-head"><div><h1>Audit log</h1><p>Management edits and interface requests. <span class="mono">from</span>/<span class="mono">since</span> and
+    <span class="mono">to</span>/<span class="mono">until</span> are accepted as aliases.</p></div>
+    <div class="spacer"></div><button class="btn" data-action="audit-reload">Reload</button></div>
     <div class="toolbar">
-      <select data-input="audit-interface">${['', 'admin', 'es9p', 'es11', 'es2p'].map(x => `<option ${x === a.interface ? 'selected' : ''} value="${x}">${x || 'Any interface'}</option>`).join('')}</select>
-      <input class="input" style="flex:1;min-width:160px" placeholder="subject (ICCID/EID)" value="${esc(a.subject)}" data-input="audit-subject" />
-      <button class="btn" data-action="audit-reload">Reload</button>
-    </div>`;
+      <select data-input="audit-interface">${['', 'admin', 'es2p', 'es9p', 'es11', 'es12'].map(x => `<option ${x === a.interface ? 'selected' : ''} value="${x}">${x || 'Any interface'}</option>`).join('')}</select>
+      <select data-input="audit-outcome">${['', 'Executed-Success', 'Failed'].map(x => `<option ${x === a.outcome ? 'selected' : ''} value="${x}">${x || 'Any outcome'}</option>`).join('')}</select>
+      <input class="input" style="min-width:140px" placeholder="function" value="${attr(a.function)}" data-input="audit-function" />
+      <input class="input" style="min-width:150px" placeholder="subject (ICCID/EID)" value="${attr(a.subject)}" data-input="audit-subject" />
+      <input class="input" style="min-width:130px" placeholder="actor" value="${attr(a.actor)}" data-input="audit-actor" />
+      <input class="input" type="date" value="${attr(a.from)}" data-input="audit-from" title="from" />
+      <input class="input" type="date" value="${attr(a.to)}" data-input="audit-to" title="to" />
+    </div>
+    ${a.stats ? `<div class="card" style="margin-bottom:14px"><div class="pad"><b>By function</b> · ${a.stats.total} rows</div><div class="pad">${bars(a.stats.buckets)}</div></div>` : ''}`;
   if (a.loading && !a.items.length) return head + loading();
+  if (a.error && !a.items.length) return head + errBox(a.error);
   if (!a.items.length) return head + `<div class="card">${empty('No audit entries.', '📜')}</div>`;
-  const rows = a.items.map(x => `<tr>
-    <td>${fmtTime(x.time)}</td><td>${esc(x.interface || '–')}</td><td><b>${esc(x.function || '–')}</b></td>
-    <td class="mono">${esc(short(x.subject, 24) || '–')}</td><td>${x.outcome ? badge(x.outcome === 'Executed-Success' ? 'Installed' : 'Error') : '–'}</td>
-    <td class="mono">${esc(x.remoteAddr || '')}</td></tr>`).join('');
-  return head + `<div class="card"><table><thead><tr><th>Time</th><th>Interface</th><th>Function</th><th>Subject</th><th>Outcome</th><th>Remote</th></tr></thead><tbody>${rows}</tbody></table>${pager(a)}</div>`;
+  const rows = a.items.map((x, i) => `<tr>
+    <td>${fmtTime(x.time)}</td>
+    <td>${x.tenant ? `<span class="tag">${esc(x.tenant)}</span>` : '<span class="tag">(default)</span>'}</td>
+    <td class="mono">${esc(x.actor || '–')}</td>
+    <td>${esc(x.interface || '–')}</td><td><b>${esc(x.function || '–')}</b></td>
+    <td class="mono">${esc(short(x.subject, 22) || '–')}</td>
+    <td>${x.outcome ? badge(x.outcome === 'Executed-Success' ? 'success' : 'failed') : '–'}</td>
+    <td class="mono">${esc(x.statusCode || '')}</td>
+    <td class="mono">${esc(x.remoteAddr || '')}</td>
+    <td><div class="actions">${x.detail ? `<button class="btn sm" data-action="audit-detail" data-idx="${i}">Detail</button>` : ''}</div></td></tr>`).join('');
+  return head + `<div class="card"><table><thead><tr><th>Time</th><th>Tenant</th><th>Actor</th><th>Interface</th><th>Function</th><th>Subject</th><th>Outcome</th><th>Status</th><th>Remote</th><th></th></tr></thead><tbody>${rows}</tbody></table>${pager(a)}</div>`;
 }
 
-// ------------------------------------------------------------------ render
-function render() {
-  renderNav();
-  const v = { profiles: viewProfiles, batches: viewBatches, upp: viewUPP, perso: viewPerso, pool: viewPool, audit: viewAudit }[S.section];
-  $('#view').innerHTML = v ? v() : '';
+// ---------------------------------------------------------------- events
+async function loadEvents() {
+  await run(S.events, 'SM-DS events', async () => {
+    const d = await apiGet('/events', { page: S.events.page, size: S.events.size, eid: S.events.eid || undefined,
+      eventId: S.events.eventId || undefined, iccid: S.events.iccid || undefined, matchingId: S.events.matchingId || undefined,
+      status: S.events.status || undefined, from: S.events.from || undefined, to: S.events.to || undefined, sort: S.events.sort || undefined });
+    S.events.items = d.items || [];
+    S.events.total = d.total || 0;
+  });
+}
+function viewEvents() {
+  const e = S.events;
+  const head = `<div class="page-head"><div><h1>SM-DS events</h1><p>Read-only event records. This endpoint exists on the <b>SM-DS</b> admin listener (:9100);
+    on the SM-DP+ listener it answers 404. Event writes are the ES12/ES15 machine interface.</p></div>
+    <div class="spacer"></div><button class="btn" data-action="events-reload">Reload</button></div>
+    <div class="toolbar">
+      <input class="input" style="min-width:160px" placeholder="EID" value="${attr(e.eid)}" data-input="events-eid" />
+      <input class="input" style="min-width:120px" placeholder="eventId" value="${attr(e.eventId)}" data-input="events-eventid" />
+      <input class="input" style="min-width:160px" placeholder="ICCID" value="${attr(e.iccid)}" data-input="events-iccid" />
+      <input class="input" style="min-width:120px" placeholder="matchingId" value="${attr(e.matchingId)}" data-input="events-matchingid" />
+      <select data-input="events-status">${['', 'active', 'expired', 'deleted', 'any'].map(s => `<option ${s === e.status ? 'selected' : ''} value="${s}">${s || 'Any status'}</option>`).join('')}</select>
+      <select data-input="events-sort"><option value="">Newest first</option><option value="-registered_at">Oldest first</option><option value="expires_at">Expiry ↑</option><option value="-expires_at">Expiry ↓</option></select>
+    </div>`;
+  if (e.loading && !e.items.length) return head + loading();
+  if (e.error && !e.items.length) return head + errBox(e.error);
+  if (!e.items.length) return head + `<div class="card">${empty('No events (or this listener is the SM-DP+ one).', '📡')}</div>`;
+  const statusOf = (x) => x.status || (x.deletedAt ? 'deleted' : (x.expiresAt && new Date(x.expiresAt) < new Date() ? 'expired' : 'active'));
+  const rows = e.items.map(x => `<tr>
+    <td>${fmtTime(x.registeredAt)}</td>
+    <td class="mono">${esc(x.eventId)}</td>
+    <td>${statusOf(x) ? badge(statusOf(x)) : '–'}</td>
+    <td class="mono">${esc(short(x.eid, 16))}</td>
+    <td>${x.tenant ? `<span class="tag">${esc(x.tenant)}</span>` : '<span class="tag">(default)</span>'}</td>
+    <td class="mono">${esc(x.iccid || '–')}</td>
+    <td class="mono">${esc(x.matchingId || '–')}</td>
+    <td>${esc(x.rspServerAddress || '–')}</td>
+    <td class="mono">${esc(x.callerOid || '–')}</td>
+    <td>${x.cascaded ? badge('cascaded') : ''} ${x.forwardingIndicator ? badge('forward') : ''}</td>
+    <td>${fmtTime(x.expiresAt)}</td></tr>`).join('');
+  return head + `<div class="card"><table><thead><tr><th>Registered</th><th>Event ID</th><th>Status</th><th>EID</th><th>Tenant</th><th>ICCID</th><th>Matching ID</th><th>RSP server</th><th>Caller OID</th><th>Flags</th><th>Expires</th></tr></thead><tbody>${rows}</tbody></table>${pager(e)}</div>`;
 }
 
-// ------------------------------------------------------------------ modal / drawer
+// ---------------------------------------------------------------- tenants
+async function loadTenants() {
+  await run(S.tenants, 'Tenants', async () => {
+    const d = await apiGet('/tenants');
+    S.tenants.items = d.items || [];
+  });
+  renderTenantOptions();
+}
+function viewTenants() {
+  const t = S.tenants;
+  const head = `<div class="page-head"><div><h1>Tenants</h1><p>Operator BSS carriers. The id is the carrier primary key — rsp42 keeps no second mapping.
+    Quotas are enforced when a template is created (409 <span class="mono">quota_exceeded</span>) and when profiles are allocated.</p></div>
+    <div class="spacer"></div><button class="btn primary" data-action="tenant-new">+ New tenant</button></div>`;
+  if (t.loading && !t.items.length) return head + loading();
+  if (t.error && !t.items.length) return head + errBox(t.error);
+  if (!t.items.length) return head + `<div class="card">${empty('No tenants registered (the platform default has no row).', '🏢')}</div>`;
+  const rows = t.items.map(x => `<tr>
+    <td class="mono">${esc(x.id)}</td><td>${esc(x.name)}</td><td>${badge(x.status)}</td>
+    <td class="mono">${x.templateQuota ?? '∞'}</td><td class="mono">${x.profileQuota ?? '∞'}</td>
+    <td class="mono">${esc(x.defaultUpp || '–')}</td><td class="mono">${esc(short(x.callbackUrl, 28) || '–')}</td>
+    <td>${fmtTime(x.updatedAt)}</td>
+    <td><div class="actions">
+      <button class="btn sm" data-action="tenant-edit" data-id="${attr(x.id)}">Edit</button>
+      <button class="btn sm danger" data-action="tenant-delete" data-id="${attr(x.id)}">Delete</button>
+    </div></td></tr>`).join('');
+  return head + `<div class="card"><table><thead><tr><th>ID</th><th>Name</th><th>Status</th><th>Template quota</th><th>Profile quota</th><th>Default UPP</th><th>Callback URL</th><th>Updated</th><th></th></tr></thead><tbody>${rows}</tbody></table></div>`;
+}
+
+// ===================================================================== modal / drawer
 function showModal(title, bodyHtml, footHtml) {
   $('#modal').innerHTML = `<div class="head"><h3>${title}</h3><button class="btn sm ghost" data-action="modal-close">✕</button></div>
     <div class="body">${bodyHtml}</div><div class="foot">${footHtml}</div>`;
@@ -750,152 +1661,539 @@ function showDrawer(title, bodyHtml) {
 }
 function closeDrawer() { $('#drawer').classList.remove('show'); $('#overlay').classList.remove('show'); }
 
-// ------------------------------------------------------------------ actions
-async function doAction(action, el) {
-  const d = el.dataset;
-  try {
-    if (action === 'profiles-reload') return loadProfiles();
-    if (action === 'batches-reload') return loadBatches();
-    if (action === 'audit-reload') return loadAudit();
-    if (action === 'profile-new') return modalNewProfile();
-    if (action === 'profile-open') return openProfile(d.iccid);
-    if (action === 'profile-confirm') { await api('POST', `/profiles/${encodeURIComponent(d.iccid)}/confirm`, { release: true }); toast('Confirmed', d.iccid, 'ok'); return loadProfiles(); }
-    if (action === 'profile-release') { await api('POST', `/profiles/${encodeURIComponent(d.iccid)}/release`); toast('Released', d.iccid, 'ok'); return loadProfiles(); }
-    if (action === 'profile-delete') { if (!confirm(`Delete ${d.iccid}?`)) return; await api('DELETE', `/profiles/${encodeURIComponent(d.iccid)}`); toast('Deleted', d.iccid, 'ok'); return loadProfiles(); }
-    if (action === 'profile-ac') { const r = await api('POST', `/profiles/${encodeURIComponent(d.iccid)}/activation-code`); showModal('Activation code', `<dl class="kv"><dt>ICCID</dt><dd>${esc(d.iccid)}</dd><dt>Matching ID</dt><dd>${esc(r.matchingId)}</dd><dt>Activation code</dt><dd>${esc(r.activationCode)}</dd></dl>`, `<button class="btn primary" data-action="modal-close">Close</button>`); return; }
-    if (action === 'batch-new') return modalNewBatch();
-    if (action === 'batch-items') { const r = await api('GET', `/batches/${d.id}/items`, null, { size: 100 }); showModal(`Batch #${d.id} items`, itemsTable(r.items || []), `<button class="btn primary" data-action="modal-close">Close</button>`); return; }
-    if (action === 'batch-confirm') { const r = await api('POST', `/batches/${d.id}/confirm`, { release: true }); toast('Batch confirmed', `applied ${r.applied}, failed ${r.failed}`, 'ok'); return loadBatches(); }
-    if (action === 'batch-cancel') { const r = await api('POST', `/batches/${d.id}/cancel`, { finalStatus: 'Available' }); toast('Batch cancelled', `applied ${r.applied}`, 'ok'); return loadBatches(); }
-    if (action === 'batch-delete') { if (!confirm(`Delete batch #${d.id}?`)) return; await api('DELETE', `/batches/${d.id}`); toast('Deleted', 'batch #' + d.id, 'ok'); return loadBatches(); }
-    if (action === 'upp-upload') return modalUploadUPP();
-    if (action === 'upp-decoded') { const r = await api('GET', `/upp/${encodeURIComponent(d.name)}/decoded`); showModal(`Decoded · ${esc(d.name)}`, decodedView(r), `<button class="btn primary" data-action="modal-close">Close</button>`); return; }
-    if (action === 'upp-toggle') { await api('POST', `/upp/${encodeURIComponent(d.name)}/${d.on === '1' ? 'activate' : 'deactivate'}`); return loadUPP(); }
-    if (action === 'upp-delete') { if (!confirm(`Delete template ${d.name}?`)) return; await api('DELETE', `/upp/${encodeURIComponent(d.name)}`); toast('Deleted', d.name, 'ok'); return loadUPP(); }
-    if (action === 'perso-new') return modalPerso('');
-    if (action === 'perso-edit') return modalPerso(d.iccid);
-    if (action === 'perso-delete') { if (!confirm(`Delete personalization for ${d.iccid}?`)) return; await api('DELETE', `/personalization/${encodeURIComponent(d.iccid)}`); toast('Deleted', d.iccid, 'ok'); return loadPerso(); }
-    if (action === 'range-new') return modalRange();
-    if (action === 'range-delete') { if (!confirm(`Delete range #${d.id}?`)) return; await api('DELETE', `/iccid-ranges/${d.id}`); toast('Range deleted', '#' + d.id, 'ok'); return loadPool(); }
-    if (action === 'pool-reserve') { const r = await api('POST', '/iccid-pool/reserve', { eid: '' }); toast('Reserved', r.iccid, 'ok'); return loadPool(); }
-    if (action === 'pool-release') { await api('POST', '/iccid-pool/release', { iccid: d.iccid }); return loadPool(); }
-    if (action === 'pool-block') { await api('POST', '/iccid-pool/block', { iccid: d.iccid }); return loadPool(); }
-    if (action === 'modal-close') return closeModal();
-    if (action === 'drawer-close') return closeDrawer();
-    if (action === 'submit-profile') {
-      const body = { profileType: $('#f-type').value, eid: $('#f-eid').value.trim() || undefined, matchingId: $('#f-mid').value.trim() || undefined };
-      await api('POST', '/profiles', body); closeModal(); toast('Profile created', '', 'ok'); return loadProfiles();
-    }
-    if (action === 'submit-batch') {
-      await api('POST', '/batches', { name: $('#f-bname').value, count: +$('#f-bcount').value, profileType: $('#f-btype').value });
-      closeModal(); toast('Batch created', '', 'ok'); return loadBatches();
-    }
-    if (action === 'submit-upp') {
-      const file = $('#f-file').files[0]; if (!file) return toast('Upload', 'choose a file', 'err');
-      const data = await fileToBase64(file);
-      await api('POST', '/upp', { name: $('#f-uname').value || file.name, data });
-      closeModal(); toast('Template stored', '', 'ok'); return loadUPP();
-    }
-    if (action === 'submit-perso') {
-      const iccid = $('#f-piccid').value.trim();
-      const body = { imsi: $('#f-pimsi').value.trim(), k: $('#f-pk').value.trim(), opc: $('#f-popc').value.trim(), spn: $('#f-pspn').value.trim(), algorithm: $('#f-palgo').value.trim(), pin1: $('#f-ppin').value.trim(), puk1: $('#f-ppuk').value.trim(), adm1: $('#f-padm1').value.trim(), adm2: $('#f-padm2').value.trim() };
-      await api('PUT', '/personalization/' + encodeURIComponent(iccid), body);
-      closeModal(); toast('Saved', iccid, 'ok'); return loadPerso();
-    }
-    if (action === 'submit-range') {
-      await api('POST', '/iccid-ranges', { start: $('#f-rstart').value.trim(), end: $('#f-rend').value.trim(), note: $('#f-rnote').value.trim() });
-      closeModal(); toast('Range imported', '', 'ok'); return loadPool();
-    }
-  } catch (e) { toast('Action failed', e.message, 'err'); }
-}
-
-function itemsTable(items) {
-  if (!items.length) return empty('No items.', '📇');
-  return `<table><thead><tr><th>ICCID</th><th>State</th><th>EID</th></tr></thead><tbody>${items.map(x =>
-    `<tr><td class="mono">${esc(x.iccid)}</td><td>${badge(x.state)}</td><td class="mono">${esc(short(x.eid) || '–')}</td></tr>`).join('')}</tbody></table>`;
+// ---------------------------------------------------------------- modals
+function inspectView(i) {
+  if (!i) return empty('No inspection.');
+  return `<dl class="kv"><dt>SAIP</dt><dd>${esc(i.saip || (i.saipMajor + '.' + i.saipMinor))}</dd>
+    <dt>SHA-256</dt><dd>${esc(i.sha256 || '–')}</dd><dt>Size</dt><dd>${esc(i.size ?? '–')}</dd>
+    <dt>Profile type</dt><dd>${esc(i.profileType || '–')}</dd><dt>ICCID</dt><dd>${esc(i.iccid || '–')}</dd>
+    <dt>Services</dt><dd>${esc((i.services || []).join(', ') || '–')}</dd>
+    <dt>GFSTE</dt><dd>${esc((i.gfste || []).join(', ') || '–')}</dd></dl>
+    ${(i.warnings || []).length ? `<h4 class="sec">Warnings</h4><ul>${i.warnings.map(w => `<li>${esc(w)}</li>`).join('')}</ul>` : ''}
+    <h4 class="sec">ProfileElements</h4>
+    <table><thead><tr><th>Tag</th><th>Name</th><th>Size</th></tr></thead><tbody>${(i.elements || []).map(e => `<tr><td class="mono">${esc(e.tag)}</td><td>${esc(e.name || '–')}</td><td>${e.size}</td></tr>`).join('')}</tbody></table>
+    <h4 class="sec">Files</h4>
+    <table><thead><tr><th>FID</th><th>PE</th><th>Body</th></tr></thead><tbody>${(i.files || []).map(f => `<tr><td class="mono">${esc(f.fid)}</td><td>${esc(f.pename || f.peName || '–')}</td><td>${f.bodySize}</td></tr>`).join('')}</tbody></table>`;
 }
 function decodedView(r) {
   return `<dl class="kv"><dt>SAIP</dt><dd>${r.major}.${r.minor}</dd><dt>Profile type</dt><dd>${esc(r.profileType || '–')}</dd>
     <dt>ICCID</dt><dd>${esc(r.iccid || '–')}</dd><dt>Services</dt><dd>${esc((r.services || []).join(', ') || '–')}</dd>
     <dt>GFSTE</dt><dd>${esc((r.gfste || []).join(', ') || '–')}</dd></dl>
-    <h4 style="margin:14px 0 6px;color:var(--muted)">ProfileElements</h4>
+    <h4 class="sec">ProfileElements</h4>
     <table><thead><tr><th>Tag</th><th>Name</th><th>Size</th></tr></thead><tbody>${(r.elements || []).map(e => `<tr><td class="mono">${esc(e.tag)}</td><td>${esc(e.name || '–')}</td><td>${e.size}</td></tr>`).join('')}</tbody></table>
-    <h4 style="margin:14px 0 6px;color:var(--muted)">Files</h4>
-    <table><thead><tr><th>FID</th><th>PE</th><th>Body</th></tr></thead><tbody>${(r.files || []).map(f => `<tr><td class="mono">${esc(f.fid)}</td><td>${esc(f.peName || '–')}</td><td>${f.bodySize}</td></tr>`).join('')}</tbody></table>`;
+    <h4 class="sec">Files</h4>
+    <table><thead><tr><th>FID</th><th>PE</th><th>Body</th></tr></thead><tbody>${(r.files || []).map(f => `<tr><td class="mono">${esc(f.fid)}</td><td>${esc(f.pename || f.peName || '–')}</td><td>${f.bodySize}</td></tr>`).join('')}</tbody></table>`;
 }
-
+function modalNewProfile() {
+  showModal('New profile', `
+    ${field('ICCID (optional — the pool is used when omitted)', `<input id="f-iccid" class="input mono" placeholder="89000123…" />`)}
+    <div class="two">${field('Profile type', `<select id="f-type"><option>operational</option><option>test</option><option>provisioning</option></select>`)}
+      ${field('Matching ID', `<input id="f-mid" class="input" />`)}</div>
+    ${field('EID (optional)', `<input id="f-eid" class="input mono" />`)}
+    <div class="two">${field('UPP template', `<input id="f-upp" class="input" placeholder="TS48v2_SAIP2.3_BERTLV.der" />`)}
+      ${field('External ref', `<input id="f-ref" class="input" placeholder="operator order id" />`)}</div>
+    ${field('SM-DS address (optional)', `<input id="f-smds" class="input" />`)}
+    <p style="color:var(--muted);font-size:12.5px">Equivalent to ES2+ <span class="mono">downloadOrder</span>. Sent with an
+      <span class="mono">Idempotency-Key</span> so a retry repeats no side effect.</p>`,
+    `<button class="btn" data-action="modal-close">Cancel</button><button class="btn primary" data-action="submit-profile">Create</button>`);
+}
+function modalEditProfile(p) {
+  showModal(`Edit ${esc(p.iccid)}`, `
+    <div class="two">${field('EID', `<input id="f-eid" class="input mono" value="${attr(p.eid || '')}" />`)}
+      ${field('External ref', `<input id="f-ref" class="input" value="${attr(p.externalRef || '')}" />`)}</div>
+    <div class="two">${field('Matching ID', `<input id="f-mid" class="input" value="${attr(p.matchingId || '')}" />`)}
+      ${field('UPP template', `<input id="f-upp" class="input" value="${attr(p.uppTemplate || '')}" />`)}</div>
+    ${field('SM-DS address', `<input id="f-smds" class="input" value="${attr(p.smdsAddress || '')}" />`)}
+    <div class="two">${field('Tenant', `<input id="f-tenant" class="input" value="${attr(p.tenant || '')}" placeholder="empty = platform default" />`)}
+      ${field('PPR ids (comma-separated integers)', `<input id="f-ppr" class="input mono" value="${attr((p.pprIds || '').length ? '' : '')}" placeholder="e.g. 1,2" />`)}</div>`,
+    `<button class="btn" data-action="modal-close">Cancel</button><button class="btn primary" data-action="submit-profile-edit" data-iccid="${attr(p.iccid)}">Save</button>`);
+}
+function modalImportProfiles() {
+  showModal('Import profiles', `
+    <div class="field"><label>File (.json or .csv)</label><input id="f-file" class="input" type="file" accept=".json,.csv,text/csv,application/json" /></div>
+    <div class="field"><label>…or paste JSON <span class="mono">{"records":[…]}</span> / CSV with an <span class="mono">iccid</span> header</label>
+      <textarea id="f-text" rows="8" placeholder='{"records":[{"iccid":"89000…","profileType":"operational"}]}'></textarea></div>
+    <p style="color:var(--muted);font-size:12.5px">Each row is reported individually; one malformed row never aborts the import.</p>`,
+    `<button class="btn" data-action="modal-close">Cancel</button><button class="btn primary" data-action="submit-profile-import">Import</button>`);
+}
 function modalNewBatch() {
-  showModal('New batch', `<div class="field"><label>Name</label><input id="f-bname" class="input" placeholder="Q4 rollout" /></div>
-    <div class="two"><div class="field"><label>Count</label><input id="f-bcount" class="input" type="number" min="1" value="5" /></div>
-    <div class="field"><label>Profile type</label><select id="f-btype"><option>operational</option><option>test</option><option>provisioning</option></select></div></div>
-    <p style="color:var(--muted);font-size:12.5px">Creates <b>count</b> profiles (ICCIDs are taken from the pool when available).</p>`,
+  showModal('New batch', `
+    ${field('Name', `<input id="f-bname" class="input" placeholder="Q4 rollout" />`)}
+    <div class="three">${field('Count', `<input id="f-bcount" class="input" type="number" min="1" max="1000" value="5" />`)}
+      ${field('Profile type', `<select id="f-btype"><option>operational</option><option>test</option><option>provisioning</option></select>`)}
+      ${field('EID (optional)', `<input id="f-beid" class="input mono" />`)}</div>
+    <div class="two">${field('UPP template (optional)', `<input id="f-bupp" class="input" />`)}
+      ${field('Note', `<input id="f-bnote" class="input" />`)}</div>
+    <p style="color:var(--muted);font-size:12.5px">Allocates <b>count</b> profiles from the pool (ICCIDs are taken when available).</p>`,
     `<button class="btn" data-action="modal-close">Cancel</button><button class="btn primary" data-action="submit-batch">Create batch</button>`);
 }
 function modalUploadUPP() {
-  showModal('Upload UPP template', `<div class="two"><div class="field"><label>Name</label><input id="f-uname" class="input" placeholder="TS48v3_SAIP2.3_BERTLV.der" /></div>
-    <div class="field"><label>File (.der)</label><input id="f-file" class="input" type="file" accept=".der,.bin" /></div></div>
-    <p style="color:var(--muted);font-size:12.5px">The SAIP version is parsed server-side.</p>`,
-    `<button class="btn" data-action="modal-close">Cancel</button><button class="btn primary" data-action="submit-upp">Upload</button>`);
+  showModal('Upload UPP template', `
+    <div class="two">${field('Name', `<input id="f-uname" class="input" placeholder="TS48v3_SAIP2.3_BERTLV.der" />`)}
+      ${field('Tenant (empty = global)', `<input id="f-utenant" class="input" placeholder="${attr(S.tenant || '')}" />`)}</div>
+    ${field('File (.der)', `<input id="f-file" class="input" type="file" accept=".der,.bin,application/octet-stream" />`)}
+    <div id="upp-val"></div>
+    <p style="color:var(--muted);font-size:12.5px">Validate parses the SAIP structure without storing anything; the SAIP version is parsed server-side on upload.</p>`,
+    `<button class="btn" data-action="modal-close">Cancel</button>
+     <button class="btn" data-action="validate-upp">Validate</button>
+     <button class="btn primary" data-action="submit-upp">Upload</button>`);
+}
+function modalRenderUPP() {
+  showModal('Dry-run render', `
+    ${field('Template', `<input id="f-rname" class="input" placeholder="TS48v2_SAIP2.3_BERTLV.der" />`)}
+    ${field('Personalization (JSON: imsi, k, opc, spn, plmn, msisdn, acc, filePatches, …)',
+      `<textarea id="f-rjson" rows="8">{ "imsi": "001010123456063", "k": "00112233445566778899AABBCCDDEEFF", "opc": "FFEEDDCCBBAA99887766554433221100" }</textarea>`)}
+    <div id="upp-val"></div>
+    <p style="color:var(--muted);font-size:12.5px"><span class="mono">POST /upp/render</span> applies personalization to the template and reports the digest,
+      size and structure — it allocates nothing.</p>`,
+    `<button class="btn" data-action="modal-close">Cancel</button><button class="btn primary" data-action="submit-upp-render">Render</button>`);
+}
+function modalCloneUPP(name) {
+  showModal(`Clone ${esc(name)}`, `
+    ${field('Target tenant (required)', `<input id="f-ctenant" class="input" value="${attr(S.tenant || '')}" />`)}
+    ${field('New template name (empty = keep)', `<input id="f-cname" class="input" placeholder="${attr(name)}" />`)}
+    <p style="color:var(--muted);font-size:12.5px">Derives a tenant-local template from the selected one. A tenant template quota is enforced here (409 <span class="mono">quota_exceeded</span>).</p>`,
+    `<button class="btn" data-action="modal-close">Cancel</button><button class="btn primary" data-action="submit-upp-clone" data-name="${attr(name)}">Clone</button>`);
 }
 function modalRange() {
-  showModal('Import ICCID range', `<div class="two"><div class="field"><label>Start</label><input id="f-rstart" class="input mono" placeholder="8900012000000000000" /></div>
-    <div class="field"><label>End</label><input id="f-rend" class="input mono" placeholder="8900012000000000099" /></div></div>
-    <div class="field"><label>Note</label><input id="f-rnote" class="input" placeholder="optional" /></div>
+  showModal('Import ICCID range', `
+    <div class="two">${field('Start', `<input id="f-rstart" class="input mono" placeholder="8900012000000000000" />`)}
+      ${field('End', `<input id="f-rend" class="input mono" placeholder="8900012000000000099" />`)}</div>
+    ${field('Note', `<input id="f-rnote" class="input" placeholder="optional" />`)}
     <p style="color:var(--muted);font-size:12.5px">Only Luhn-valid ICCIDs are added as available.</p>`,
     `<button class="btn" data-action="modal-close">Cancel</button><button class="btn primary" data-action="submit-range">Import</button>`);
 }
+function modalReserve() {
+  showModal('Reserve an ICCID', `
+    <div class="two">${field('EID (optional)', `<input id="f-seid" class="input mono" />`)}
+      ${field('Tenant', `<input id="f-stenant" class="input" value="${attr(S.tenant || '')}" placeholder="empty = platform default" />`)}</div>
+    <div class="two">${field('Reference', `<input id="f-sref" class="input" placeholder="BSS order id" />`)}
+      ${field('TTL seconds', `<input id="f-sttl" class="input" type="number" min="1" value="900" />`)}</div>
+    <p style="color:var(--muted);font-size:12.5px">If the tenant has unbound credentials, the response also carries the paired IMSI.</p>`,
+    `<button class="btn" data-action="modal-close">Cancel</button><button class="btn primary" data-action="submit-reserve">Reserve</button>`);
+}
+function persoForm(rec) {
+  const plmn = JSON.stringify(rec.plmn || [], null, 0);
+  const patches = JSON.stringify(rec.filePatches || [], null, 0);
+  return `
+    <div class="two">${field('ICCID', `<input id="f-piccid" class="input mono" value="${attr(rec.iccid || '')}" ${rec.iccid ? 'readonly' : ''} placeholder="empty only when importing the pool" />`)}
+      ${field('IMSI', `<input id="f-pimsi" class="input mono" value="${attr(rec.imsi || '')}" />`)}</div>
+    <div class="three">${field('Algorithm', `<select id="f-palgo">${['milenage', 'tuak', 'usim-test-algorithm'].map(a => `<option ${a === (rec.algorithm || 'milenage') ? 'selected' : ''}>${a}</option>`).join('')}</select>`)}
+      ${field('K (hex)', `<input id="f-pk" class="input mono" value="${attr(rec.k || '')}" />`)}
+      ${field('OPc (hex)', `<input id="f-popc" class="input mono" value="${attr(rec.opc || '')}" />`)}</div>
+    <div class="three">${field('SPN', `<input id="f-pspn" class="input" value="${attr(rec.spn || '')}" />`)}
+      ${field('MSISDN', `<input id="f-pmsisdn" class="input mono" value="${attr(rec.msisdn || '')}" />`)}
+      ${field('ACC', `<input id="f-pacc" class="input" type="number" value="${attr(rec.acc ?? '')}" />`)}</div>
+    <div class="three">${field('PIN1', `<input id="f-ppin" class="input" value="${attr(rec.pin1 || '')}" />`)}
+      ${field('PUK1', `<input id="f-ppuk" class="input" value="${attr(rec.puk1 || '')}" />`)}
+      ${field('ADM1', `<input id="f-padm1" class="input" value="${attr(rec.adm1 || '')}" />`)}</div>
+    <div class="three">${field('ADM2', `<input id="f-padm2" class="input" value="${attr(rec.adm2 || '')}" />`)}
+      ${field('numberOfKeccak', `<input id="f-pkeccak" class="input" type="number" value="${attr(rec.numberOfKeccak ?? '')}" />`)}
+      ${field('Rotation (hex)', `<input id="f-prot" class="input mono" value="${attr(rec.rotation || '')}" />`)}</div>
+    ${field('XORing (hex)', `<input id="f-pxor" class="input mono" value="${attr(rec.xoring || '')}" />`)}
+    <div class="two">${field('PLMN list (JSON)', `<textarea id="f-pplmn" rows="2">${esc(plmn)}</textarea>`)}
+      ${field('File patches (JSON)', `<textarea id="f-ppatch" rows="2">${esc(patches)}</textarea>`)}</div>`;
+}
 async function modalPerso(iccid) {
-  let rec = { iccid, imsi: '', k: '', opc: '', spn: '', algorithm: 'milenage', pin1: '', puk1: '', adm1: '', adm2: '' };
-  if (iccid) { try { rec = Object.assign(rec, await api('GET', `/personalization/${encodeURIComponent(iccid)}?reveal=1`)); } catch {} }
-  showModal(iccid ? `Personalization · ${esc(iccid)}` : 'New personalization record',
-    `<div class="field"><label>ICCID</label><input id="f-piccid" class="input mono" value="${esc(rec.iccid || '')}" ${iccid ? 'readonly' : ''} /></div>
-     <div class="two"><div class="field"><label>IMSI</label><input id="f-pimsi" class="input mono" value="${esc(rec.imsi || '')}" /></div>
-     <div class="field"><label>Algorithm</label><input id="f-palgo" class="input" value="${esc(rec.algorithm || 'milenage')}" /></div></div>
-     <div class="two"><div class="field"><label>K (hex)</label><input id="f-pk" class="input mono" value="${esc(rec.k || '')}" /></div>
-     <div class="field"><label>OPc (hex)</label><input id="f-popc" class="input mono" value="${esc(rec.opc || '')}" /></div></div>
-     <div class="field"><label>SPN</label><input id="f-pspn" class="input" value="${esc(rec.spn || '')}" /></div>
-     <div class="two"><div class="field"><label>PIN1</label><input id="f-ppin" class="input" value="${esc(rec.pin1 || '')}" /></div>
-     <div class="field"><label>PUK1</label><input id="f-ppuk" class="input" value="${esc(rec.puk1 || '')}" /></div></div>
-     <div class="two"><div class="field"><label>ADM1</label><input id="f-padm1" class="input" value="${esc(rec.adm1 || '')}" /></div>
-     <div class="field"><label>ADM2</label><input id="f-padm2" class="input" value="${esc(rec.adm2 || '')}" /></div></div>`,
+  let rec = { iccid: iccid || '', algorithm: 'milenage' };
+  if (iccid) { try { rec = Object.assign(rec, await apiGet(`/personalization/${encodeURIComponent(iccid)}`, { reveal: '1' })); } catch (e) { toast('Personalization', e.message, 'err'); } }
+  showModal(iccid ? `Personalization · ${esc(iccid)}` : 'New personalization record', persoForm(rec),
     `<button class="btn" data-action="modal-close">Cancel</button><button class="btn primary" data-action="submit-perso">Save</button>`);
 }
-function modalNewProfile() {
-  showModal('New profile', `<div class="two"><div class="field"><label>Profile type</label><select id="f-type"><option>operational</option><option>test</option><option>provisioning</option></select></div>
-    <div class="field"><label>Matching ID (optional)</label><input id="f-mid" class="input" /></div></div>
-    <div class="field"><label>EID (optional)</label><input id="f-eid" class="input mono" /></div>`,
-    `<button class="btn" data-action="modal-close">Cancel</button><button class="btn primary" data-action="submit-profile">Create</button>`);
+function modalPersoPoolImport() {
+  showModal('Import credentials pool', `
+    <p style="color:var(--muted);font-size:12.5px">Credentials without an ICCID (IMSI + K/OPc). They are paired with an ICCID when one is reserved.</p>
+    ${field('Records (JSON array)', `<textarea id="f-pooljson" rows="8">[
+  { "imsi": "001010999999902", "algorithm": "milenage", "k": "00112233445566778899AABBCCDDEEFF", "opc": "FFEEDDCCBBAA99887766554433221100" }
+]</textarea>`)}`,
+    `<button class="btn" data-action="modal-close">Cancel</button><button class="btn primary" data-action="submit-perso-pool">Import</button>`);
+}
+function modalPersoImport() {
+  showModal('Import personalization', `
+    <p style="color:var(--muted);font-size:12.5px">Records keyed by ICCID. <span class="mono">POST /personalization/import</span>.</p>
+    ${field('Records (JSON array)', `<textarea id="f-persojson" rows="8">[
+  { "iccid": "89000123456789012349", "imsi": "001010123456071", "k": "00112233445566778899AABBCCDDEEFF", "opc": "FFEEDDCCBBAA99887766554433221100" }
+]</textarea>`)}`,
+    `<button class="btn" data-action="modal-close">Cancel</button><button class="btn primary" data-action="submit-perso-import">Import</button>`);
+}
+function modalTenant(t) {
+  showModal(t ? `Tenant ${esc(t.id)}` : 'New tenant', `
+    ${field('ID', `<input id="f-tid" class="input mono" value="${attr(t?.id || '')}" ${t ? 'readonly' : ''} placeholder="carrier-a" />`)}
+    <div class="two">${field('Name', `<input id="f-tname" class="input" value="${attr(t?.name || '')}" />`)}
+      ${field('Status', `<select id="f-tstatus">${['active', 'disabled'].map(s => `<option ${s === (t?.status || 'active') ? 'selected' : ''}>${s}</option>`).join('')}</select>`)}</div>
+    <div class="two">${field('Template quota (empty = unlimited)', `<input id="f-tquota" class="input" type="number" value="${attr(t?.templateQuota ?? '')}" />`)}
+      ${field('Profile quota (empty = unlimited)', `<input id="f-tpquota" class="input" type="number" value="${attr(t?.profileQuota ?? '')}" />`)}</div>
+    <div class="two">${field('Default UPP template', `<input id="f-tupp" class="input" value="${attr(t?.defaultUpp || '')}" />`)}
+      ${field('Callback URL', `<input id="f-tcb" class="input" value="${attr(t?.callbackUrl || '')}" />`)}</div>
+    <p style="color:var(--muted);font-size:12.5px">PATCH-style: omitted fields keep their current value.</p>`,
+    `<button class="btn" data-action="modal-close">Cancel</button><button class="btn primary" data-action="submit-tenant" data-id="${attr(t?.id || '')}">Save</button>`);
+}
+
+// ===================================================================== actions
+function numOrNull(v) { return v === '' || v === undefined || v === null ? null : +v; }
+function jsonOrThrow(id, label) {
+  const raw = $(id).value.trim();
+  if (!raw) return undefined;
+  try { return JSON.parse(raw); } catch (e) { throw new Error(label + ': ' + e.message); }
+}
+function persoBody() {
+  const body = {
+    imsi: $('#f-pimsi').value.trim(), k: $('#f-pk').value.trim(), opc: $('#f-popc').value.trim(),
+    spn: $('#f-pspn').value.trim(), algorithm: $('#f-palgo').value,
+    pin1: $('#f-ppin').value.trim(), puk1: $('#f-ppuk').value.trim(),
+    adm1: $('#f-padm1').value.trim(), adm2: $('#f-padm2').value.trim(),
+    msisdn: $('#f-pmsisdn').value.trim(), acc: numOrNull($('#f-pacc').value),
+    numberOfKeccak: numOrNull($('#f-pkeccak').value),
+    rotation: $('#f-prot').value.trim(), xoring: $('#f-pxor').value.trim(),
+  };
+  const plmn = jsonOrThrow('#f-pplmn', 'PLMN'); if (plmn !== undefined) body.plmn = plmn;
+  const patch = jsonOrThrow('#f-ppatch', 'filePatches'); if (patch !== undefined) body.filePatches = patch;
+  return body;
+}
+
+async function doAction(action, el) {
+  const d = el.dataset;
+  try {
+    // navigation-free reloads
+    if (action === 'dashboard-reload') return loadDashboard();
+    if (action === 'profiles-reload') return loadProfiles();
+    if (action === 'perso-reload') return loadPerso();
+    if (action === 'pool-reload') return loadPool();
+    if (action === 'eids-reload') return loadEids();
+    if (action === 'notifs-reload') return loadNotifs();
+    if (action === 'audit-reload') return loadAudit();
+    if (action === 'events-reload') return loadEvents();
+    if (action === 'modal-close') return closeModal();
+    if (action === 'drawer-close') return closeDrawer();
+
+    // ---- profiles
+    if (action === 'profiles-advanced') return modalAdvancedProfileFilters();
+    if (action === 'profile-new') return modalNewProfile();
+    if (action === 'profile-open') return openProfile(d.iccid);
+    if (action === 'profile-edit') { const p = await apiGet('/profiles/' + encodeURIComponent(d.iccid)); return modalEditProfile(p); }
+    if (action === 'profile-confirm') { await apiWrite('POST', `/profiles/${encodeURIComponent(d.iccid)}/confirm`, { release: true }); toast('Confirmed', d.iccid, 'ok'); closeDrawer(); return loadProfiles(); }
+    if (action === 'profile-cancel') { await apiWrite('POST', `/profiles/${encodeURIComponent(d.iccid)}/cancel`, { finalStatus: 'Available' }); toast('Cancelled', d.iccid, 'ok'); return loadProfiles(); }
+    if (action === 'profile-release') { await apiWrite('POST', `/profiles/${encodeURIComponent(d.iccid)}/release`); toast('Released', d.iccid, 'ok'); closeDrawer(); return loadProfiles(); }
+    if (action === 'profile-delete') {
+      if (!confirm(`Delete ${d.iccid}? The ICCID returns to the pool.`)) return;
+      await apiWrite('DELETE', `/profiles/${encodeURIComponent(d.iccid)}`);
+      toast('Deleted', d.iccid, 'ok'); closeDrawer(); return loadProfiles();
+    }
+    if (action === 'profile-ac') {
+      const r = await apiWrite('POST', `/profiles/${encodeURIComponent(d.iccid)}/activation-code`, undefined, { params: d.rotate === '1' ? { rotate: '1' } : {} });
+      showModal('Activation code', `<dl class="kv"><dt>ICCID</dt><dd>${esc(d.iccid)}</dd><dt>Matching ID</dt><dd>${esc(r.matchingId)}</dd>
+        <dt>Activation code</dt><dd>${esc(r.activationCode)}</dd><dt>QR content</dt><dd>${esc(r.qrContent)}</dd></dl>
+        <p style="color:var(--muted);font-size:12.5px">Pass <span class="mono">?rotate=1</span> to rotate the matching id (previously issued QR codes stop working).</p>`,
+        `<button class="btn primary" data-action="modal-close">Close</button>`);
+      return;
+    }
+    if (action === 'profiles-export') { await exportDownload('/profiles/export', d.format, 'profiles', profilesQuery()); return; }
+    if (action === 'profiles-import') return modalImportProfiles();
+    if (action === 'profiles-bulk') {
+      const iccids = [...S.profiles.selected];
+      if (!iccids.length) return;
+      if (d.mode === 'delete' && !confirm(`Delete ${iccids.length} profiles?`)) return;
+      const r = await apiWrite('POST', '/profiles/bulk', { action: d.mode, iccids, release: d.mode === 'confirm', finalStatus: 'Available' });
+      const failed = (r.results || []).filter(x => !x.ok).length;
+      toast('Bulk ' + d.mode, `${iccids.length - failed} ok, ${failed} failed`, failed ? 'err' : 'ok');
+      S.profiles.selected.clear();
+      return loadProfiles();
+    }
+    if (action === 'profiles-clear') { S.profiles.selected.clear(); return render(); }
+    if (action === 'submit-profile') {
+      const body = {
+        iccid: $('#f-iccid').value.trim() || undefined, eid: $('#f-eid').value.trim() || undefined,
+        profileType: $('#f-type').value, matchingId: $('#f-mid').value.trim() || undefined,
+        uppTemplate: $('#f-upp').value.trim() || undefined, externalRef: $('#f-ref').value.trim() || undefined,
+        smdsAddress: $('#f-smds').value.trim() || undefined,
+      };
+      const created = await apiWrite('POST', '/profiles', body, { idem: newKey() });
+      closeModal(); toast('Profile created', created.iccid, 'ok'); return loadProfiles();
+    }
+    if (action === 'submit-profile-edit') {
+      const ppr = $('#f-ppr').value.trim();
+      const body = { eid: $('#f-eid').value.trim(), externalRef: $('#f-ref').value.trim(), matchingId: $('#f-mid').value.trim(),
+        uppTemplate: $('#f-upp').value.trim(), smdsAddress: $('#f-smds').value.trim(), tenant: $('#f-tenant').value.trim() };
+      if (ppr) body.pprIds = ppr.split(',').map(s => +s.trim()).filter(n => Number.isFinite(n));
+      await apiWrite('PATCH', `/profiles/${encodeURIComponent(d.iccid)}`, body);
+      closeModal(); closeDrawer(); toast('Profile updated', d.iccid, 'ok'); return loadProfiles();
+    }
+    if (action === 'submit-profile-import') {
+      const file = $('#f-file').files[0];
+      const text = file ? await file.text() : $('#f-text').value.trim();
+      if (!text) return toast('Import', 'provide a file or JSON/CSV text', 'err');
+      const isCsv = (file && /\.csv$/i.test(file.name)) || (!text.startsWith('{') && !text.startsWith('['));
+      const r = await apiWrite('POST', '/profiles/import', isCsv ? text : JSON.parse(text), { idem: newKey(), contentType: isCsv ? 'text/csv' : 'application/json' });
+      closeModal(); toast('Imported', `${r.imported} ok of ${(r.results || []).length}`, 'ok'); return loadProfiles();
+    }
+
+    // ---- batches
+    if (action === 'batch-new') return modalNewBatch();
+    if (action === 'batch-open') {
+      const [detail, items] = await Promise.all([
+        apiGet(`/batches/${d.id}`),
+        apiGet(`/batches/${d.id}/items`, { size: 200 }),
+      ]);
+      const b = detail.batch || {};
+      showDrawer(`Batch #${b.id} · ${esc(b.name || '')}`, `
+        <dl class="kv"><dt>State</dt><dd>${badge(b.state)}</dd><dt>Profile type</dt><dd>${esc(b.profileType || '–')}</dd>
+          <dt>Total</dt><dd>${b.total}</dd><dt>Note</dt><dd>${esc(b.note || '–')}</dd>
+          <dt>Created</dt><dd>${fmtTime(b.createdAt)}</dd></dl>
+        <h4 class="sec">State breakdown</h4>${bars(Object.entries(detail.states || {}).map(([key, count]) => ({ key, count })))}
+        <h4 class="sec">Items (${items.total})</h4>
+        ${itemsTable(items.items || [])}`);
+      return;
+    }
+    if (action === 'batch-confirm') { const r = await apiWrite('POST', `/batches/${d.id}/confirm`, { release: true }); toast('Batch confirmed', `applied ${r.applied}, failed ${r.failed}`, 'ok'); closeDrawer(); return loadBatches(); }
+    if (action === 'batch-cancel') { const r = await apiWrite('POST', `/batches/${d.id}/cancel`, { finalStatus: 'Available' }); toast('Batch cancelled', `applied ${r.applied}, failed ${r.failed}`, 'ok'); closeDrawer(); return loadBatches(); }
+    if (action === 'batch-delete') { if (!confirm(`Delete batch #${d.id}?`)) return; await apiWrite('DELETE', `/batches/${d.id}`); toast('Deleted', 'batch #' + d.id, 'ok'); return loadBatches(); }
+    if (action === 'submit-batch') {
+      await apiWrite('POST', '/batches', { name: $('#f-bname').value, count: +$('#f-bcount').value, profileType: $('#f-btype').value,
+        eid: $('#f-beid').value.trim(), uppTemplate: $('#f-bupp').value.trim(), note: $('#f-bnote').value.trim() }, { idem: newKey() });
+      closeModal(); toast('Batch created', '', 'ok'); return loadBatches();
+    }
+
+    // ---- upp
+    if (action === 'upp-upload') return modalUploadUPP();
+    if (action === 'upp-render') return modalRenderUPP();
+    if (action === 'upp-decoded') { const r = await apiGet(`/upp/${encodeURIComponent(d.name)}/decoded`, { tenant: d.tenant ?? undefined }); showModal(`Decoded · ${esc(d.name)}`, decodedView(r), `<button class="btn primary" data-action="modal-close">Close</button>`); return; }
+    if (action === 'upp-schema') {
+      const r = await apiGet(`/upp/${encodeURIComponent(d.name)}/schema`, { tenant: d.tenant ?? undefined });
+      showModal(`Schema · ${esc(d.name)}`, `${inspectView(r.inspection)}
+        <h4 class="sec">Personalization fields</h4>
+        <table><thead><tr><th>Field</th><th>Type</th><th>Required</th><th>Constraints</th><th>Description</th></tr></thead><tbody>
+        ${(r.fields || []).map(f => `<tr><td class="mono">${esc(f.name)}</td><td>${esc(f.type)}</td><td>${f.required ? 'yes' : 'no'}</td>
+          <td class="mono">${esc([f.pattern && 'pattern ' + f.pattern, f.minLength != null && 'min ' + f.minLength, f.maxLength != null && 'max ' + f.maxLength,
+            (f.enum || []).length ? 'enum ' + f.enum.join('|') : ''].filter(Boolean).join('; '))}</td>
+          <td>${esc(f.description || '')}</td></tr>`).join('')}</tbody></table>`,
+        `<button class="btn primary" data-action="modal-close">Close</button>`);
+      return;
+    }
+    if (action === 'upp-versions') {
+      const r = await apiGet(`/upp/${encodeURIComponent(d.name)}/versions`, { tenant: d.tenant ?? undefined });
+      showModal(`Versions · ${esc(d.name)}`, (r.items || []).length ? `<table><thead><tr><th>ID</th><th>Version</th><th>SAIP</th><th>SHA-256</th><th>Size</th><th>Note</th><th>Created</th><th></th></tr></thead><tbody>
+        ${r.items.map(v => `<tr><td>#${v.id}</td><td>${v.versionNo}</td><td>${esc(v.saip)}</td><td class="mono">${esc(short(v.sha256, 14))}</td>
+          <td>${v.size}</td><td>${esc(v.note || '–')}</td><td>${fmtTime(v.createdAt)}</td>
+          <td><div class="actions"><button class="btn sm" data-action="upp-restore" data-name="${attr(d.name)}" data-tenant="${attr(d.tenant || '')}" data-version="${v.id}">Restore</button></div></td></tr>`).join('')}
+        </tbody></table>` : empty('No archived revisions.'),
+        `<button class="btn primary" data-action="modal-close">Close</button>`);
+      return;
+    }
+    if (action === 'upp-restore') { await apiWrite('POST', `/upp/${encodeURIComponent(d.name)}/versions/${d.version}/restore`, undefined, { params: { tenant: d.tenant || undefined } }); closeModal(); toast('Restored', d.name + ' ← version ' + d.version, 'ok'); return loadUPP(); }
+    if (action === 'upp-bytes') { const blob = await S.transport.download(`/upp/${encodeURIComponent(d.name)}/bytes`, { tenant: d.tenant ?? undefined }); saveBlob(blob, d.name.replace(/[^\w.-]+/g, '_')); return; }
+    if (action === 'upp-toggle') { await apiWrite('POST', `/upp/${encodeURIComponent(d.name)}/${d.on === '1' ? 'activate' : 'deactivate'}`, undefined, { params: { tenant: d.tenant || undefined } }); return loadUPP(); }
+    if (action === 'upp-delete') { if (!confirm(`Delete template ${d.name}?`)) return; await apiWrite('DELETE', `/upp/${encodeURIComponent(d.name)}`, undefined, { params: { tenant: d.tenant || undefined } }); toast('Deleted', d.name, 'ok'); return loadUPP(); }
+    if (action === 'upp-clone') return modalCloneUPP(d.name);
+    if (action === 'submit-upp-clone') {
+      await apiWrite('POST', `/upp/${encodeURIComponent(d.name)}/clone`, { tenant: $('#f-ctenant').value.trim(), name: $('#f-cname').value.trim() || undefined });
+      closeModal(); toast('Cloned', d.name, 'ok'); return loadUPP();
+    }
+    if (action === 'upp-promote') {
+      if (!confirm(`Promote ${d.name} from ${d.tenant} to the global scope?`)) return;
+      await apiWrite('POST', `/upp/${encodeURIComponent(d.name)}/promote`, undefined, { params: { tenant: d.tenant } });
+      toast('Promoted', d.name + ' → global', 'ok'); return loadUPP();
+    }
+    if (action === 'validate-upp') {
+      const file = $('#f-file').files[0];
+      if (!file) return toast('Validate', 'choose a file', 'err');
+      const r = await apiWrite('POST', '/upp/validate', { name: $('#f-uname').value.trim(), data: await fileToBase64(file) });
+      $('#upp-val').innerHTML = r.valid ? `<h4 class="sec">Valid</h4>${inspectView(r.inspection)}` : `<h4 class="sec" style="color:var(--red)">Invalid</h4><p>${esc(r.error)}</p>`;
+      return;
+    }
+    if (action === 'submit-upp') {
+      const file = $('#f-file').files[0];
+      if (!file) return toast('Upload', 'choose a file', 'err');
+      const t = await apiWrite('POST', '/upp', { name: $('#f-uname').value.trim() || file.name, tenant: $('#f-utenant').value.trim() || undefined, data: await fileToBase64(file) });
+      closeModal(); toast('Template stored', t.name, 'ok'); return loadUPP();
+    }
+    if (action === 'submit-upp-render') {
+      let perso = {};
+      try { perso = JSON.parse($('#f-rjson').value || '{}'); } catch (e) { return toast('Render', 'invalid JSON: ' + e.message, 'err'); }
+      const r = await apiWrite('POST', '/upp/render', Object.assign({ name: $('#f-rname').value.trim() }, perso));
+      $('#upp-val').innerHTML = r.rendered
+        ? `<h4 class="sec">Rendered · ${r.bytes} bytes</h4>${inspectView(r.inspection)}`
+        : `<h4 class="sec" style="color:var(--red)">Not rendered</h4><p>${esc(r.error)}</p>`;
+      return;
+    }
+
+    // ---- personalization
+    if (action === 'perso-new') return modalPerso('');
+    if (action === 'perso-open' || action === 'perso-edit') return modalPerso(d.iccid);
+    if (action === 'perso-delete') { if (!confirm(`Delete personalization for ${d.iccid}?`)) return; await apiWrite('DELETE', `/personalization/${encodeURIComponent(d.iccid)}`); toast('Deleted', d.iccid, 'ok'); return loadPerso(); }
+    if (action === 'perso-import') return modalPersoImport();
+    if (action === 'perso-pool-import') return modalPersoPoolImport();
+    if (action === 'perso-export') { await exportDownload('/personalization/export', d.format, 'personalization', { iccid: S.perso.iccid || undefined }); return; }
+    if (action === 'submit-perso') {
+      const iccid = $('#f-piccid').value.trim();
+      if (!iccid) return toast('Save', 'ICCID is required', 'err');
+      await apiWrite('PUT', '/personalization/' + encodeURIComponent(iccid), persoBody());
+      closeModal(); toast('Saved', iccid, 'ok'); return loadPerso();
+    }
+    if (action === 'submit-perso-pool') {
+      let records; try { records = JSON.parse($('#f-pooljson').value); } catch (e) { return toast('Import pool', 'invalid JSON: ' + e.message, 'err'); }
+      const r = await apiWrite('POST', '/personalization/pool/import', { records });
+      closeModal(); toast('Credentials imported', `${r.imported} of ${(r.results || []).length}`, 'ok'); return loadPerso();
+    }
+    if (action === 'submit-perso-import') {
+      let records; try { records = JSON.parse($('#f-persojson').value); } catch (e) { return toast('Import', 'invalid JSON: ' + e.message, 'err'); }
+      const r = await apiWrite('POST', '/personalization/import', { records });
+      closeModal(); toast('Imported', String(r.imported), 'ok'); return loadPerso();
+    }
+
+    // ---- pool / ranges
+    if (action === 'pool-reserve') return modalReserve();
+    if (action === 'submit-reserve') {
+      const r = await apiWrite('POST', '/iccid-pool/reserve', { eid: $('#f-seid').value.trim(), tenant: $('#f-stenant').value.trim(),
+        reference: $('#f-sref').value.trim(), ttlSeconds: +$('#f-sttl').value || 0 });
+      closeModal(); toast('Reserved', r.iccid + (r.imsi ? ' · imsi ' + r.imsi : ''), 'ok'); return loadPool();
+    }
+    if (action === 'pool-release') { await apiWrite('POST', '/iccid-pool/release', { iccid: d.iccid }); return loadPool(); }
+    if (action === 'pool-block') { await apiWrite('POST', '/iccid-pool/block', { iccid: d.iccid, note: 'blocked from the console' }); return loadPool(); }
+    if (action === 'range-new') return modalRange();
+    if (action === 'range-delete') { if (!confirm(`Delete range #${d.id}?`)) return; const r = await apiWrite('DELETE', `/iccid-ranges/${d.id}`); toast('Range deleted', `${r.removed ?? 0} ICCIDs removed`, 'ok'); return loadPool(); }
+    if (action === 'submit-range') {
+      const r = await apiWrite('POST', '/iccid-ranges', { start: $('#f-rstart').value.trim(), end: $('#f-rend').value.trim(), note: $('#f-rnote').value.trim() });
+      closeModal(); toast('Range imported', `${r.inserted} inserted, ${r.skipped} skipped`, 'ok'); return loadPool();
+    }
+
+    // ---- tenants
+    if (action === 'tenant-new') return modalTenant(null);
+    if (action === 'tenant-edit') { const t = await apiGet('/tenants/' + encodeURIComponent(d.id)); return modalTenant(t); }
+    if (action === 'tenant-delete') { if (!confirm(`Delete tenant ${d.id}?`)) return; await apiWrite('DELETE', '/tenants/' + encodeURIComponent(d.id)); toast('Deleted', d.id, 'ok'); return loadTenants(); }
+    if (action === 'submit-tenant') {
+      const body = { id: $('#f-tid').value.trim(), name: $('#f-tname').value.trim(), status: $('#f-tstatus').value,
+        templateQuota: numOrNull($('#f-tquota').value), profileQuota: numOrNull($('#f-tpquota').value),
+        defaultUpp: $('#f-tupp').value.trim(), callbackUrl: $('#f-tcb').value.trim() };
+      if (!body.id) return toast('Tenant', 'id is required', 'err');
+      await apiWrite(d.id ? 'PATCH' : 'POST', d.id ? '/tenants/' + encodeURIComponent(d.id) : '/tenants', body);
+      closeModal(); toast('Tenant saved', body.id, 'ok'); return loadTenants();
+    }
+
+    // ---- audit / eids
+    if (action === 'audit-detail') { const x = S.audit.items[+d.idx]; showDrawer('Audit entry', `<dl class="kv">
+      <dt>Time</dt><dd>${fmtTime(x.time)}</dd><dt>Tenant</dt><dd>${esc(x.tenant || '(default)')}</dd><dt>Actor</dt><dd>${esc(x.actor || '–')}</dd>
+      <dt>Interface</dt><dd>${esc(x.interface || '–')}</dd><dt>Function</dt><dd>${esc(x.function || '–')}</dd><dt>Subject</dt><dd>${esc(x.subject || '–')}</dd>
+      <dt>Outcome</dt><dd>${esc(x.outcome || '–')}</dd><dt>Status code</dt><dd>${esc(x.statusCode || '–')}</dd><dt>Remote</dt><dd>${esc(x.remoteAddr || '–')}</dd></dl>
+      <h4 class="sec">Detail</h4><pre class="json">${esc(JSON.stringify(x.detail ?? {}, null, 2))}</pre>`); return; }
+    if (action === 'eids-filter') { S.profiles.eid = d.eid; S.profiles.page = 1; S.section = 'profiles'; render(); return loadProfiles(); }
+  } catch (e) { toast('Action failed', e.message, 'err'); }
+}
+
+function itemsTable(items) {
+  if (!items.length) return empty('No items.', '📇');
+  return `<table><thead><tr><th>ICCID</th><th>State</th><th>EID</th><th>Matching ID</th></tr></thead><tbody>${items.map(x =>
+    `<tr><td class="mono">${esc(x.iccid)}</td><td>${badge(x.state)}</td><td class="mono">${esc(short(x.eid, 16) || '–')}</td><td>${esc(x.matchingId || '–')}</td></tr>`).join('')}</tbody></table>`;
+}
+async function exportDownload(path, format, name, extra) {
+  const params = Object.assign({ format: format || 'csv' }, extra || {});
+  const blob = await S.transport.download(path, Object.assign({}, tenantParams(), params));
+  saveBlob(blob, `${name}.${format || 'csv'}`);
+  toast('Export ready', `${name}.${format || 'csv'}`, 'ok');
+}
+function modalAdvancedProfileFilters() {
+  const p = S.profiles;
+  showModal('Profile filters', `
+    <div class="two">${field('EID (substring)', `<input id="a-eid" class="input mono" value="${attr(p.eid)}" />`)}
+      ${field('ICCID (prefix)', `<input id="a-iccid" class="input mono" value="${attr(p.iccid)}" />`)}</div>
+    <div class="two">${field('External ref (substring)', `<input id="a-ref" class="input" value="${attr(p.externalRef)}" />`)}
+      ${field('Batch id', `<input id="a-batch" class="input" type="number" value="${attr(p.batchId)}" />`)}</div>
+    <div class="two">${field('Created from', `<input id="a-from" class="input" type="date" value="${attr(p.from)}" />`)}
+      ${field('Created to', `<input id="a-to" class="input" type="date" value="${attr(p.to)}" />`)}</div>
+    <p style="color:var(--muted);font-size:12.5px">Filters map onto the documented query parameters of <span class="mono">GET /profiles</span>.</p>`,
+    `<button class="btn" data-action="modal-close">Cancel</button><button class="btn ghost" data-action="advanced-clear">Clear</button>
+     <button class="btn primary" data-action="advanced-apply">Apply</button>`);
 }
 function fileToBase64(file) {
   return new Promise((res, rej) => { const r = new FileReader(); r.onload = () => res(String(r.result).split(',')[1]); r.onerror = rej; r.readAsDataURL(file); });
 }
 
-// ------------------------------------------------------------------ events
+// ===================================================================== events
 document.addEventListener('click', (e) => {
   const nav = e.target.closest('[data-section]');
   if (nav) { S.section = nav.dataset.section; render(); refresh(); return; }
   const pagerEl = e.target.closest('[data-pager]');
-  if (pagerEl) { const dir = pagerEl.dataset.pager; const st = S[S.section === 'perso' ? 'perso' : S.section]; if (dir === 'prev' && st.page > 1) st.page--; if (dir === 'next') st.page++; refresh(); return; }
+  if (pagerEl) {
+    const st = S[S.section] || {};
+    if (pagerEl.dataset.pager === 'prev' && st.page > 1) st.page--;
+    if (pagerEl.dataset.pager === 'next') st.page++;
+    refresh();
+    return;
+  }
   const act = e.target.closest('[data-action]');
-  if (act) { doAction(act.dataset.action, act); return; }
+  if (act) {
+    if (act.dataset.action === 'advanced-clear') {
+      Object.assign(S.profiles, { eid: '', iccid: '', externalRef: '', batchId: '', from: '', to: '', page: 1 });
+      closeModal(); return loadProfiles();
+    }
+    if (act.dataset.action === 'advanced-apply') {
+      Object.assign(S.profiles, {
+        eid: $('#a-eid').value.trim(), iccid: $('#a-iccid').value.trim(), externalRef: $('#a-ref').value.trim(),
+        batchId: $('#a-batch').value.trim(), from: $('#a-from').value, to: $('#a-to').value, page: 1,
+      });
+      closeModal(); return loadProfiles();
+    }
+    doAction(act.dataset.action, act);
+    return;
+  }
   if (e.target === $('#overlay')) { closeModal(); closeDrawer(); }
 });
 document.addEventListener('input', (e) => {
-  const i = e.target.dataset.input; if (!i) return;
-  if (i === 'profiles-q') { S.profiles.q = e.target.value; clearTimeout(window._t); window._t = setTimeout(() => { S.profiles.page = 1; loadProfiles(); }, 300); }
-  if (i === 'profiles-state') { S.profiles.state = e.target.value; S.profiles.page = 1; loadProfiles(); }
-  if (i === 'audit-subject') { S.audit.subject = e.target.value; clearTimeout(window._t2); window._t2 = setTimeout(() => { S.audit.page = 1; loadAudit(); }, 300); }
+  const i = e.target.dataset.input;
+  if (!i) return;
+  const reload = debounce(() => { S[S.section].page = 1; refresh(); }, 320);
+  if (i === 'profiles-q') { S.profiles.q = e.target.value; reload(); }
+  if (i === 'profiles-select') {
+    if (e.target.checked) S.profiles.selected.add(e.target.dataset.iccid);
+    else S.profiles.selected.delete(e.target.dataset.iccid);
+    render();
+  }
+  if (i === 'profiles-select-all') {
+    if (e.target.checked) for (const x of S.profiles.items) S.profiles.selected.add(x.iccid);
+    else S.profiles.selected.clear();
+    render();
+  }
+  if (i === 'perso-iccid') { S.perso.iccid = e.target.value; reload(); }
+  if (i === 'pool-iccid') { S.pool.iccid = e.target.value; reload(); }
+  if (i === 'notifs-iccid') { S.notifs.iccid = e.target.value; reload(); }
+  if (i === 'notifs-eid') { S.notifs.eid = e.target.value; reload(); }
+  if (i === 'audit-function') { S.audit.function = e.target.value; reload(); }
+  if (i === 'audit-subject') { S.audit.subject = e.target.value; reload(); }
+  if (i === 'audit-actor') { S.audit.actor = e.target.value; reload(); }
+  if (i === 'events-eid') { S.events.eid = e.target.value; reload(); }
+  if (i === 'events-eventid') { S.events.eventId = e.target.value; reload(); }
+  if (i === 'events-iccid') { S.events.iccid = e.target.value; reload(); }
+  if (i === 'events-matchingid') { S.events.matchingId = e.target.value; reload(); }
 });
 document.addEventListener('change', (e) => {
-  const i = e.target.dataset.input; if (!i) return;
-  if (i === 'audit-interface') { S.audit.interface = e.target.value; S.audit.page = 1; loadAudit(); }
+  const i = e.target.dataset.input;
+  if (!i) return;
+  if (i === 'profiles-state') { S.profiles.state = e.target.value; S.profiles.page = 1; return refresh(); }
+  if (i === 'profiles-sort') { S.profiles.sort = e.target.value; S.profiles.page = 1; return refresh(); }
+  if (i === 'perso-reveal') { S.perso.reveal = e.target.checked; S.perso.page = 1; return refresh(); }
+  if (i === 'pool-state') { S.pool.state = e.target.value; S.pool.page = 1; return refresh(); }
+  if (i === 'eids-state') { S.eids.state = e.target.value; S.eids.page = 1; return refresh(); }
+  if (i === 'audit-interface') { S.audit.interface = e.target.value; S.audit.page = 1; return refresh(); }
+  if (i === 'audit-outcome') { S.audit.outcome = e.target.value; S.audit.page = 1; return refresh(); }
+  if (i === 'events-status') { S.events.status = e.target.value; S.events.page = 1; return refresh(); }
+  if (i === 'events-sort') { S.events.sort = e.target.value; S.events.page = 1; return refresh(); }
+  const dateMap = { 'eids-from': ['eids', 'from'], 'eids-to': ['eids', 'to'], 'notifs-from': ['notifs', 'from'], 'notifs-to': ['notifs', 'to'],
+    'audit-from': ['audit', 'from'], 'audit-to': ['audit', 'to'], 'events-from': ['events', 'from'], 'events-to': ['events', 'to'] };
+  if (dateMap[i]) { const [st, k] = dateMap[i]; S[st][k] = e.target.value; S[st].page = 1; refresh(); }
 });
 
-// ------------------------------------------------------------------ boot
+// ===================================================================== boot
 $('#base').value = S.base;
 $('#mode').value = S.mode;
 $('#connectBtn').addEventListener('click', connect);
 $('#mode').addEventListener('change', connect);
+$('#tenant').addEventListener('change', (e) => {
+  const v = e.target.value;
+  S.tenant = v === '*' ? null : v;
+  localStorage.setItem('rsp42.tenant', v);
+  $('#tenantScope').textContent = S.tenant === null ? 'all tenants' : (S.tenant === '' ? '(platform default)' : S.tenant);
+  S.profiles.selected.clear();
+  refresh();
+});
 render();
 connect();
 </script>

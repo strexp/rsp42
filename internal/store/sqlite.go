@@ -31,10 +31,16 @@ type Store struct {
 	Perso     *PersonalizationRepo
 	Batch     *BatchRepo
 	Pool      *PoolRepo
+	Tenants   *TenantRepo
+	Idem      *IdempotencyRepo
 }
 
-// Open opens the SQLite database at dsn and applies all migrations.
+// Open opens the SQLite database at dsn and applies all migrations. All
+// transactions are started in IMMEDIATE mode (G12): the write path is
+// read-then-update in several places (pool reservation, idempotency claim), and
+// a deferred transaction that upgrades its lock can fail with SQLITE_BUSY.
 func Open(dsn string) (*Store, error) {
+	dsn = withImmediateTxLock(dsn)
 	ensureDSNDir(dsn)
 	db, err := sql.Open("sqlite", dsn)
 	if err != nil {
@@ -70,11 +76,25 @@ func Open(dsn string) (*Store, error) {
 	s.Perso = &PersonalizationRepo{db: db}
 	s.Batch = &BatchRepo{db: db}
 	s.Pool = &PoolRepo{db: db}
+	s.Tenants = &TenantRepo{db: db}
+	s.Idem = &IdempotencyRepo{db: db}
 	return s, nil
 }
 
 // Close closes the underlying database.
 func (s *Store) Close() error { return s.DB.Close() }
+
+// withImmediateTxLock adds `_txlock=immediate` to a DSN unless it is already
+// present or the DSN is a private in-memory database.
+func withImmediateTxLock(dsn string) string {
+	if strings.Contains(dsn, "_txlock=") || strings.HasPrefix(dsn, ":memory:") {
+		return dsn
+	}
+	if strings.Contains(dsn, "?") {
+		return dsn + "&_txlock=immediate"
+	}
+	return dsn + "?_txlock=immediate"
+}
 
 // ensureDSNDir creates the parent directory of a file-backed DSN so that SQLite
 // does not fail when e.g. `db/rsp42-smdpp.db` is configured but `db/` is absent.

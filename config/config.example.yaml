@@ -39,6 +39,13 @@ smdpp:
         min_version: "1.2"
     admin:
       port: 9000
+  # ES2+ tenant resolution (docs/esim42-integration-gaps.md §8.1 decision 3):
+  # the caller's header.functionRequesterIdentifier selects the tenant. An
+  # unmapped requester falls back to the platform-default tenant ("").
+  es2p:
+    requester_tenants:
+      # - requester: "carrier-a-bss"
+      #   tenant: "carrier-a"
   fqdn: "testsmdpplus1.example.com"
   oid: "2.999.10"
   host_id: "0000000000000000"
@@ -84,6 +91,12 @@ smds:
     admin:
       port: 9100
   role: "root"
+  # ES12 caller-OID -> tenant mapping, used when a registration carries no
+  # X-RSP42-Tenant header (the SM-DP+ normally sets that header).
+  es12:
+    requester_tenants:
+      # - requester: "2.999.10"
+      #   tenant: "carrier-a"
   fqdn: "testrootsmds.example.com"
   oid: "2.999.15"
   curve: "nist"
@@ -132,6 +145,9 @@ profiles:
   # UPP templates and per-ICCID personalization live in the database and are
   # seeded with `rsp42 admin upp import` / `rsp42 admin personalization import`.
   default_upp: ""
+  # Storage backend. Only "sqlite" is supported; any other value is rejected at
+  # startup. PostgreSQL and multi-replica deployments are deliberate non-goals
+  # (docs/esim42-integration-gaps.md §8.4).
   repository: "sqlite"
   store:
     dsn: "file:db/rsp42-smdpp.db?_pragma=journal_mode(WAL)&_pragma=busy_timeout(5000)"
@@ -139,6 +155,10 @@ profiles:
     default_algorithm: "milenage"
     iccid_pool_prefix: "8900012"
     imsi_pool_prefix: "00101"
+    # Unclaimed ICCID pool reservations are returned to the pool after this long.
+    reserve_ttl: "24h"
+    # Recorded Idempotency-Key responses are replayed for this long.
+    idempotency_ttl: "24h"
   # Profile Policy Rules attached to downloaded profiles (SGP.22 §2.4a).
   # 1 = PPR1 (disabling not allowed), 2 = PPR2 (deletion not allowed).
   # An order may override this via its "pprIds" field.
@@ -146,11 +166,20 @@ profiles:
 
 notifications:
   es2p_callback:
+    # Outbound ES2+.HandleDownloadProgressInfo notifications. `enabled`/`url`
+    # gate ONLY these callbacks.
     enabled: false
     url: ""
-    # Optional Operator ES2+.HandleAcrRequest endpoint; when set the SM-DP+
-    # confirms an Activation Code Retrieval with the Operator (SGP.22 §5.3.8).
+    # Operator ES2+.HandleAcrRequest endpoint (SGP.22 §5.3.8). Setting it turns
+    # on the Activation Code Retrieval confirmation *independently* of
+    # `enabled`/`url` above: an operator may enable ACR without progress
+    # callbacks (and vice versa). When set, every ACR request — the redownload
+    # (ACR-0) and the availability check (ACR-1) — is confirmed by the Operator,
+    # and a refusal (8.2.1/1.2) fails the retrieval.
     acr_url: ""
+    # Bounds one confirmation, the client's retries included, so an unreachable
+    # Operator cannot stall the LPA's authenticateClient.
+    acr_timeout: "10s"
     client_cert_file: ""
     client_key_file: ""
     ca_file: ""

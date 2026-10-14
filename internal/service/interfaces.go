@@ -13,11 +13,13 @@ type ProfileStore interface {
 	GetByMatchingID(matchingID string) (*store.Profile, error)
 	GetByID(id int64) (*store.Profile, error)
 	Update(p *store.Profile) error
+	Delete(iccid string) error
 }
 
-// ProfileCreator creates profiles (used by Inventory).
+// ProfileCreator creates profiles and looks them up for resend detection.
 type ProfileCreator interface {
 	Create(p *store.Profile) (int64, error)
+	GetByICCID(iccid string) (*store.Profile, error)
 }
 
 // SessionStore persists RSP sessions.
@@ -42,7 +44,7 @@ type EventStore interface {
 
 // RegistrationStore records SM-DP+ event registrations.
 type RegistrationStore interface {
-	Insert(eid, eventID, rspServerAddress string, forwarding bool) error
+	Insert(eid, eventID, rspServerAddress string, forwarding bool, tenant string) error
 	ListActiveByEID(eid string) ([]*store.Registration, error)
 	MarkDeleted(id int64) error
 }

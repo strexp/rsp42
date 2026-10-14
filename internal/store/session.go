@@ -51,22 +51,19 @@ func (r *SessionRepo) Put(s *Session) error {
 	return err
 }
 
-// Get loads a session by transaction id.
-func (r *SessionRepo) Get(txn string) (*Session, error) {
-	row := r.db.QueryRow(`SELECT transaction_id, state, server_challenge, server_signed1, smdp_signature2, ci_cert_id, eid,
-		euicc_cert, eum_cert, euicc_otpk, smdp_ot_sk, host_id, shared_secret, profile_id, cc_hash, cc_required, upp_template,
-		created_at, expires_at FROM sessions WHERE transaction_id = ?`, txn)
+// sessionCols is the canonical session column list.
+const sessionCols = `transaction_id, state, server_challenge, server_signed1, smdp_signature2, ci_cert_id, eid,
+	euicc_cert, eum_cert, euicc_otpk, smdp_ot_sk, host_id, shared_secret, profile_id, cc_hash, cc_required, upp_template,
+	created_at, expires_at`
+
+func scanSession(sc rowScanner) (*Session, error) {
 	var s Session
 	var eid, uppTpl sql.NullString
 	var ccReq int
 	var created, expires int64
-	err := row.Scan(&s.TransactionID, &s.State, &s.ServerChallenge, &s.ServerSigned1, &s.SmdpSignature2, &s.CICertID, &eid,
+	if err := sc.Scan(&s.TransactionID, &s.State, &s.ServerChallenge, &s.ServerSigned1, &s.SmdpSignature2, &s.CICertID, &eid,
 		&s.EuiccCert, &s.EumCert, &s.EuiccOtpk, &s.SmdpOtSK, &s.HostID, &s.SharedSecret, &s.ProfileID, &s.CCHash,
-		&ccReq, &uppTpl, &created, &expires)
-	if errors.Is(err, sql.ErrNoRows) {
-		return nil, ErrNotFound
-	}
-	if err != nil {
+		&ccReq, &uppTpl, &created, &expires); err != nil {
 		return nil, err
 	}
 	s.EID = eid.String
@@ -75,6 +72,16 @@ func (r *SessionRepo) Get(txn string) (*Session, error) {
 	s.CreatedAt = toTime(created)
 	s.ExpiresAt = toTime(expires)
 	return &s, nil
+}
+
+// Get loads a session by transaction id.
+func (r *SessionRepo) Get(txn string) (*Session, error) {
+	row := r.db.QueryRow(`SELECT `+sessionCols+` FROM sessions WHERE transaction_id = ?`, txn)
+	s, err := scanSession(row)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, ErrNotFound
+	}
+	return s, err
 }
 
 // Delete removes a session.
@@ -106,6 +113,25 @@ func (r *SessionRepo) ListTransactions() ([]string, error) {
 			return nil, err
 		}
 		out = append(out, id)
+	}
+	return out, rows.Err()
+}
+
+// ListByProfileID returns the download sessions attached to a profile, newest
+// first (used by the profile timeline).
+func (r *SessionRepo) ListByProfileID(profileID int64) ([]*Session, error) {
+	rows, err := r.db.Query(`SELECT `+sessionCols+` FROM sessions WHERE profile_id = ? ORDER BY created_at DESC`, profileID)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = rows.Close() }()
+	var out []*Session
+	for rows.Next() {
+		s, err := scanSession(rows)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, s)
 	}
 	return out, rows.Err()
 }

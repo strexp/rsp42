@@ -3,15 +3,18 @@ package admin
 import (
 	"crypto/sha256"
 	"encoding/hex"
+	"errors"
 	"net/http"
 	"sort"
 	"strings"
 	"time"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/google/uuid"
 
 	"rsp42/internal/activationcode"
 	"rsp42/internal/rsp"
+	"rsp42/internal/service"
 	"rsp42/internal/store"
 )
 
@@ -23,6 +26,8 @@ const (
 // profileView is the API representation of a profile (no cc_hash or secrets).
 type profileView struct {
 	ICCID            string     `json:"iccid"`
+	Tenant           string     `json:"tenant,omitempty"`
+	ExternalRef      string     `json:"externalRef,omitempty"`
 	IMSI             string     `json:"imsi,omitempty"`
 	ProfileType      string     `json:"profileType,omitempty"`
 	EID              string     `json:"eid,omitempty"`
@@ -34,6 +39,7 @@ type profileView struct {
 	PPRIds           string     `json:"pprIds,omitempty"`
 	DownloadAttempts int        `json:"downloadAttempts"`
 	CCAttempts       int        `json:"ccAttempts"`
+	BatchID          *int64     `json:"batchId,omitempty"`
 	CreatedAt        time.Time  `json:"createdAt"`
 	UpdatedAt        time.Time  `json:"updatedAt"`
 	InstalledAt      *time.Time `json:"installedAt,omitempty"`
@@ -42,10 +48,11 @@ type profileView struct {
 
 func toProfileView(p *store.Profile) profileView {
 	v := profileView{
-		ICCID: p.ICCID, IMSI: p.IMSI, ProfileType: p.ProfileType, EID: p.EID,
+		ICCID: p.ICCID, Tenant: p.TenantID, ExternalRef: p.ExternalRef,
+		IMSI: p.IMSI, ProfileType: p.ProfileType, EID: p.EID,
 		State: string(p.State), MatchingID: p.MatchingID, CCRequired: p.CCRequired,
 		SMDSAddress: p.SMDSAddress, UPPTemplate: p.UPPTemplate,
-		DownloadAttempts: p.DownloadAttempts, CCAttempts: p.CCAttempts,
+		DownloadAttempts: p.DownloadAttempts, CCAttempts: p.CCAttempts, BatchID: p.BatchID,
 		CreatedAt: p.CreatedAt, UpdatedAt: p.UpdatedAt, InstalledAt: p.InstalledAt,
 		ErrorReason: p.ErrorReason,
 	}
@@ -55,23 +62,44 @@ func toProfileView(p *store.Profile) profileView {
 	return v
 }
 
+// profileFilterFromQuery builds a store filter from the shared list query
+// parameters.
+func profileFilterFromQuery(q map[string][]string) store.ProfileFilter {
+	f := store.ProfileFilter{}
+	get := func(k string) string {
+		if v, ok := q[k]; ok && len(v) > 0 {
+			return v[0]
+		}
+		return ""
+	}
+	if v, ok := q["tenant"]; ok && len(v) > 0 {
+		t := strings.TrimSpace(v[0])
+		f.Tenant = &t
+	}
+	f.ExternalRef = get("externalRef")
+	f.State = get("state")
+	f.EID = get("eid")
+	f.ICCID = get("iccid")
+	f.Query = get("q")
+	if s := get("batchId"); s != "" {
+		if id, err := parseID(s); err == nil {
+			f.BatchID = &id
+		}
+	}
+	if t := parseTime(get("from")); t != nil {
+		f.Since = t
+	}
+	if t := parseTime(get("to")); t != nil {
+		f.Until = t
+	}
+	return f
+}
+
 func (h *Handler) listProfiles(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query()
-	size := atoiDefault(q.Get("size"), defaultPageSize)
-	if size < 1 {
-		size = defaultPageSize
-	}
-	if size > maxPageSize {
-		size = maxPageSize
-	}
-	page := atoiDefault(q.Get("page"), 1)
-	if page < 1 {
-		page = 1
-	}
-	filter := store.ProfileFilter{
-		State: q.Get("state"), EID: q.Get("eid"), ICCID: q.Get("iccid"), Query: q.Get("q"),
-	}
-	items, total, err := h.Profiles.ListFiltered(filter, size, (page-1)*size, q.Get("sort"))
+	size := clampSize(atoiDefault(q.Get("size"), defaultPageSize))
+	page := clampPage(atoiDefault(q.Get("page"), 1))
+	items, total, err := h.Profiles.ListFiltered(profileFilterFromQuery(q), size, (page-1)*size, q.Get("sort"))
 	if err != nil {
 		writeErr(w, http.StatusInternalServerError, err.Error())
 		return
@@ -98,6 +126,9 @@ type createProfileReq struct {
 	ProfileType string `json:"profileType"`
 	MatchingID  string `json:"matchingId"`
 	SMDSAddress string `json:"smdsAddress"`
+	UPPTemplate string `json:"uppTemplate"`
+	ExternalRef string `json:"externalRef"`
+	Tenant      string `json:"tenant"`
 }
 
 func (h *Handler) createProfile(w http.ResponseWriter, r *http.Request) {
@@ -105,10 +136,20 @@ func (h *Handler) createProfile(w http.ResponseWriter, r *http.Request) {
 	if !readJSON(w, r, &req) {
 		return
 	}
-	p, err := h.Inventory.Allocate(req.EID, req.ProfileType, req.ICCID)
+	tenant, err := h.effectiveTenant(r, req.Tenant)
 	if err != nil {
 		h.audit(r, "createProfile", req.ICCID, "Failed", req)
-		writeErr(w, http.StatusBadRequest, err.Error())
+		writeTenantErr(w, err)
+		return
+	}
+	p, err := h.Inventory.Allocate(serviceAllocate(req, tenant))
+	if err != nil {
+		h.audit(r, "createProfile", req.ICCID, "Failed", req)
+		if errors.Is(err, service.ErrQuotaExceeded) {
+			writeQuotaErr(w, err)
+			return
+		}
+		writeErr(w, http.StatusConflict, err.Error())
 		return
 	}
 	if req.MatchingID != "" || req.SMDSAddress != "" {
@@ -120,13 +161,15 @@ func (h *Handler) createProfile(w http.ResponseWriter, r *http.Request) {
 		}
 		_ = h.Profiles.Update(p)
 	}
-	h.recordOrder(p.ICCID, p.EID, p.MatchingID, "downloadOrder", req)
+	h.recordOrder(tenant, p.ICCID, p.EID, p.MatchingID, "downloadOrder", req)
 	h.audit(r, "createProfile", p.ICCID, "Executed-Success", req)
 	writeJSON(w, http.StatusCreated, toProfileView(p))
 }
 
 type updateProfileReq struct {
 	EID         *string `json:"eid"`
+	Tenant      *string `json:"tenant"`
+	ExternalRef *string `json:"externalRef"`
 	MatchingID  *string `json:"matchingId"`
 	SMDSAddress *string `json:"smdsAddress"`
 	UPPTemplate *string `json:"uppTemplate"`
@@ -146,6 +189,18 @@ func (h *Handler) updateProfile(w http.ResponseWriter, r *http.Request) {
 	}
 	if req.EID != nil {
 		p.EID = *req.EID
+	}
+	if req.Tenant != nil {
+		if *req.Tenant != "" && h.Tenants != nil {
+			if _, err := h.Tenants.Get(*req.Tenant); err != nil {
+				writeErr(w, http.StatusBadRequest, "unknown tenant "+*req.Tenant)
+				return
+			}
+		}
+		p.TenantID = *req.Tenant
+	}
+	if req.ExternalRef != nil {
+		p.ExternalRef = *req.ExternalRef
 	}
 	if req.MatchingID != nil {
 		p.MatchingID = *req.MatchingID
@@ -169,7 +224,7 @@ func (h *Handler) updateProfile(w http.ResponseWriter, r *http.Request) {
 
 func (h *Handler) deleteProfile(w http.ResponseWriter, r *http.Request) {
 	iccid := normalizeICCID(chi.URLParam(r, "iccid"))
-	if err := h.Profiles.Delete(iccid); err != nil {
+	if err := h.Orders.Delete(iccid); err != nil {
 		writeErr(w, http.StatusNotFound, "unknown ICCID")
 		return
 	}
@@ -192,6 +247,10 @@ func (h *Handler) confirmProfile(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusNotFound, "unknown ICCID")
 		return
 	}
+	if _, err := h.effectiveTenant(r, p.TenantID); err != nil {
+		writeTenantErr(w, err)
+		return
+	}
 	if req.MatchingID != "" {
 		p.MatchingID = req.MatchingID
 	}
@@ -209,7 +268,7 @@ func (h *Handler) confirmProfile(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	h.recordOrder(iccid, p.EID, p.MatchingID, "confirmOrder", req)
+	h.recordOrder(p.TenantID, iccid, p.EID, p.MatchingID, "confirmOrder", req)
 	h.audit(r, "confirmProfile", iccid, "Executed-Success", req)
 	writeJSON(w, http.StatusOK, toProfileView(p))
 }
@@ -227,7 +286,8 @@ func (h *Handler) cancelProfile(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	h.recordOrder(iccid, p.EID, p.MatchingID, "cancelOrder", req)
+	_, _ = h.effectiveTenant(r, p.TenantID)
+	h.recordOrder(p.TenantID, iccid, p.EID, p.MatchingID, "cancelOrder", req)
 	h.audit(r, "cancelProfile", iccid, "Executed-Success", req)
 	writeJSON(w, http.StatusOK, toProfileView(p))
 }
@@ -239,18 +299,19 @@ func (h *Handler) releaseProfile(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	h.recordOrder(iccid, p.EID, p.MatchingID, "releaseProfile", nil)
+	_, _ = h.effectiveTenant(r, p.TenantID)
+	h.recordOrder(p.TenantID, iccid, p.EID, p.MatchingID, "releaseProfile", nil)
 	h.audit(r, "releaseProfile", iccid, "Executed-Success", nil)
 	writeJSON(w, http.StatusOK, toProfileView(p))
 }
 
-// profileTimeline merges order-audit rows and received notifications for an
-// ICCID into a single (newest-first) event list.
+// profileTimeline merges order-audit rows, received notifications, download
+// sessions and audit entries for an ICCID into a single (newest-first) list.
 func (h *Handler) profileTimeline(w http.ResponseWriter, r *http.Request) {
 	iccid := normalizeICCID(chi.URLParam(r, "iccid"))
 	type event struct {
 		Time    time.Time `json:"time"`
-		Kind    string    `json:"kind"` // order | notification
+		Kind    string    `json:"kind"` // order | notification | session | audit
 		Action  string    `json:"action"`
 		Detail  string    `json:"detail,omitempty"`
 		Signed  *bool     `json:"signed,omitempty"`
@@ -281,16 +342,47 @@ func (h *Handler) profileTimeline(w http.ResponseWriter, r *http.Request) {
 			})
 		}
 	}
+	if p, err := h.Profiles.GetByICCID(iccid); err == nil && h.Sessions != nil {
+		sessions, err := h.Sessions.ListByProfileID(p.ID)
+		if err == nil {
+			for _, s := range sessions {
+				events = append(events, event{
+					Time: s.CreatedAt, Kind: "session",
+					Action: s.State, Detail: s.TransactionID,
+				})
+			}
+		}
+	}
+	if h.Audit != nil {
+		entries, err := h.Audit.ListBySubject(iccid, maxPageSize)
+		if err == nil {
+			for _, e := range entries {
+				events = append(events, event{
+					Time: e.TS, Kind: "audit", Action: e.Interface + ":" + e.Function, Detail: e.Outcome,
+				})
+			}
+		}
+	}
 	sort.Slice(events, func(i, j int) bool { return events[i].Time.After(events[j].Time) })
 	writeJSON(w, http.StatusOK, map[string]any{"iccid": iccid, "events": events})
 }
 
+// activationCode returns the activation code for a profile, optionally rotating
+// the matchingId so previously issued QR codes stop working (G14).
 func (h *Handler) activationCode(w http.ResponseWriter, r *http.Request) {
 	iccid := normalizeICCID(chi.URLParam(r, "iccid"))
 	p, err := h.Profiles.GetByICCID(iccid)
 	if err != nil {
 		writeErr(w, http.StatusNotFound, "unknown ICCID")
 		return
+	}
+	if r.URL.Query().Get("rotate") == "1" {
+		p.MatchingID = "MATCH-" + strings.ReplaceAll(uuid.NewString(), "-", "")[:16]
+		if err := h.Profiles.Update(p); err != nil {
+			writeErr(w, http.StatusInternalServerError, err.Error())
+			return
+		}
+		h.audit(r, "rotateActivationCode", iccid, "Executed-Success", nil)
 	}
 	if p.MatchingID == "" {
 		writeErr(w, http.StatusBadRequest, "profile has no matchingId; confirm the order first")

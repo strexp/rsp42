@@ -15,9 +15,12 @@ import (
 // UPPStore resolves SAIP profile-package templates. The SM-DP+ reads templates
 // only from the registry; it never touches the filesystem at request time.
 type UPPStore interface {
-	GetByName(name string) (*store.UPPTemplate, error)
-	SelectBest(major, minor int) (*store.UPPTemplate, error)
-	Any() (*store.UPPTemplate, error)
+	// GetForTenant resolves a template for a tenant (own scope first, then the
+	// platform-global scope).
+	GetForTenant(tenant, name string) (*store.UPPTemplate, error)
+	// SelectBestFor returns the best active template for the eUICC's advertised
+	// SAIP version within the tenant's visible scope.
+	SelectBestFor(tenant string, major, minor int) (*store.UPPTemplate, error)
 }
 
 // ImportUPPTemplates reads UPP templates (*.der, excluding *UNIQUE*) from dir,

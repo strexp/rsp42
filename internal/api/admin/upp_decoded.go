@@ -38,7 +38,7 @@ type decodedUPP struct {
 // decoded returns a read-only structural view of a UPP template (header,
 // services, GFSTE list, ProfileElements and files) for external editors.
 func (h *Handler) decodedUPP(w http.ResponseWriter, r *http.Request) {
-	t, err := h.UPP.GetByName(chi.URLParam(r, "name"))
+	t, err := h.UPP.GetScoped(scopeTenantParam(r), chi.URLParam(r, "name"))
 	if err != nil {
 		writeErr(w, http.StatusNotFound, "unknown template")
 		return

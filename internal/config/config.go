@@ -75,16 +75,36 @@ type SMDppConfig struct {
 	MaxDownloadAttempts int          `mapstructure:"max_download_attempts"`
 	MaxCCAttempts       int          `mapstructure:"max_cc_attempts"`
 	ES12                ES12Config   `mapstructure:"es12"`
+	// ES2P configures the SM-DP+ ES2+ tenant resolution.
+	ES2P ES2PConfig `mapstructure:"es2p"`
 }
 
-// ES12Config configures the SM-DP+ ES12 client used to register events with an SM-DS.
+// ES2PConfig configures the SM-DP+ ES2+ (operator-facing) interface.
+type ES2PConfig struct {
+	// RequesterTenants maps header.functionRequesterIdentifier to a tenant id
+	// (docs/esim42-integration-gaps.md §8.1 decision 3). An unmapped requester
+	// falls back to the platform-default tenant ("").
+	RequesterTenants []RequesterTenantConfig `mapstructure:"requester_tenants"`
+}
+
+// RequesterTenantConfig is one requester -> tenant mapping.
+type RequesterTenantConfig struct {
+	Requester string `mapstructure:"requester"`
+	Tenant    string `mapstructure:"tenant"`
+}
+
+// ES12Config configures the ES12 interface: the SM-DP+ client that registers
+// events with an SM-DS, and (on the SM-DS side) the caller mapping used when an
+// event registration carries no tenant header.
 type ES12Config struct {
-	Enabled             bool   `mapstructure:"enabled"`
-	SMDSAddress         string `mapstructure:"smds_address"`
-	RegisterOnConfirm   bool   `mapstructure:"register_on_confirm"`
-	ForwardingIndicator bool   `mapstructure:"forwarding_indicator"`
-	DeleteOnInstall     bool   `mapstructure:"delete_on_install"`
-	TLS                 TLSCfg `mapstructure:"tls"`
+	Enabled bool `mapstructure:"enabled"`
+	// RequesterTenants maps an ES12 caller OID to a tenant id (SM-DS side).
+	RequesterTenants    []RequesterTenantConfig `mapstructure:"requester_tenants"`
+	SMDSAddress         string                  `mapstructure:"smds_address"`
+	RegisterOnConfirm   bool                    `mapstructure:"register_on_confirm"`
+	ForwardingIndicator bool                    `mapstructure:"forwarding_indicator"`
+	DeleteOnInstall     bool                    `mapstructure:"delete_on_install"`
+	TLS                 TLSCfg                  `mapstructure:"tls"`
 }
 
 // CertsConfig points at the on-disk certificate tree.
@@ -109,7 +129,11 @@ type CertsConfig struct {
 type ProfilesConfig struct {
 	// DefaultUPP pins a registry template name used when the eUICC's profile
 	// version does not select one.
-	DefaultUPP      string                `mapstructure:"default_upp"`
+	DefaultUPP string `mapstructure:"default_upp"`
+	// Repository selects the storage backend. Only "sqlite" exists: other
+	// backends are a decided non-goal (docs/esim42-integration-gaps.md §8.4),
+	// so any other value is rejected by Validate instead of being silently
+	// ignored.
 	Repository      string                `mapstructure:"repository"`
 	Store           StoreConfig           `mapstructure:"store"`
 	Personalization PersonalizationConfig `mapstructure:"personalization"`
@@ -130,6 +154,12 @@ type PersonalizationConfig struct {
 	DefaultAlgorithm string `mapstructure:"default_algorithm"`
 	ICCIDPoolPrefix  string `mapstructure:"iccid_pool_prefix"`
 	IMSIPoolPrefix   string `mapstructure:"imsi_pool_prefix"`
+	// ReserveTTL bounds how long an unclaimed ICCID pool reservation may live
+	// before the background GC returns it to the pool.
+	ReserveTTL Duration `mapstructure:"reserve_ttl"`
+	// IdempotencyTTL bounds how long a recorded Idempotency-Key response is
+	// replayed.
+	IdempotencyTTL Duration `mapstructure:"idempotency_ttl"`
 }
 
 // NotificationsConfig configures outbound ES2+ callbacks.
@@ -141,8 +171,13 @@ type NotificationsConfig struct {
 type CallbackConfig struct {
 	Enabled bool   `mapstructure:"enabled"`
 	URL     string `mapstructure:"url"`
-	// ACRURL is the optional Operator ES2+.HandleAcrRequest endpoint.
-	ACRURL         string   `mapstructure:"acr_url"`
+	// ACRURL is the optional Operator ES2+.HandleAcrRequest endpoint. Setting
+	// it enables the SM-DP+ ACR confirmation independently of the progress
+	// callbacks (Enabled/URL only gate those).
+	ACRURL string `mapstructure:"acr_url"`
+	// ACRTimeout bounds one ES2+.HandleAcrRequest confirmation, retries
+	// included, so an unreachable Operator cannot stall authenticateClient.
+	ACRTimeout     Duration `mapstructure:"acr_timeout"`
 	ClientCertFile string   `mapstructure:"client_cert_file"`
 	ClientKeyFile  string   `mapstructure:"client_key_file"`
 	CAFile         string   `mapstructure:"ca_file"`
@@ -158,6 +193,7 @@ type SMDSConfig struct {
 	OID      string        `mapstructure:"oid"`
 	Curve    string        `mapstructure:"curve"`
 	EventTTL Duration      `mapstructure:"event_ttl"`
+	ES12     ES12Config    `mapstructure:"es12"`
 	DSAuth   CertKeyConfig `mapstructure:"dsauth"`
 	DSTLS    CertKeyConfig `mapstructure:"dstls"`
 	Cascade  CascadeConfig `mapstructure:"cascade"`
@@ -300,9 +336,12 @@ func setDefaults(v *viper.Viper) {
 	v.SetDefault("certs.allow_expired_test_certs", true)
 	v.SetDefault("notifications.es2p_callback.max_attempts", 5)
 	v.SetDefault("notifications.es2p_callback.retry_interval", "30s")
+	v.SetDefault("notifications.es2p_callback.acr_timeout", "10s")
 	v.SetDefault("profiles.repository", "sqlite")
 	v.SetDefault("profiles.store.dsn", "file:rsp42.db?_pragma=journal_mode(WAL)&_pragma=busy_timeout(5000)")
 	v.SetDefault("profiles.personalization.default_algorithm", "milenage")
+	v.SetDefault("profiles.personalization.reserve_ttl", "24h")
+	v.SetDefault("profiles.personalization.idempotency_ttl", "24h")
 	v.SetDefault("smds.enabled", true)
 	v.SetDefault("smds.role", "root")
 	v.SetDefault("smds.curve", "nist")

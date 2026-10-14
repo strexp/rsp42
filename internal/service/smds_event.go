@@ -11,8 +11,8 @@ import (
 
 // CascadeClient forwards event registration/deletion to a Root SM-DS (ES15).
 type CascadeClient interface {
-	Register(eid, rspServerAddress, eventID string, forwardingIndicator bool) error
-	Delete(eid, eventID string) error
+	Register(eid, rspServerAddress, eventID string, forwardingIndicator bool, meta EventMeta) error
+	Delete(eid, eventID string, meta EventMeta) error
 	// ErrNotFound reports whether an error means "event not found" (ignorable
 	// during cascaded deletion).
 	IsNotFound(err error) bool
@@ -42,7 +42,7 @@ var ErrEventNotFound = errors.New("event not found")
 // Register stores an event. For an Alternative SM-DS with forwardingIndicator
 // set, it cascades to the Root SM-DS (generating EventID2) and rolls back the
 // local record on failure.
-func (s *EventService) Register(eid, rspServerAddress, eventID string, forwardingIndicator bool, callerOID string) error {
+func (s *EventService) Register(eid, rspServerAddress, eventID string, forwardingIndicator bool, callerOID string, meta EventMeta) error {
 	if _, err := s.Repo.GetByKey(eid, eventID, callerOID); err == nil {
 		return ErrEventIDInUse
 	}
@@ -53,6 +53,9 @@ func (s *EventService) Register(eid, rspServerAddress, eventID string, forwardin
 		RSPServerAddress:    rspServerAddress,
 		CallerOID:           callerOID,
 		ForwardingIndicator: forwardingIndicator,
+		TenantID:            meta.Tenant,
+		ICCID:               meta.ICCID,
+		MatchingID:          meta.MatchingID,
 	}
 	if s.EventTTL > 0 {
 		t := time.Now().UTC().Add(s.EventTTL)
@@ -75,7 +78,7 @@ func (s *EventService) Register(eid, rspServerAddress, eventID string, forwardin
 			_ = s.Repo.HardDelete(id)
 			return fmt.Errorf("event: cascading to root SM-DS is not configured")
 		}
-		if err := s.Cascade.Register(eid, s.OwnAddress, rootEventID, false); err != nil {
+		if err := s.Cascade.Register(eid, s.OwnAddress, rootEventID, false, meta); err != nil {
 			_ = s.Repo.HardDelete(id) // roll back local record
 			return err
 		}
@@ -104,7 +107,7 @@ func (s *EventService) Delete(eid, eventID, callerOID string) error {
 		if s.Cascade == nil {
 			return fmt.Errorf("event: cascading to root SM-DS is not configured")
 		}
-		if err := s.Cascade.Delete(eid, rec.RootEventID); err != nil {
+		if err := s.Cascade.Delete(eid, rec.RootEventID, EventMeta{Tenant: rec.TenantID}); err != nil {
 			if !s.Cascade.IsNotFound(err) {
 				return err
 			}

@@ -125,7 +125,7 @@ func TestFullDownloadFlow(t *testing.T) {
 
 	// Prepare a released profile with a matching id.
 	inv := NewInventory(st.Profiles, "8900012", "00101")
-	profile, err := inv.Allocate(testEID, "operational", "")
+	profile, err := inv.Allocate(AllocateRequest{EID: testEID, ProfileType: "operational"})
 	require.NoError(t, err)
 	profile.MatchingID = "MATCH-1"
 	require.NoError(t, st.Profiles.Update(profile))
@@ -178,7 +178,7 @@ func TestFullDownloadFlow(t *testing.T) {
 		eumCertDER,
 	)))
 
-	auth, err := cmae.AuthenticateClient(init.TransactionID, asr)
+	auth, err := cmae.AuthenticateClient(context.Background(), init.TransactionID, asr)
 	require.NoError(t, err)
 
 	// Verify smdpSignature2 over smdpSigned2 || euiccSignature1.
@@ -289,7 +289,7 @@ func TestNotificationInstalled(t *testing.T) {
 	notifs := NewNotificationService(slog.Default(), st.Notifs, st.Profiles, orders)
 
 	inv := NewInventory(st.Profiles, "8900012", "00101")
-	profile, err := inv.Allocate(testEID, "operational", "")
+	profile, err := inv.Allocate(AllocateRequest{EID: testEID, ProfileType: "operational"})
 	require.NoError(t, err)
 	profile.MatchingID = "MATCH-N"
 	require.NoError(t, st.Profiles.Update(profile))
@@ -312,8 +312,8 @@ func TestNotificationInstalled(t *testing.T) {
 	}))
 	notifs.Sessions = ss
 	gotPoint := 0
-	notifs.Callback = func(_ context.Context, _, _ string, point int, _ string) error {
-		gotPoint = point
+	notifs.Callback = func(_ context.Context, info ProgressInfo) error {
+		gotPoint = info.PointID
 		return nil
 	}
 
@@ -360,7 +360,7 @@ func TestNotificationInstallRejectsBadSignature(t *testing.T) {
 	orders := NewOrderService(st.Profiles)
 	notifs := NewNotificationService(slog.Default(), st.Notifs, st.Profiles, orders)
 
-	profile, err := NewInventory(st.Profiles, "8900012", "00101").Allocate(testEID, "operational", "")
+	profile, err := NewInventory(st.Profiles, "8900012", "00101").Allocate(AllocateRequest{EID: testEID, ProfileType: "operational"})
 	require.NoError(t, err)
 	profile.MatchingID = "MATCH-BADSIG"
 	require.NoError(t, st.Profiles.Update(profile))
@@ -410,7 +410,7 @@ func TestNotificationOtherSignedVerification(t *testing.T) {
 	notifs := NewNotificationService(slog.Default(), st.Notifs, st.Profiles, orders)
 	notifs.Certs = testCertificateManager(t)
 
-	profile, err := NewInventory(st.Profiles, "8900012", "00101").Allocate(testEID, "operational", "")
+	profile, err := NewInventory(st.Profiles, "8900012", "00101").Allocate(AllocateRequest{EID: testEID, ProfileType: "operational"})
 	require.NoError(t, err)
 	_, err = orders.Confirm(profile.ICCID, true)
 	require.NoError(t, err)
@@ -459,14 +459,14 @@ func TestNotificationOtherSignedVerification(t *testing.T) {
 
 func TestPickUPPSelectsCompatibleVersion(t *testing.T) {
 	cmae, _ := setupCMAE(t)
-	require.Equal(t, "", cmae.pickUPP(nil))
+	require.Equal(t, "", cmae.pickUPP("", nil))
 
 	// The TS.48 v1 templates declare SAIP 2.1 and sort first, so an eUICC
 	// advertising 2.2 gets the highest compatible template (2.1).
-	require.Equal(t, "TS48v1_A.der", cmae.pickUPP([]byte{2, 2, 0}))
-	require.Equal(t, "TS48v2_SAIP2.3_BERTLV.der", cmae.pickUPP([]byte{2, 3, 0}))
+	require.Equal(t, "TS48v1_A.der", cmae.pickUPP("", []byte{2, 2, 0}))
+	require.Equal(t, "TS48v2_SAIP2.3_BERTLV.der", cmae.pickUPP("", []byte{2, 3, 0}))
 	// Nothing qualifies below SAIP 2.1.
-	require.Empty(t, cmae.pickUPP([]byte{1, 0, 0}))
+	require.Empty(t, cmae.pickUPP("", []byte{1, 0, 0}))
 }
 
 func TestLoadUPPAppliesPersonalization(t *testing.T) {
@@ -474,7 +474,7 @@ func TestLoadUPPAppliesPersonalization(t *testing.T) {
 	provider, err := kms.NewFileProviderFromKEK(testKEK)
 	require.NoError(t, err)
 	perso := NewPersonalizationService(st.Perso, provider)
-	require.NoError(t, perso.Put(&personalization.Data{
+	require.NoError(t, perso.Put("", &personalization.Data{
 		ICCID: "89000123456789012341", IMSI: "001010123456063", SPN: "TESTSPN",
 	}))
 
@@ -527,7 +527,7 @@ func mustHex(t *testing.T, s string) []byte {
 
 func TestACRRetrieval(t *testing.T) {
 	cmae, st := setupCMAE(t)
-	profile, err := NewInventory(st.Profiles, "8900012", "00101").Allocate(testEID, "operational", "")
+	profile, err := NewInventory(st.Profiles, "8900012", "00101").Allocate(AllocateRequest{EID: testEID, ProfileType: "operational"})
 	require.NoError(t, err)
 	profile.MatchingID = "MATCH-ACR"
 	require.NoError(t, st.Profiles.Update(profile))
@@ -540,25 +540,25 @@ func TestACRRetrieval(t *testing.T) {
 	require.NoError(t, err)
 
 	// Type 1: availability check.
-	res, err := cmae.handleACR("TXN1", &clientAuth{Session: &store.Session{TransactionID: "TXN1"}, EID: testEID, MatchingID: "ACR-1-" + profile.ICCID})
+	res, err := cmae.handleACR(context.Background(), "TXN1", &clientAuth{Session: &store.Session{TransactionID: "TXN1"}, EID: testEID, MatchingID: "ACR-1-" + profile.ICCID})
 	require.NoError(t, err)
 	require.True(t, res.ACROnly)
 	require.Contains(t, hex.EncodeToString(res.ProfileMetadata), "8201ff") // BOOLEAN true
 
 	// Type 0: redownload activation code.
-	res, err = cmae.handleACR("TXN2", &clientAuth{Session: &store.Session{TransactionID: "TXN2"}, EID: testEID, MatchingID: "ACR-0-" + profile.ICCID})
+	res, err = cmae.handleACR(context.Background(), "TXN2", &clientAuth{Session: &store.Session{TransactionID: "TXN2"}, EID: testEID, MatchingID: "ACR-0-" + profile.ICCID})
 	require.NoError(t, err)
 	require.True(t, res.ACROnly)
 	require.Contains(t, hex.EncodeToString(res.ProfileMetadata), "81") // UTF8String alternative
 
 	// Unknown ICCID -> 8.2.1/1.2.
-	_, err = cmae.handleACR("TXN3", &clientAuth{Session: &store.Session{TransactionID: "TXN3"}, EID: testEID, MatchingID: "ACR-1-9999999999999999999"})
+	_, err = cmae.handleACR(context.Background(), "TXN3", &clientAuth{Session: &store.Session{TransactionID: "TXN3"}, EID: testEID, MatchingID: "ACR-1-9999999999999999999"})
 	require.Error(t, err)
 }
 
 func TestACROperatorConfirmation(t *testing.T) {
 	cmae, st := setupCMAE(t)
-	profile, err := NewInventory(st.Profiles, "8900012", "00101").Allocate(testEID, "operational", "")
+	profile, err := NewInventory(st.Profiles, "8900012", "00101").Allocate(AllocateRequest{EID: testEID, ProfileType: "operational"})
 	require.NoError(t, err)
 	profile.MatchingID = "MATCH-ACR-OP"
 	require.NoError(t, st.Profiles.Update(profile))
@@ -574,22 +574,62 @@ func TestACROperatorConfirmation(t *testing.T) {
 		return &clientAuth{Session: &store.Session{TransactionID: "TXN"}, EID: testEID, MatchingID: "ACR-1-" + profile.ICCID}
 	}
 
-	// Operator rejects -> ACR refused (8.2.1/1.2).
-	cmae.ACRCheck = func(context.Context, string) error { return errors.New("not eligible") }
-	_, err = cmae.handleACR("TXN", ca())
+	// Operator refuses -> the retrieval is refused with the ACR-specific code
+	// (8.2.1/1.2, §5.3.8 Table 32e) and the profile keeps its matching id.
+	cmae.ACRCheck = func(context.Context, *store.Profile) error {
+		return &rsp.ACRRefusedError{SubjectCode: "8.2.1", ReasonCode: "1.2", Message: "not allowed"}
+	}
+	_, err = cmae.handleACR(context.Background(), "TXN", ca())
 	require.Error(t, err)
+	var refused *rsp.StatusCode
+	require.ErrorAs(t, err, &refused)
+	require.Equal(t, "8.2.1", refused.SubjectCode)
+	require.Equal(t, "1.2", refused.ReasonCode)
 
-	// Operator confirms -> ACR proceeds.
-	cmae.ACRCheck = func(context.Context, string) error { return nil }
-	res, err := cmae.handleACR("TXN", ca())
+	// A transport failure is not an Operator decision: it is reported as an
+	// input error rather than as an ACR refusal.
+	cmae.ACRCheck = func(context.Context, *store.Profile) error { return errors.New("operator unreachable") }
+	_, err = cmae.handleACR(context.Background(), "TXN", ca())
+	require.Error(t, err)
+	require.ErrorAs(t, err, &refused)
+	require.Equal(t, "8.2.1", refused.SubjectCode)
+	require.Equal(t, "1.2", refused.ReasonCode)
+
+	// Operator confirms -> ACR proceeds, and the hook receives the profile.
+	var seenICCID, seenTenant string
+	cmae.ACRCheck = func(_ context.Context, p *store.Profile) error {
+		seenICCID, seenTenant = p.ICCID, p.TenantID
+		return nil
+	}
+	res, err := cmae.handleACR(context.Background(), "TXN", ca())
 	require.NoError(t, err)
 	require.True(t, res.ACROnly)
+	require.Equal(t, profile.ICCID, seenICCID)
+	require.Equal(t, profile.TenantID, seenTenant)
+
+	// §5.3.8 requires the confirmation for both ACR types: the availability
+	// check (ACR-1) and the activation code redownload (ACR-0). The redownload
+	// also rotates the matching id.
+	calls := 0
+	cmae.ACRCheck = func(_ context.Context, p *store.Profile) error {
+		calls++
+		return nil
+	}
+	_, err = cmae.handleACR(context.Background(), "TXN0", &clientAuth{
+		Session: &store.Session{TransactionID: "TXN0"}, EID: testEID, MatchingID: "ACR-0-" + profile.ICCID,
+	})
+	require.NoError(t, err)
+	require.Equal(t, 1, calls)
+	rotated, err := st.Profiles.GetByICCID(profile.ICCID)
+	require.NoError(t, err)
+	require.NotEqual(t, "MATCH-ACR-OP", rotated.MatchingID)
+	require.True(t, strings.HasPrefix(rotated.MatchingID, "ACR-"))
 }
 
 // releasedProfile creates a profile in Released state with the given matching id.
 func releasedProfile(t *testing.T, st *store.Store, matchingID string) *store.Profile {
 	t.Helper()
-	p, err := NewInventory(st.Profiles, "8900012", "00101").Allocate(testEID, "operational", "")
+	p, err := NewInventory(st.Profiles, "8900012", "00101").Allocate(AllocateRequest{EID: testEID, ProfileType: "operational"})
 	require.NoError(t, err)
 	p.MatchingID = matchingID
 	require.NoError(t, st.Profiles.Update(p))
@@ -643,7 +683,7 @@ func TestConfirmationCodeAttemptLimit(t *testing.T) {
 
 func TestConfirmedProfileNotDownloadable(t *testing.T) {
 	cmae, st := setupCMAE(t)
-	p, err := NewInventory(st.Profiles, "8900012", "00101").Allocate(testEID, "operational", "")
+	p, err := NewInventory(st.Profiles, "8900012", "00101").Allocate(AllocateRequest{EID: testEID, ProfileType: "operational"})
 	require.NoError(t, err)
 	p.MatchingID = "MATCH-CONF"
 	require.NoError(t, st.Profiles.Update(p))
@@ -661,4 +701,143 @@ func TestConfirmedProfileNotDownloadable(t *testing.T) {
 	got, err := cmae.lookupProfile("MATCH-CONF", testEID)
 	require.NoError(t, err)
 	require.Equal(t, store.StateReleased, got.State)
+}
+
+// authenticateForTest drives InitiateAuthentication + AuthenticateClient for a
+// matching id with the SGP.26 eUICC test certificate, returning the error.
+func authenticateForTest(t *testing.T, cmae *CMAE, matchingID string) error {
+	t.Helper()
+	euiccChallenge := make([]byte, 16)
+	_, _ = rand.Read(euiccChallenge)
+	ciSKI := cmae.Certs.CI().SubjectKeyId
+	init, err := cmae.Initiate(euiccChallenge, buildEUICCInfo1(ciSKI), testFQDN)
+	require.NoError(t, err)
+
+	serverSigned1, _, err := asn1.ReadTLV(init.ServerSigned1)
+	require.NoError(t, err)
+	ss1, err := rsp.DecodeServerSigned1(serverSigned1)
+	require.NoError(t, err)
+
+	txn := mustHexLower(init.TransactionID)
+	euiccSigned1 := tlv(tSeq, concat(
+		tlv(tCtx0p, txn),
+		tlv(tCtx3p, []byte(testFQDN)),
+		tlv(tCtx4p, ss1.ServerChallenge),
+		buildEUICCInfo2(ciSKI),
+		tlv(tCtx0c, concat(
+			tlv([]byte{0x80}, []byte(matchingID)),
+			tlv(tCtx1c, concat(tlv([]byte{0x80}, make([]byte, 8)), tlv(tCtx1c, nil))),
+		)),
+	))
+	key, err := kms.NewFileProviderFromKEK(testKEK)
+	require.NoError(t, err)
+	euiccPriv, err := key.ECDSAKey(testRoot + "/eUICC/SK_EUICC_NIST.pem")
+	require.NoError(t, err)
+	euiccSig1, err := crypto.SignRaw(euiccPriv, euiccSigned1)
+	require.NoError(t, err)
+
+	asr := tlv(tBF38, tlv(tCtx0c, concat(
+		euiccSigned1,
+		tlv(tSig, euiccSig1),
+		readFile(t, testRoot+"/eUICC/CERT_EUICC_NIST.der"),
+		readFile(t, testRoot+"/EUM/CERT_EUM_NIST.der"),
+	)))
+	_, err = cmae.AuthenticateClient(context.Background(), init.TransactionID, asr)
+	return err
+}
+
+// TestAuthenticateBindsAnonymousProfileToEID covers G4: an anonymously claimed
+// profile (no EID on the order) is bound to the eUICC that actually downloads
+// it, and a subsequent download from another EID is refused.
+func TestAuthenticateBindsAnonymousProfileToEID(t *testing.T) {
+	cmae, st := setupCMAE(t)
+
+	profile, err := NewInventory(st.Profiles, "8900012", "00101").
+		Allocate(AllocateRequest{ProfileType: "operational"})
+	require.NoError(t, err)
+	require.Empty(t, profile.EID)
+	profile.MatchingID = "MATCH-ANON"
+	require.NoError(t, st.Profiles.Update(profile))
+	_, err = NewOrderService(st.Profiles).Confirm(profile.ICCID, true)
+	require.NoError(t, err)
+
+	require.NoError(t, authenticateForTest(t, cmae, "MATCH-ANON"))
+
+	got, err := st.Profiles.GetByICCID(profile.ICCID)
+	require.NoError(t, err)
+	require.Equal(t, testEID, got.EID, "the download must bind the profile to the authenticating eUICC")
+	require.Equal(t, store.StateReleased, got.State)
+
+	// The profile is now device-bound: a different EID is refused.
+	got.EID = "89049032123451234512345678909999"
+	require.NoError(t, st.Profiles.Update(got))
+	err = authenticateForTest(t, cmae, "MATCH-ANON")
+	require.Error(t, err)
+}
+
+// TestLoadUPPUsesTenantTemplate covers G3: the order/profile tenant selects the
+// template, and there is no "any template" fallback.
+func TestLoadUPPUsesTenantTemplate(t *testing.T) {
+	cmae, st := setupCMAE(t)
+
+	// Register a tenant-local template whose bytes are not a valid UPP, so the
+	// resolution path is observable.
+	require.NoError(t, st.UPP.Upsert(&store.UPPTemplate{
+		Name: "tenant-tpl", TenantID: "carrier-a", SAIPMajor: 2, SAIPMinor: 1,
+		SHA256: "t", Bytes: []byte{0xff, 0x00}, Active: true,
+	}))
+
+	profile := &store.Profile{ICCID: "89000123456789012341", TenantID: "carrier-a", UPPTemplate: "tenant-tpl"}
+	_, err := cmae.loadUPP(profile, nil)
+	require.Error(t, err, "a corrupt tenant template must surface as an error, not fall back")
+
+	// An unknown template for the tenant is an error too (no Any() fallback).
+	profile.UPPTemplate = "missing"
+	_, err = cmae.loadUPP(profile, nil)
+	require.Error(t, err)
+
+	// With no template pinned anywhere and no tenant default, resolution fails
+	// rather than silently picking an arbitrary template.
+	cmae.DefaultUPP = ""
+	profile.UPPTemplate = ""
+	_, err = cmae.loadUPP(profile, nil)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "no UPP template configured")
+}
+
+// TestAllocateRejectsBlockedPoolICCID covers the interaction between an
+// operator-supplied ICCID and the pool: a blocked entry is never issued, and an
+// available entry is claimed (allocated, owned) rather than left claimable.
+func TestAllocateRejectsBlockedPoolICCID(t *testing.T) {
+	st := openServiceStore(t)
+	inv := NewInventory(st.Profiles, "8900012", "00101")
+	inv.Pool = st.Pool
+
+	_, _, _, err := st.Pool.ImportRange("carrier-a", "8900012000000000000", "8900012000000000099", "")
+	require.NoError(t, err)
+	entries, _, err := st.Pool.ListPage("available", "", nil, 2, 0)
+	require.NoError(t, err)
+	require.Len(t, entries, 2)
+
+	blocked, free := entries[0].ICCID, entries[1].ICCID
+	require.NoError(t, st.Pool.SetState(blocked, "blocked", "ops"))
+
+	_, err = inv.Allocate(AllocateRequest{ICCID: blocked, Tenant: "carrier-a"})
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "blocked")
+
+	p, err := inv.Allocate(AllocateRequest{ICCID: free, Tenant: "carrier-a"})
+	require.NoError(t, err)
+	state, err := st.Pool.State(p.ICCID)
+	require.NoError(t, err)
+	require.Equal(t, "allocated", state)
+}
+
+// openServiceStore opens a store for service-level tests.
+func openServiceStore(t *testing.T) *store.Store {
+	t.Helper()
+	st, err := store.Open("file:" + filepath.Join(t.TempDir(), "svc.db"))
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = st.Close() })
+	return st
 }

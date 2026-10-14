@@ -17,6 +17,7 @@ import (
 	"rsp42/internal/audit"
 	"rsp42/internal/config"
 	"rsp42/internal/logging"
+	"rsp42/internal/metrics"
 	"rsp42/internal/service"
 	"rsp42/internal/store"
 )
@@ -53,9 +54,13 @@ func cmdSMDS(prog string, args []string) int {
 	sessions := service.NewSessionService(st.Sessions, provider, cfg.SMDS.EventTTL.Duration())
 	eventSvc := service.NewEventService(st.Events, cfg.SMDS.Role, cfg.SMDS.FQDN, cfg.SMDS.EventTTL.Duration())
 	eventSvc.Log = log
+	reg := newDSMetricsRegistry()
 	startGC(log, func() {
-		if n, err := st.Events.GCExpired(time.Now().UTC()); err == nil && n > 0 {
-			log.Info("event gc", "removed", n)
+		if n, err := st.Events.GCExpired(time.Now().UTC()); err == nil {
+			if n > 0 {
+				log.Info("event gc", "removed", n)
+			}
+			reg.Add("rsp42_smds_event_gc_total", nil, float64(n))
 		}
 	})
 	if cfg.SMDS.Cascade.Enabled && cfg.SMDS.Role == "alternative" {
@@ -76,6 +81,8 @@ func cmdSMDS(prog string, args []string) int {
 	}
 	es11Handler := es11.New(log, ds)
 	es12Handler := es12.New(log, eventSvc)
+	es12Handler.Tenants = service.NewTenantResolver(requesterPairs(cfg.SMDS.ES12.RequesterTenants))
+	es12Handler.Audit = st.Audit
 
 	var auditLog *audit.Logger
 	if cfg.Audit.Enabled {
@@ -105,7 +112,10 @@ func cmdSMDS(prog string, args []string) int {
 		return 1
 	}
 	admin, err := buildServer(log, "admin", cfg.SMDS.Server.Bind, cfg.SMDS.Server.Admin,
-		api.NewAdminRouter(log, func() bool { return true }, func(r chi.Router) { adminapi.MountDS(r, st.Events) }, apiOpts))
+		api.NewAdminRouter(log, func() bool { return true }, func(r chi.Router) {
+			adminapi.MountDS(r, st.Events)
+			r.Get("/metrics", metrics.Handler(reg, eventCollector(st.Events)))
+		}, apiOpts))
 	if err != nil {
 		log.Error("admin listener", "err", err)
 		return 1
@@ -113,4 +123,29 @@ func cmdSMDS(prog string, args []string) int {
 
 	log.Info("starting SM-DS", "role", cfg.SMDS.Role, "fqdn", cfg.SMDS.FQDN, "es11_port", cfg.SMDS.Server.ES11.Port, "es12_port", cfg.SMDS.Server.ES12.Port)
 	return serveAll(log, es11, es12, admin)
+}
+
+// newDSMetricsRegistry builds the SM-DS metrics registry.
+func newDSMetricsRegistry() *metrics.Registry {
+	reg := metrics.NewRegistry()
+	reg.Describe("rsp42_smds_event_gc_total", metrics.Counter, "Expired SM-DS events reclaimed.")
+	reg.Describe("rsp42_smds_events", metrics.Gauge, "SM-DS events by lifecycle status.")
+	return reg
+}
+
+// eventCollector refreshes the event-count gauges at scrape time.
+func eventCollector(events *store.EventRepo) metrics.Collector {
+	return func(reg *metrics.Registry) {
+		if events == nil {
+			return
+		}
+		now := time.Now().UTC()
+		for _, status := range []string{"active", "expired", "deleted"} {
+			_, total, err := events.ListFiltered(store.EventFilter{Status: status}, 1, 0, now)
+			if err != nil {
+				return
+			}
+			reg.Set("rsp42_smds_events", map[string]string{"status": status}, float64(total))
+		}
+	}
 }

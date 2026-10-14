@@ -56,6 +56,11 @@ store, config, logging}`; the low-level packages never depend on `api`.
   and the CLI is split into `server`/`smdpp`/`smds`/`admin*`.
 - **Explicit**: no global mutable state; sensitive session columns have a
   dedicated field/column; status codes are named `rsp.Code` values.
+- **Fixed deployment shape (deliberate)**: SQLite only, one process per database
+  file, one replica. There is no storage abstraction for other backends, no
+  leader election and no rsp42-side rate limiting; tenant attribution on ES2+ is
+  a `functionRequesterIdentifier` mapping rather than per-carrier certificates.
+  These are decided non-goals, recorded in `docs/esim42-integration-gaps.md` §8.4.
 - **UPP registry**: SAIP templates live in the `upp_templates` table (blob +
   SAIP version + SHA-256) and are resolved through `service.UPPStore`; they are
   seeded with `rsp42 admin upp import --dir` (no `upp_dir` in the config), so the

@@ -1,0 +1,2082 @@
+{
+  "openapi": "3.0.3",
+  "info": {
+    "title": "rsp42 SM-DP+ management API",
+    "version": "0.2.0",
+    "description": "BSS/OSS-facing management API for the SM-DP+ (and, for /events, the SM-DS). Manages tenants, the profile inventory, the SAIP template registry, the ICCID pool and personalization. There is no authentication: the API is meant to be reachable only from the operator backend on an internal network (docs/esim42-integration-gaps.md §0.1-4). All list endpoints accept `page`, `size` and `tenant`."
+  },
+  "servers": [
+    {
+      "url": "/"
+    }
+  ],
+  "tags": [
+    {
+      "name": "tenants"
+    },
+    {
+      "name": "profiles"
+    },
+    {
+      "name": "upp"
+    },
+    {
+      "name": "batches"
+    },
+    {
+      "name": "iccid-pool"
+    },
+    {
+      "name": "personalization"
+    },
+    {
+      "name": "audit"
+    },
+    {
+      "name": "notifications"
+    }
+  ],
+  "components": {
+    "parameters": {
+      "tenant": {
+        "name": "tenant",
+        "in": "query",
+        "required": false,
+        "schema": {
+          "type": "string"
+        },
+        "description": "Restrict to one tenant. Omit for all; an empty value selects the platform default."
+      },
+      "idempotencyKey": {
+        "name": "Idempotency-Key",
+        "in": "header",
+        "required": false,
+        "schema": {
+          "type": "string"
+        },
+        "description": "Replays the first response for this key and repeats no side effect. Reuse with a different body is a 409."
+      },
+      "page": {
+        "name": "page",
+        "in": "query",
+        "schema": {
+          "type": "integer",
+          "minimum": 1,
+          "default": 1
+        }
+      },
+      "size": {
+        "name": "size",
+        "in": "query",
+        "schema": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 500,
+          "default": 50
+        }
+      },
+      "sort": {
+        "name": "sort",
+        "in": "query",
+        "schema": {
+          "type": "string",
+          "enum": [
+            "created_at",
+            "updated_at",
+            "iccid",
+            "state",
+            "installed_at",
+            "-created_at",
+            "-updated_at",
+            "-iccid",
+            "-state",
+            "-installed_at"
+          ]
+        }
+      },
+      "from": {
+        "name": "from",
+        "in": "query",
+        "schema": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "to": {
+        "name": "to",
+        "in": "query",
+        "schema": {
+          "type": "string",
+          "format": "date-time"
+        }
+      }
+    },
+    "schemas": {
+      "Error": {
+        "type": "object",
+        "required": [
+          "code",
+          "message"
+        ],
+        "properties": {
+          "code": {
+            "type": "string",
+            "description": "Stable machine-readable error code, e.g. invalid_request, not_found, conflict, unknown_tenant, quota_exceeded."
+          },
+          "message": {
+            "type": "string"
+          }
+        }
+      },
+      "Tenant": {
+        "type": "object",
+        "required": [
+          "id",
+          "name",
+          "status"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "The operator BSS carrier primary key; rsp42 keeps no second mapping."
+          },
+          "name": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "active",
+              "disabled"
+            ]
+          },
+          "templateQuota": {
+            "type": "integer",
+            "nullable": true,
+            "description": "NULL/absent = unlimited."
+          },
+          "profileQuota": {
+            "type": "integer",
+            "nullable": true
+          },
+          "defaultUpp": {
+            "type": "string"
+          },
+          "callbackUrl": {
+            "type": "string"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "updatedAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "Profile": {
+        "type": "object",
+        "required": [
+          "iccid",
+          "state"
+        ],
+        "properties": {
+          "iccid": {
+            "type": "string"
+          },
+          "tenant": {
+            "type": "string"
+          },
+          "externalRef": {
+            "type": "string"
+          },
+          "imsi": {
+            "type": "string"
+          },
+          "profileType": {
+            "type": "string"
+          },
+          "eid": {
+            "type": "string"
+          },
+          "state": {
+            "type": "string",
+            "enum": [
+              "Available",
+              "Allocated",
+              "Linked",
+              "Confirmed",
+              "Released",
+              "Downloaded",
+              "Installed",
+              "Error",
+              "Unavailable"
+            ]
+          },
+          "matchingId": {
+            "type": "string"
+          },
+          "ccRequired": {
+            "type": "boolean"
+          },
+          "smdsAddress": {
+            "type": "string"
+          },
+          "uppTemplate": {
+            "type": "string"
+          },
+          "pprIds": {
+            "type": "string"
+          },
+          "downloadAttempts": {
+            "type": "integer"
+          },
+          "ccAttempts": {
+            "type": "integer"
+          },
+          "batchId": {
+            "type": "integer"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "updatedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "installedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "errorReason": {
+            "type": "string"
+          }
+        }
+      },
+      "CreateProfileRequest": {
+        "type": "object",
+        "properties": {
+          "iccid": {
+            "type": "string",
+            "description": "Optional; the pool is used when omitted."
+          },
+          "eid": {
+            "type": "string"
+          },
+          "profileType": {
+            "type": "string"
+          },
+          "matchingId": {
+            "type": "string"
+          },
+          "smdsAddress": {
+            "type": "string"
+          },
+          "uppTemplate": {
+            "type": "string"
+          },
+          "externalRef": {
+            "type": "string"
+          },
+          "tenant": {
+            "type": "string"
+          }
+        }
+      },
+      "UPPTemplate": {
+        "type": "object",
+        "required": [
+          "name",
+          "saip"
+        ],
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "tenant": {
+            "type": "string",
+            "description": "Empty for a platform-global template."
+          },
+          "saipMajor": {
+            "type": "integer"
+          },
+          "saipMinor": {
+            "type": "integer"
+          },
+          "saip": {
+            "type": "string"
+          },
+          "sha256": {
+            "type": "string"
+          },
+          "active": {
+            "type": "boolean"
+          },
+          "size": {
+            "type": "integer"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "updatedAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "Personalization": {
+        "type": "object",
+        "required": [
+          "iccid"
+        ],
+        "properties": {
+          "iccid": {
+            "type": "string"
+          },
+          "tenant": {
+            "type": "string"
+          },
+          "imsi": {
+            "type": "string"
+          },
+          "spn": {
+            "type": "string"
+          },
+          "algorithm": {
+            "type": "string",
+            "enum": [
+              "milenage",
+              "tuak",
+              "usim-test-algorithm"
+            ]
+          },
+          "hasK": {
+            "type": "boolean"
+          },
+          "hasOPc": {
+            "type": "boolean"
+          },
+          "pin1": {
+            "type": "string"
+          },
+          "puk1": {
+            "type": "string"
+          },
+          "adm1": {
+            "type": "string"
+          },
+          "adm2": {
+            "type": "string"
+          },
+          "plmn": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "msisdn": {
+            "type": "string"
+          },
+          "k": {
+            "type": "string",
+            "description": "Hex; only with ?reveal=1."
+          },
+          "opc": {
+            "type": "string",
+            "description": "Hex; only with ?reveal=1."
+          }
+        }
+      },
+      "PoolEntry": {
+        "type": "object",
+        "required": [
+          "iccid",
+          "state"
+        ],
+        "properties": {
+          "iccid": {
+            "type": "string"
+          },
+          "tenant": {
+            "type": "string"
+          },
+          "state": {
+            "type": "string",
+            "enum": [
+              "available",
+              "allocated",
+              "blocked"
+            ]
+          },
+          "eid": {
+            "type": "string"
+          },
+          "reference": {
+            "type": "string"
+          },
+          "profileId": {
+            "type": "integer"
+          },
+          "batchId": {
+            "type": "integer"
+          },
+          "note": {
+            "type": "string"
+          },
+          "reservedUntil": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "allocatedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "Batch": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer"
+          },
+          "tenant": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "profileType": {
+            "type": "string"
+          },
+          "state": {
+            "type": "string",
+            "enum": [
+              "Open",
+              "Completed",
+              "Cancelled"
+            ]
+          },
+          "total": {
+            "type": "integer"
+          },
+          "note": {
+            "type": "string"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "updatedAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "AuditEntry": {
+        "type": "object",
+        "properties": {
+          "time": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "tenant": {
+            "type": "string"
+          },
+          "actor": {
+            "type": "string"
+          },
+          "interface": {
+            "type": "string",
+            "enum": [
+              "admin",
+              "es2p",
+              "es9p",
+              "es11",
+              "es12"
+            ]
+          },
+          "function": {
+            "type": "string"
+          },
+          "subject": {
+            "type": "string"
+          },
+          "outcome": {
+            "type": "string",
+            "enum": [
+              "Executed-Success",
+              "Failed"
+            ]
+          },
+          "statusCode": {
+            "type": "string"
+          },
+          "remoteAddr": {
+            "type": "string"
+          },
+          "detail": {}
+        }
+      },
+      "Event": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer"
+          },
+          "tenant": {
+            "type": "string"
+          },
+          "eid": {
+            "type": "string"
+          },
+          "eventId": {
+            "type": "string"
+          },
+          "rspServerAddress": {
+            "type": "string"
+          },
+          "callerOid": {
+            "type": "string"
+          },
+          "iccid": {
+            "type": "string"
+          },
+          "matchingId": {
+            "type": "string"
+          },
+          "forwardingIndicator": {
+            "type": "boolean"
+          },
+          "cascaded": {
+            "type": "boolean"
+          },
+          "rootEventId": {
+            "type": "string"
+          },
+          "registeredAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "expiresAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "deletedAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "Page": {
+        "type": "object",
+        "required": [
+          "page",
+          "size",
+          "total"
+        ],
+        "properties": {
+          "page": {
+            "type": "integer"
+          },
+          "size": {
+            "type": "integer"
+          },
+          "total": {
+            "type": "integer"
+          }
+        }
+      }
+    },
+    "responses": {
+      "Error": {
+        "description": "Error",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/Error"
+            }
+          }
+        }
+      }
+    }
+  },
+  "paths": {
+    "/admin/api/v1/tenants": {
+      "get": {
+        "tags": [
+          "tenants"
+        ],
+        "summary": "List tenants",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "tenants"
+        ],
+        "summary": "Create or replace a tenant",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Tenant"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/admin/api/v1/tenants/{id}": {
+      "parameters": [
+        {
+          "name": "id",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "get": {
+        "tags": [
+          "tenants"
+        ],
+        "summary": "Get a tenant",
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "404": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      },
+      "patch": {
+        "tags": [
+          "tenants"
+        ],
+        "summary": "Update tenant attributes",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Tenant"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "tenants"
+        ],
+        "summary": "Delete a tenant",
+        "responses": {
+          "204": {
+            "description": "Deleted"
+          },
+          "404": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/admin/api/v1/profiles": {
+      "get": {
+        "tags": [
+          "profiles"
+        ],
+        "summary": "List profiles",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/tenant"
+          },
+          {
+            "name": "state",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "eid",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "iccid",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "externalRef",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "batchId",
+            "in": "query",
+            "schema": {
+              "type": "integer"
+            }
+          },
+          {
+            "name": "q",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "$ref": "#/components/parameters/from"
+          },
+          {
+            "$ref": "#/components/parameters/to"
+          },
+          {
+            "$ref": "#/components/parameters/page"
+          },
+          {
+            "$ref": "#/components/parameters/size"
+          },
+          {
+            "$ref": "#/components/parameters/sort"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "profiles"
+        ],
+        "summary": "Create a profile (equivalent to ES2+.downloadOrder)",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/idempotencyKey"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateProfileRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Created"
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          },
+          "409": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/admin/api/v1/profiles/stats": {
+      "get": {
+        "tags": [
+          "profiles"
+        ],
+        "summary": "Aggregate profile counts/trend",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/tenant"
+          },
+          {
+            "$ref": "#/components/parameters/from"
+          },
+          {
+            "$ref": "#/components/parameters/to"
+          },
+          {
+            "name": "groupBy",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "state",
+                "day",
+                "tenant"
+              ]
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/admin/api/v1/profiles/bulk": {
+      "post": {
+        "tags": [
+          "profiles"
+        ],
+        "summary": "Apply an action (confirm|cancel|release|delete) to a list of ICCIDs",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/admin/api/v1/profiles/export": {
+      "get": {
+        "tags": [
+          "profiles"
+        ],
+        "summary": "Export profiles (format=csv|json, same filters as the list)",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/admin/api/v1/profiles/import": {
+      "post": {
+        "tags": [
+          "profiles"
+        ],
+        "summary": "Import profiles from a JSON or CSV record list",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/idempotencyKey"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "tenant": {
+                    "type": "string"
+                  },
+                  "records": {
+                    "type": "array",
+                    "items": {
+                      "$ref": "#/components/schemas/CreateProfileRequest"
+                    }
+                  }
+                }
+              }
+            },
+            "text/csv": {
+              "schema": {
+                "type": "string"
+              },
+              "example": "iccid,eid,profileType,externalRef\n89000123456789012341,,operational,order-1\n"
+            }
+          }
+        }
+      }
+    },
+    "/admin/api/v1/profiles/{iccid}": {
+      "parameters": [
+        {
+          "name": "iccid",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "get": {
+        "tags": [
+          "profiles"
+        ],
+        "summary": "Get a profile",
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "404": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      },
+      "patch": {
+        "tags": [
+          "profiles"
+        ],
+        "summary": "Update mutable profile fields",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "profiles"
+        ],
+        "summary": "Delete a profile and return its ICCID to the pool",
+        "responses": {
+          "204": {
+            "description": "Deleted"
+          }
+        }
+      }
+    },
+    "/admin/api/v1/profiles/{iccid}/timeline": {
+      "get": {
+        "tags": [
+          "profiles"
+        ],
+        "summary": "Merged order + notification + session + audit timeline for a profile",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/admin/api/v1/profiles/{iccid}/confirm": {
+      "post": {
+        "tags": [
+          "profiles"
+        ],
+        "summary": "Confirm the download order",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/admin/api/v1/profiles/{iccid}/cancel": {
+      "post": {
+        "tags": [
+          "profiles"
+        ],
+        "summary": "Cancel the download order (returns the ICCID to the pool)",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/admin/api/v1/profiles/{iccid}/release": {
+      "post": {
+        "tags": [
+          "profiles"
+        ],
+        "summary": "Release the profile",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/admin/api/v1/profiles/{iccid}/activation-code": {
+      "post": {
+        "tags": [
+          "profiles"
+        ],
+        "summary": "Generate an activation code",
+        "parameters": [
+          {
+            "name": "rotate",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "1"
+              ]
+            },
+            "description": "Issue a fresh matchingId and invalidate the previous QR content."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/admin/api/v1/upp": {
+      "get": {
+        "tags": [
+          "upp"
+        ],
+        "summary": "List UPP templates (own + global when tenant is given)",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/tenant"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "upp"
+        ],
+        "summary": "Add/replace a UPP template (base64 DER, SAIP version parsed server-side)",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "name",
+                  "data"
+                ],
+                "properties": {
+                  "name": {
+                    "type": "string"
+                  },
+                  "tenant": {
+                    "type": "string"
+                  },
+                  "data": {
+                    "type": "string",
+                    "format": "byte"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/admin/api/v1/upp/validate": {
+      "post": {
+        "tags": [
+          "upp"
+        ],
+        "summary": "Validate an uploaded SAIP binary without storing it",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "data"
+                ],
+                "properties": {
+                  "data": {
+                    "type": "string",
+                    "format": "byte"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/admin/api/v1/upp/render": {
+      "post": {
+        "tags": [
+          "upp"
+        ],
+        "summary": "Dry-run: render a template with personalization values (allocates nothing)",
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/admin/api/v1/upp/{name}": {
+      "parameters": [
+        {
+          "name": "name",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        },
+        {
+          "$ref": "#/components/parameters/tenant"
+        }
+      ],
+      "get": {
+        "tags": [
+          "upp"
+        ],
+        "summary": "Get UPP metadata",
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "404": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "upp"
+        ],
+        "summary": "Delete a UPP template",
+        "responses": {
+          "204": {
+            "description": "Deleted"
+          }
+        }
+      }
+    },
+    "/admin/api/v1/upp/{name}/bytes": {
+      "get": {
+        "tags": [
+          "upp"
+        ],
+        "summary": "Download the UPP DER",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/admin/api/v1/upp/{name}/decoded": {
+      "get": {
+        "tags": [
+          "upp"
+        ],
+        "summary": "Decoded UPP view (header, services, GFSTE, elements, files)",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/admin/api/v1/upp/{name}/schema": {
+      "get": {
+        "tags": [
+          "upp"
+        ],
+        "summary": "Personalization field schema (types, required, length constraints)",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/admin/api/v1/upp/{name}/activate": {
+      "post": {
+        "tags": [
+          "upp"
+        ],
+        "summary": "Enable a UPP template",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/admin/api/v1/upp/{name}/deactivate": {
+      "post": {
+        "tags": [
+          "upp"
+        ],
+        "summary": "Disable a UPP template",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/admin/api/v1/upp/{name}/clone": {
+      "post": {
+        "tags": [
+          "upp"
+        ],
+        "summary": "Derive a tenant template from a global one",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "tenant": {
+                    "type": "string"
+                  },
+                  "name": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Created"
+          }
+        }
+      }
+    },
+    "/admin/api/v1/upp/{name}/promote": {
+      "post": {
+        "tags": [
+          "upp"
+        ],
+        "summary": "Promote a tenant template to global (tenant_id = NULL)",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/admin/api/v1/batches": {
+      "get": {
+        "tags": [
+          "batches"
+        ],
+        "summary": "List download batches",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/tenant"
+          },
+          {
+            "$ref": "#/components/parameters/page"
+          },
+          {
+            "$ref": "#/components/parameters/size"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "batches"
+        ],
+        "summary": "Create a download batch (allocates N profiles)",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/idempotencyKey"
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": "Created"
+          }
+        }
+      }
+    },
+    "/admin/api/v1/batches/{id}": {
+      "parameters": [
+        {
+          "name": "id",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "integer"
+          }
+        }
+      ],
+      "get": {
+        "tags": [
+          "batches"
+        ],
+        "summary": "Get a batch and its state breakdown",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "batches"
+        ],
+        "summary": "Delete a batch",
+        "responses": {
+          "204": {
+            "description": "Deleted"
+          }
+        }
+      }
+    },
+    "/admin/api/v1/batches/{id}/items": {
+      "get": {
+        "tags": [
+          "batches"
+        ],
+        "summary": "List the profiles in a batch",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/admin/api/v1/batches/{id}/confirm": {
+      "post": {
+        "tags": [
+          "batches"
+        ],
+        "summary": "Confirm all profiles in a batch",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/admin/api/v1/batches/{id}/cancel": {
+      "post": {
+        "tags": [
+          "batches"
+        ],
+        "summary": "Cancel all profiles in a batch",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/admin/api/v1/audit": {
+      "get": {
+        "tags": [
+          "audit"
+        ],
+        "summary": "Query the audit log",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/tenant"
+          },
+          {
+            "name": "interface",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "function",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "subject",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "actor",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "outcome",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "$ref": "#/components/parameters/from"
+          },
+          {
+            "$ref": "#/components/parameters/to"
+          },
+          {
+            "$ref": "#/components/parameters/page"
+          },
+          {
+            "$ref": "#/components/parameters/size"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/admin/api/v1/audit/stats": {
+      "get": {
+        "tags": [
+          "audit"
+        ],
+        "summary": "Aggregate audit counts",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/tenant"
+          },
+          {
+            "$ref": "#/components/parameters/from"
+          },
+          {
+            "$ref": "#/components/parameters/to"
+          },
+          {
+            "name": "groupBy",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "function",
+                "tenant",
+                "interface",
+                "day",
+                "outcome"
+              ]
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/admin/api/v1/notifications": {
+      "get": {
+        "tags": [
+          "notifications"
+        ],
+        "summary": "List received ES9+ notifications",
+        "parameters": [
+          {
+            "name": "iccid",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "eid",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "$ref": "#/components/parameters/from"
+          },
+          {
+            "$ref": "#/components/parameters/to"
+          },
+          {
+            "$ref": "#/components/parameters/page"
+          },
+          {
+            "$ref": "#/components/parameters/size"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/admin/api/v1/iccid-pool": {
+      "get": {
+        "tags": [
+          "iccid-pool"
+        ],
+        "summary": "List ICCID pool entries",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/tenant"
+          },
+          {
+            "name": "state",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "iccid",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "$ref": "#/components/parameters/page"
+          },
+          {
+            "$ref": "#/components/parameters/size"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/admin/api/v1/iccid-pool/stats": {
+      "get": {
+        "tags": [
+          "iccid-pool"
+        ],
+        "summary": "ICCID pool counts by state (incl. reservation_expired)",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/tenant"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/admin/api/v1/iccid-pool/reserve": {
+      "post": {
+        "tags": [
+          "iccid-pool"
+        ],
+        "summary": "Reserve an ICCID (and its paired IMSI, when the pool carries one)",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "eid": {
+                    "type": "string"
+                  },
+                  "tenant": {
+                    "type": "string"
+                  },
+                  "reference": {
+                    "type": "string"
+                  },
+                  "ttlSeconds": {
+                    "type": "integer"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "409": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/admin/api/v1/iccid-pool/release": {
+      "post": {
+        "tags": [
+          "iccid-pool"
+        ],
+        "summary": "Return an ICCID to the pool",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/admin/api/v1/iccid-pool/block": {
+      "post": {
+        "tags": [
+          "iccid-pool"
+        ],
+        "summary": "Block an ICCID",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/admin/api/v1/iccid-ranges": {
+      "get": {
+        "tags": [
+          "iccid-pool"
+        ],
+        "summary": "List imported ICCID ranges",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/tenant"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "iccid-pool"
+        ],
+        "summary": "Import an ICCID range",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "start",
+                  "end"
+                ],
+                "properties": {
+                  "start": {
+                    "type": "string"
+                  },
+                  "end": {
+                    "type": "string"
+                  },
+                  "note": {
+                    "type": "string"
+                  },
+                  "tenant": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Created"
+          }
+        }
+      }
+    },
+    "/admin/api/v1/iccid-ranges/{id}": {
+      "parameters": [
+        {
+          "name": "id",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "integer"
+          }
+        }
+      ],
+      "delete": {
+        "tags": [
+          "iccid-pool"
+        ],
+        "summary": "Delete an ICCID range",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/admin/api/v1/personalization": {
+      "get": {
+        "tags": [
+          "personalization"
+        ],
+        "summary": "List personalization records",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/tenant"
+          },
+          {
+            "name": "iccid",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "reveal",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "1"
+              ]
+            }
+          },
+          {
+            "$ref": "#/components/parameters/page"
+          },
+          {
+            "$ref": "#/components/parameters/size"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/admin/api/v1/personalization/export": {
+      "get": {
+        "tags": [
+          "personalization"
+        ],
+        "summary": "Export personalization (format=csv|json; includes K/OPc)",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/admin/api/v1/personalization/import": {
+      "post": {
+        "tags": [
+          "personalization"
+        ],
+        "summary": "Bulk import personalization records",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/admin/api/v1/personalization/pool/import": {
+      "post": {
+        "tags": [
+          "personalization"
+        ],
+        "summary": "Import credentials without an ICCID (IMSI+K/OPc), for pairing at reservation time",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "tenant": {
+                    "type": "string"
+                  },
+                  "records": {
+                    "type": "array",
+                    "items": {
+                      "$ref": "#/components/schemas/Personalization"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/admin/api/v1/personalization/{iccid}": {
+      "parameters": [
+        {
+          "name": "iccid",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "get": {
+        "tags": [
+          "personalization"
+        ],
+        "summary": "Get a record (?reveal=1 to include K/OPc)",
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "404": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "personalization"
+        ],
+        "summary": "Create/replace a record",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "personalization"
+        ],
+        "summary": "Delete a record",
+        "responses": {
+          "204": {
+            "description": "Deleted"
+          }
+        }
+      }
+    },
+    "/admin/api/v1/events": {
+      "get": {
+        "tags": [
+          "audit"
+        ],
+        "summary": "List SM-DS event records (SM-DS role only)",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/tenant"
+          },
+          {
+            "name": "eid",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "eventId",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "iccid",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "status",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "active",
+                "expired",
+                "deleted",
+                "any"
+              ]
+            }
+          },
+          {
+            "$ref": "#/components/parameters/from"
+          },
+          {
+            "$ref": "#/components/parameters/to"
+          },
+          {
+            "$ref": "#/components/parameters/sort"
+          },
+          {
+            "$ref": "#/components/parameters/page"
+          },
+          {
+            "$ref": "#/components/parameters/size"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/admin/api/v1/eids": {
+      "get": {
+        "tags": [
+          "profiles"
+        ],
+        "summary": "Aggregate the inventory by eUICC (EID)",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/tenant"
+          },
+          {
+            "name": "state",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "$ref": "#/components/parameters/from"
+          },
+          {
+            "$ref": "#/components/parameters/to"
+          },
+          {
+            "$ref": "#/components/parameters/page"
+          },
+          {
+            "$ref": "#/components/parameters/size"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/admin/api/v1/upp/{name}/versions": {
+      "get": {
+        "tags": [
+          "upp"
+        ],
+        "summary": "List archived revisions of a template",
+        "parameters": [
+          {
+            "name": "name",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "$ref": "#/components/parameters/tenant"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/admin/api/v1/upp/{name}/versions/{version}/restore": {
+      "post": {
+        "tags": [
+          "upp"
+        ],
+        "summary": "Roll a template back to an archived revision",
+        "parameters": [
+          {
+            "name": "name",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "version",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            }
+          },
+          {
+            "$ref": "#/components/parameters/tenant"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "404": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    }
+  }
+}

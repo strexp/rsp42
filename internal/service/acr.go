@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"errors"
 
 	"rsp42/internal/activationcode"
 	"rsp42/internal/rsp"
@@ -10,7 +11,7 @@ import (
 
 // handleACR implements the Activation Code Retrieval branch (SGP.22
 // §3.1.7/§3.1.8). The eUICC's matchingId is ACR-<0|1>-<ICCID>.
-func (c *CMAE) handleACR(transactionID string, ca *clientAuth) (*AuthenticateResult, error) {
+func (c *CMAE) handleACR(ctx context.Context, transactionID string, ca *clientAuth) (*AuthenticateResult, error) {
 	acr, err := activationcode.ParseACR(ca.MatchingID)
 	if err != nil {
 		return nil, rsp.CodeInputRefused.Status(err.Error())
@@ -27,11 +28,15 @@ func (c *CMAE) handleACR(transactionID string, ca *clientAuth) (*AuthenticateRes
 	}
 
 	// Confirm with the Operator when ES2+.HandleAcrRequest is configured
-	// (SGP.22 §3.1.7 / §5.3.8).
+	// (SGP.22 §3.1.7 / §5.3.8). The Operator is asked for both ACR types —
+	// redownload and availability check — before anything is issued.
 	if c.ACRCheck != nil {
-		if err := c.ACRCheck(context.Background(), profile.ICCID); err != nil {
-			c.notify(context.Background(), ca.EID, profile.ICCID, 17, "Failed")
-			return nil, rsp.CodeInputRefused.Status("Operator rejected Activation Code Retrieval")
+		if err := c.ACRCheck(ctx, profile); err != nil {
+			c.notify(ctx, progressFor(profile, ca.EID, 17, "Failed"))
+			if errors.Is(err, rsp.ErrACRRefused) {
+				return nil, rsp.CodeACRNotAllowed.Status("Operator refused Activation Code Retrieval")
+			}
+			return nil, rsp.CodeInputRefused.Status("Activation Code Retrieval confirmation failed")
 		}
 	}
 
@@ -59,6 +64,6 @@ func (c *CMAE) handleACR(transactionID string, ca *clientAuth) (*AuthenticateRes
 	if err := c.Sessions.Put(sess); err != nil {
 		return nil, err
 	}
-	c.notify(context.Background(), ca.EID, profile.ICCID, 17, "Executed-Success")
+	c.notify(ctx, progressFor(profile, ca.EID, 17, "Executed-Success"))
 	return &AuthenticateResult{TransactionID: transactionID, ProfileMetadata: meta, ACROnly: true}, nil
 }

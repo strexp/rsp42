@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"io"
 	"log/slog"
 	"net/http"
@@ -13,6 +14,7 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/stretchr/testify/require"
@@ -31,11 +33,29 @@ func newTestServer(t *testing.T) (*httptest.Server, *store.Store) {
 	require.NoError(t, err)
 	inv := service.NewInventory(st.Profiles, "8900012", "00101")
 	inv.Pool = st.Pool
+	inv.ReserveTTL = time.Hour
+	inv.ProfileQuota = func(tenant string) (*int, error) {
+		tn, err := st.Tenants.Get(tenant)
+		if errors.Is(err, store.ErrNotFound) {
+			return nil, nil
+		}
+		if err != nil {
+			return nil, err
+		}
+		return tn.ProfileQuota, nil
+	}
+	inv.CountProfiles = func(tenant string) (int, error) {
+		_, total, err := st.Profiles.ListFiltered(store.ProfileFilter{Tenant: &tenant}, 1, 0, "")
+		return total, err
+	}
+	orders := service.NewOrderService(st.Profiles)
+	orders.Pool = st.Pool
 	h := &Handler{
-		Log: slog.Default(), Profiles: st.Profiles,
-		Orders: service.NewOrderService(st.Profiles), Inventory: inv,
+		Log: slog.Default(), Tenants: st.Tenants, Profiles: st.Profiles,
+		Orders: orders, Inventory: inv,
 		UPP: st.UPP, Perso: service.NewPersonalizationService(st.Perso, provider), Audit: st.Audit, Batch: st.Batch,
-		OrderRepo: st.Orders, Notifs: st.Notifs, Pool: st.Pool,
+		OrderRepo: st.Orders, Notifs: st.Notifs, Sessions: st.Sessions, Pool: st.Pool, Events: st.Events,
+		Idem: st.Idem, DefaultReserveTTL: time.Hour,
 		FQDN: "testsmdpplus1.example.com", OID: "2.999.10",
 	}
 	r := chi.NewRouter()
@@ -286,7 +306,7 @@ func TestAdminExportImport(t *testing.T) {
 	// Export CSV.
 	status, raw := do(t, "GET", base+"/profiles/export?format=csv", nil)
 	require.Equal(t, 200, status)
-	require.Contains(t, string(raw), "iccid,imsi,profileType")
+	require.Contains(t, string(raw), "iccid,tenant,externalRef,imsi,profileType")
 
 	// Export JSON + re-import one record.
 	status, raw = do(t, "GET", base+"/profiles/export?format=json", nil)

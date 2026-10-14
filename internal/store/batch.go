@@ -10,7 +10,9 @@ import (
 // DownloadBatch groups a list of profiles/orders managed together (a "download
 // list"). The individual profiles carry `batch_id`.
 type DownloadBatch struct {
-	ID          int64
+	ID int64
+	// TenantID is the owning carrier; empty is the platform default.
+	TenantID    string
 	Name        string
 	ProfileType string
 	State       string // Open | Completed | Cancelled
@@ -23,14 +25,14 @@ type DownloadBatch struct {
 // BatchRepo persists download batches.
 type BatchRepo struct{ db *sql.DB }
 
-const batchCols = `id, name, profile_type, state, total, note, created_at, updated_at`
+const batchCols = `id, COALESCE(tenant_id,''), name, profile_type, state, total, note, created_at, updated_at`
 
 // Insert stores a batch and returns its id.
 func (r *BatchRepo) Insert(b *DownloadBatch) (int64, error) {
 	now := time.Now().UTC().Unix()
-	res, err := r.db.Exec(`INSERT INTO download_batches (name, profile_type, state, total, note, created_at, updated_at)
-		VALUES (?,?,?,?,?,?,?)`,
-		nullStr(b.Name), nullStr(b.ProfileType), b.State, b.Total, nullStr(b.Note), now, now)
+	res, err := r.db.Exec(`INSERT INTO download_batches (tenant_id, name, profile_type, state, total, note, created_at, updated_at)
+		VALUES (?,?,?,?,?,?,?,?)`,
+		nullStr(b.TenantID), nullStr(b.Name), nullStr(b.ProfileType), b.State, b.Total, nullStr(b.Note), now, now)
 	if err != nil {
 		return 0, err
 	}
@@ -52,13 +54,14 @@ func (r *BatchRepo) Get(id int64) (*DownloadBatch, error) {
 	return b, err
 }
 
-// List returns a page of batches (newest first) and the total count.
-func (r *BatchRepo) List(limit, offset int) ([]*DownloadBatch, int, error) {
+// List returns a page of batches (newest first) and the total count. tenant
+// limits the listing to one owner; "" selects the platform-default owner.
+func (r *BatchRepo) List(tenant string, limit, offset int) ([]*DownloadBatch, int, error) {
 	var total int
-	if err := r.db.QueryRow("SELECT COUNT(*) FROM download_batches").Scan(&total); err != nil {
+	if err := r.db.QueryRow("SELECT COUNT(*) FROM download_batches WHERE COALESCE(tenant_id,'') = ?", tenant).Scan(&total); err != nil {
 		return nil, 0, err
 	}
-	rows, err := r.db.Query("SELECT "+batchCols+" FROM download_batches ORDER BY id DESC LIMIT ? OFFSET ?", limit, offset)
+	rows, err := r.db.Query("SELECT "+batchCols+" FROM download_batches WHERE COALESCE(tenant_id,'') = ? ORDER BY id DESC LIMIT ? OFFSET ?", tenant, limit, offset)
 	if err != nil {
 		return nil, 0, err
 	}
@@ -97,7 +100,7 @@ func scanBatch(sc rowScanner) (*DownloadBatch, error) {
 	var b DownloadBatch
 	var name, ptype, note sql.NullString
 	var created, updated int64
-	if err := sc.Scan(&b.ID, &name, &ptype, &b.State, &b.Total, &note, &created, &updated); err != nil {
+	if err := sc.Scan(&b.ID, &b.TenantID, &name, &ptype, &b.State, &b.Total, &note, &created, &updated); err != nil {
 		return nil, err
 	}
 	b.Name, b.ProfileType, b.Note = name.String, ptype.String, note.String

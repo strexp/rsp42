@@ -12,17 +12,24 @@ import (
 )
 
 type persoView struct {
-	ICCID          string `json:"iccid"`
-	IMSI           string `json:"imsi,omitempty"`
-	SPN            string `json:"spn,omitempty"`
-	Algorithm      string `json:"algorithm,omitempty"`
-	HasK           bool   `json:"hasK"`
-	HasOPc         bool   `json:"hasOPc"`
-	PIN1           string `json:"pin1,omitempty"`
-	PUK1           string `json:"puk1,omitempty"`
-	ADM1           string `json:"adm1,omitempty"`
-	ADM2           string `json:"adm2,omitempty"`
-	NumberOfKeccak *int64 `json:"numberOfKeccak,omitempty"`
+	ICCID          string                       `json:"iccid,omitempty"`
+	Tenant         string                       `json:"tenant,omitempty"`
+	IMSI           string                       `json:"imsi,omitempty"`
+	SPN            string                       `json:"spn,omitempty"`
+	Algorithm      string                       `json:"algorithm,omitempty"`
+	HasK           bool                         `json:"hasK"`
+	HasOPc         bool                         `json:"hasOPc"`
+	PIN1           string                       `json:"pin1,omitempty"`
+	PUK1           string                       `json:"puk1,omitempty"`
+	ADM1           string                       `json:"adm1,omitempty"`
+	ADM2           string                       `json:"adm2,omitempty"`
+	NumberOfKeccak *int64                       `json:"numberOfKeccak,omitempty"`
+	PLMN           []personalization.PLMNRecord `json:"plmn,omitempty"`
+	MSISDN         string                       `json:"msisdn,omitempty"`
+	ACC            *uint16                      `json:"acc,omitempty"`
+	FilePatches    []personalization.FilePatch  `json:"filePatches,omitempty"`
+	// Pool reports a credentials-pool entry (no ICCID bound yet).
+	Pool bool `json:"pool,omitempty"`
 	// Secrets are only included when explicitly requested (?reveal=1).
 	K        string `json:"k,omitempty"`
 	OPc      string `json:"opc,omitempty"`
@@ -35,6 +42,8 @@ func toPersoView(d *personalization.Data, reveal bool) persoView {
 		ICCID: d.ICCID, IMSI: d.IMSI, SPN: d.SPN, Algorithm: d.Algorithm,
 		HasK: len(d.K) > 0, HasOPc: len(d.OPc) > 0,
 		PIN1: d.PIN1, PUK1: d.PUK1, ADM1: d.ADM1, ADM2: d.ADM2, NumberOfKeccak: d.NumberOfKeccak,
+		PLMN: d.PLMN, MSISDN: d.MSISDN, ACC: d.ACC, FilePatches: d.FilePatches,
+		Pool: d.ICCID == "",
 	}
 	if reveal {
 		v.K = strings.ToUpper(hex.EncodeToString(d.K))
@@ -47,33 +56,26 @@ func toPersoView(d *personalization.Data, reveal bool) persoView {
 
 func (h *Handler) listPerso(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query()
-	size := atoiDefault(q.Get("size"), defaultPageSize)
-	if size < 1 {
-		size = defaultPageSize
-	}
-	if size > maxPageSize {
-		size = maxPageSize
-	}
-	page := atoiDefault(q.Get("page"), 1)
-	if page < 1 {
-		page = 1
-	}
+	size := clampSize(atoiDefault(q.Get("size"), defaultPageSize))
+	page := clampPage(atoiDefault(q.Get("page"), 1))
 	reveal := q.Get("reveal") == "1"
-	items, total, err := h.Perso.ListPage(q.Get("iccid"), size, (page-1)*size)
+	items, total, err := h.Perso.ListPage(q.Get("iccid"), scopeTenantParam(r), size, (page-1)*size)
 	if err != nil {
 		writeErr(w, http.StatusInternalServerError, err.Error())
 		return
 	}
 	views := make([]persoView, 0, len(items))
 	for _, d := range items {
-		views = append(views, toPersoView(d, reveal))
+		v := toPersoView(d, reveal)
+		v.Tenant = scopeTenantParam(r)
+		views = append(views, v)
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"items": views, "page": page, "size": size, "total": total})
 }
 
 func (h *Handler) getPerso(w http.ResponseWriter, r *http.Request) {
 	iccid := normalizeICCID(chi.URLParam(r, "iccid"))
-	d, err := h.Perso.Resolve(iccid)
+	d, err := h.Perso.Resolve(scopeTenantParam(r), iccid, "")
 	if err != nil {
 		writeErr(w, http.StatusInternalServerError, err.Error())
 		return
@@ -82,29 +84,36 @@ func (h *Handler) getPerso(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusNotFound, "no personalization for ICCID")
 		return
 	}
-	writeJSON(w, http.StatusOK, toPersoView(d, r.URL.Query().Get("reveal") == "1"))
+	v := toPersoView(d, r.URL.Query().Get("reveal") == "1")
+	v.Tenant = scopeTenantParam(r)
+	writeJSON(w, http.StatusOK, v)
 }
 
 type persoReq struct {
-	IMSI           string `json:"imsi"`
-	K              string `json:"k"`   // hex
-	OPc            string `json:"opc"` // hex
-	PIN1           string `json:"pin1"`
-	PUK1           string `json:"puk1"`
-	ADM1           string `json:"adm1"`
-	ADM2           string `json:"adm2"`
-	SPN            string `json:"spn"`
-	Algorithm      string `json:"algorithm"`
-	Rotation       string `json:"rotation"` // hex
-	Xoring         string `json:"xoring"`   // hex
-	NumberOfKeccak *int64 `json:"numberOfKeccak"`
+	IMSI           string                       `json:"imsi"`
+	K              string                       `json:"k"`   // hex
+	OPc            string                       `json:"opc"` // hex
+	PIN1           string                       `json:"pin1"`
+	PUK1           string                       `json:"puk1"`
+	ADM1           string                       `json:"adm1"`
+	ADM2           string                       `json:"adm2"`
+	SPN            string                       `json:"spn"`
+	Algorithm      string                       `json:"algorithm"`
+	Rotation       string                       `json:"rotation"` // hex
+	Xoring         string                       `json:"xoring"`   // hex
+	NumberOfKeccak *int64                       `json:"numberOfKeccak"`
+	PLMN           []personalization.PLMNRecord `json:"plmn"`
+	MSISDN         string                       `json:"msisdn"`
+	ACC            *uint16                      `json:"acc"`
+	FilePatches    []personalization.FilePatch  `json:"filePatches"`
 }
 
 func (req *persoReq) toData(iccid string) (*personalization.Data, error) {
 	d := &personalization.Data{
 		ICCID: iccid, IMSI: req.IMSI, PIN1: req.PIN1, PUK1: req.PUK1,
 		ADM1: req.ADM1, ADM2: req.ADM2, SPN: req.SPN, Algorithm: req.Algorithm,
-		NumberOfKeccak: req.NumberOfKeccak,
+		NumberOfKeccak: req.NumberOfKeccak, PLMN: req.PLMN, MSISDN: req.MSISDN,
+		ACC: req.ACC, FilePatches: req.FilePatches,
 	}
 	var err error
 	if d.K, err = hexField(req.K, "k"); err != nil {
@@ -143,23 +152,28 @@ func (h *Handler) putPerso(w http.ResponseWriter, r *http.Request) {
 	if !readJSON(w, r, &req) {
 		return
 	}
+	tenant, err := h.effectiveTenant(r, "")
+	if err != nil {
+		writeTenantErr(w, err)
+		return
+	}
 	d, err := req.toData(iccid)
 	if err != nil {
 		writeErr(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	if err := h.Perso.Put(d); err != nil {
+	if err := h.Perso.Put(tenant, d); err != nil {
 		writeErr(w, http.StatusInternalServerError, err.Error())
 		return
 	}
 	h.audit(r, "putPersonalization", iccid, "Executed-Success", nil)
-	stored, _ := h.Perso.Resolve(iccid)
+	stored, _ := h.Perso.Resolve(tenant, iccid, "")
 	writeJSON(w, http.StatusOK, toPersoView(stored, false))
 }
 
 func (h *Handler) deletePerso(w http.ResponseWriter, r *http.Request) {
 	iccid := normalizeICCID(chi.URLParam(r, "iccid"))
-	if err := h.Perso.Delete(iccid); err != nil {
+	if err := h.Perso.Delete(scopeTenantParam(r), iccid); err != nil {
 		writeErr(w, http.StatusNotFound, "no personalization for ICCID")
 		return
 	}
@@ -177,6 +191,11 @@ func (h *Handler) importPerso(w http.ResponseWriter, r *http.Request) {
 	if !readJSON(w, r, &req) {
 		return
 	}
+	tenant, err := h.effectiveTenant(r, "")
+	if err != nil {
+		writeTenantErr(w, err)
+		return
+	}
 	n := 0
 	for i, rec := range req.Records {
 		iccid := normalizeICCID(rec.ICCID)
@@ -189,12 +208,55 @@ func (h *Handler) importPerso(w http.ResponseWriter, r *http.Request) {
 			writeErr(w, http.StatusBadRequest, fmt.Sprintf("record %d: %v", i+1, err))
 			return
 		}
-		if err := h.Perso.Put(d); err != nil {
+		if err := h.Perso.Put(tenant, d); err != nil {
 			writeErr(w, http.StatusInternalServerError, err.Error())
 			return
 		}
 		n++
 	}
-	h.audit(r, "importPersonalization", "", "Executed-Success", map[string]any{"records": n})
+	h.audit(r, "importPersonalization", "", "Executed-Success", map[string]any{"records": n, "tenant": tenant})
 	writeJSON(w, http.StatusOK, map[string]any{"imported": n})
+}
+
+// importPersoPool imports credentials that have no ICCID yet (IMSI + K/OPc), to
+// be paired with an ICCID when one is reserved (G6).
+func (h *Handler) importPersoPool(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		Tenant  string     `json:"tenant"`
+		Records []persoReq `json:"records"`
+	}
+	if !readJSON(w, r, &req) {
+		return
+	}
+	tenant, err := h.effectiveTenant(r, req.Tenant)
+	if err != nil {
+		writeTenantErr(w, err)
+		return
+	}
+	type result struct {
+		IMSI  string `json:"imsi"`
+		OK    bool   `json:"ok"`
+		Error string `json:"error,omitempty"`
+	}
+	results := make([]result, 0, len(req.Records))
+	ok := 0
+	for i, rec := range req.Records {
+		if rec.IMSI == "" {
+			results = append(results, result{OK: false, Error: fmt.Sprintf("record %d has no imsi", i+1)})
+			continue
+		}
+		d, err := rec.toData("")
+		if err == nil {
+			err = h.Perso.Put(tenant, d)
+		}
+		res := result{IMSI: rec.IMSI, OK: err == nil}
+		if err != nil {
+			res.Error = err.Error()
+		} else {
+			ok++
+		}
+		results = append(results, res)
+	}
+	h.audit(r, "importPersonalizationPool", "", "Executed-Success", map[string]any{"imported": ok, "total": len(req.Records)})
+	writeJSON(w, http.StatusOK, map[string]any{"imported": ok, "results": results})
 }

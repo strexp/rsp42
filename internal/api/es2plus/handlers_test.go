@@ -21,14 +21,25 @@ import (
 
 func newServer(t *testing.T) (*es2plus.Client, *store.Store) {
 	t.Helper()
+	return newServerWith(t, nil)
+}
+
+// newServerWith builds an ES2+ test server; configure may adjust the handler
+// (e.g. install a tenant mapping or the idempotency repository).
+func newServerWith(t *testing.T, configure func(h *es2plus.Handler, st *store.Store)) (*es2plus.Client, *store.Store) {
+	t.Helper()
 	st, err := store.Open("file:" + filepath.Join(t.TempDir(), "es2p.db"))
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = st.Close() })
 
 	orders := service.NewOrderService(st.Profiles)
 	inventory := service.NewInventory(st.Profiles, "8900012", "00101")
+	inventory.Pool = st.Pool
 	h := es2plus.New(slog.Default(), st.Profiles, orders, inventory)
 	h.OrderAudit = st.Orders
+	if configure != nil {
+		configure(h, st)
+	}
 
 	// ES12 server (Root SM-DS) + registrar so ConfirmOrder registers events.
 	events := service.NewEventService(st.Events, "root", "testrootsmds.example.com", time.Hour)
@@ -156,15 +167,26 @@ func TestDownloadOrderWithRequestedICCID(t *testing.T) {
 	require.Equal(t, store.StateAllocated, p.State)
 }
 
-func TestDownloadOrderRequestedICCIDConflict(t *testing.T) {
-	client, _ := newServer(t)
+func TestDownloadOrderRequestedICCIDResend(t *testing.T) {
+	client, st := newServer(t)
 	iccid := luhnICCID(t, "890001234567890123")
 
-	_, err := client.DownloadOrder(context.Background(), "", iccid, "operational")
+	first, err := client.DownloadOrder(context.Background(), "", iccid, "operational")
 	require.NoError(t, err)
+	require.Equal(t, iccid, first.ICCID)
 
-	// Reusing an ICCID that is already reserved must fail.
-	_, err = client.DownloadOrder(context.Background(), "", iccid, "operational")
+	// SGP.22 Table 24 NOTE: an identical resend (same ICCID, same profileType,
+	// same EID, still Allocated/Linked) answers Executed-Success and creates no
+	// second profile.
+	second, err := client.DownloadOrder(context.Background(), "", iccid, "operational")
+	require.NoError(t, err)
+	require.Equal(t, iccid, second.ICCID)
+	_, total, err := st.Profiles.ListFiltered(store.ProfileFilter{ICCID: iccid}, 10, 0, "")
+	require.NoError(t, err)
+	require.Equal(t, 1, total)
+
+	// A different profileType is not the same result: it must be refused.
+	_, err = client.DownloadOrder(context.Background(), "", iccid, "other")
 	require.Error(t, err)
 }
 

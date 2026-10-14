@@ -3,6 +3,7 @@ package config
 import (
 	"encoding/hex"
 	"fmt"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -134,6 +135,26 @@ func (c *Config) validateDP() error {
 			return fmt.Errorf("certs.identities[%d]: CI cert not found at %s", i, ci)
 		}
 	}
+	switch c.Profiles.Repository {
+	case "sqlite":
+	case "":
+		return fmt.Errorf("profiles.repository must be set to \"sqlite\"")
+	default:
+		return fmt.Errorf("profiles.repository %q is not supported: rsp42 only implements SQLite "+
+			"(PostgreSQL and multi-replica deployments are deliberate non-goals, "+
+			"see docs/esim42-integration-gaps.md §8.4)", c.Profiles.Repository)
+	}
+	for i, m := range s.ES2P.RequesterTenants {
+		if strings.TrimSpace(m.Requester) == "" {
+			return fmt.Errorf("smdpp.es2p.requester_tenants[%d].requester must not be empty", i)
+		}
+	}
+	if ttl := c.Profiles.Personalization.ReserveTTL; ttl < 0 {
+		return fmt.Errorf("profiles.personalization.reserve_ttl must be >= 0")
+	}
+	if ttl := c.Profiles.Personalization.IdempotencyTTL; ttl < 0 {
+		return fmt.Errorf("profiles.personalization.idempotency_ttl must be >= 0")
+	}
 	for _, id := range c.Profiles.PPRIds {
 		if id < 0 || id > 2 {
 			return fmt.Errorf("profiles.ppr_ids entry %d out of range [0,2]", id)
@@ -142,7 +163,8 @@ func (c *Config) validateDP() error {
 	if err := validateKEKConfig(&c.KMS); err != nil {
 		return err
 	}
-	if cb := c.Notifications.ES2PCallback; cb.Enabled {
+	cb := c.Notifications.ES2PCallback
+	if cb.Enabled {
 		if cb.URL == "" {
 			return fmt.Errorf("notifications.es2p_callback.url is required when enabled")
 		}
@@ -151,6 +173,31 @@ func (c *Config) validateDP() error {
 		}
 		if cb.RetryInterval <= 0 {
 			return fmt.Errorf("notifications.es2p_callback.retry_interval must be positive")
+		}
+	}
+	// The ACR confirmation (ES2+.HandleAcrRequest) is configured independently
+	// of the progress callbacks, so it is validated on its own.
+	if cb.ACRURL != "" {
+		u, err := url.Parse(cb.ACRURL)
+		if err != nil || u.Scheme == "" || u.Host == "" {
+			return fmt.Errorf("notifications.es2p_callback.acr_url %q is not a valid absolute URL", cb.ACRURL)
+		}
+	}
+	if cb.ACRTimeout < 0 {
+		return fmt.Errorf("notifications.es2p_callback.acr_timeout must be >= 0")
+	}
+	if (cb.ClientCertFile == "") != (cb.ClientKeyFile == "") {
+		return fmt.Errorf("notifications.es2p_callback.client_cert_file and client_key_file must be set together")
+	}
+	if cb.ClientCertFile != "" || cb.CAFile != "" {
+		for _, p := range []struct{ name, path string }{
+			{"client_cert_file", cb.ClientCertFile},
+			{"client_key_file", cb.ClientKeyFile},
+			{"ca_file", cb.CAFile},
+		} {
+			if p.path != "" && !fileExists(p.path) {
+				return fmt.Errorf("notifications.es2p_callback: %s not found at %s", p.name, p.path)
+			}
 		}
 	}
 	if s.ES12.Enabled {

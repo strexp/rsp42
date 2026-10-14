@@ -9,6 +9,21 @@ import (
 	"rsp42/internal/saip"
 )
 
+// PLMNRecord is one entry of the preferred-PLMN lists (EF.PLMNwAcT /
+// EF.HPLMNwAcT). AcT is the raw 16-bit access-technology bitmask from
+// TS 31.102 and is written through verbatim.
+type PLMNRecord struct {
+	MCC string `json:"mcc"`
+	MNC string `json:"mnc"`
+	AcT uint16 `json:"act"`
+}
+
+// FilePatch overrides the raw body of one elementary file, addressed by FID.
+type FilePatch struct {
+	FID uint16 `json:"fid"`
+	Hex string `json:"hex"`
+}
+
 // Data is one set of personalization values supplied by an operator system.
 type Data struct {
 	ICCID     string
@@ -25,6 +40,16 @@ type Data struct {
 	RotationConstants []byte // 5 bytes
 	XoringConstants   []byte // 80 bytes
 	NumberOfKeccak    *int64
+	// PLMN is written to EF.PLMNwAcT and/or EF.HPLMNwAcT (whichever the template
+	// carries) when non-empty.
+	PLMN []PLMNRecord
+	// MSISDN is written to EF.MSISDN when non-empty.
+	MSISDN string
+	// ACC is written to EF.ACC (2 bytes, big-endian) when non-nil.
+	ACC *uint16
+	// FilePatches overrides raw EF bodies; a patch naming an absent file is an
+	// error (it almost always means an operator typo).
+	FilePatches []FilePatch
 }
 
 // Source provides personalization data. Implementations must not assume any
@@ -117,10 +142,119 @@ func (e *Engine) Apply(seq *saip.Sequence, d *Data) error {
 			f.SetBody([]byte(d.SPN))
 		}
 	}
+	if len(d.PLMN) > 0 {
+		if err := applyPLMN(seq, d.PLMN); err != nil {
+			return err
+		}
+	}
+	if d.MSISDN != "" {
+		if err := applyMSISDN(seq, d.MSISDN); err != nil {
+			return err
+		}
+	}
+	if d.ACC != nil {
+		if f := seq.FindFile(saip.FIDACC); f != nil {
+			f.SetBody([]byte{byte(*d.ACC >> 8), byte(*d.ACC)})
+		}
+	}
+	if err := applyFilePatches(seq, d.FilePatches); err != nil {
+		return err
+	}
 	if err := seq.RebuildMandatoryServices(); err != nil {
 		return err
 	}
 	return seq.RebuildMandatoryGFSTEList()
+}
+
+// applyPLMN writes the preferred PLMN list into EF.PLMNwAcT and EF.HPLMNwAcT
+// (whichever the template provides).
+func applyPLMN(seq *saip.Sequence, list []PLMNRecord) error {
+	body := make([]byte, 0, len(list)*5)
+	for _, r := range list {
+		plmn, err := EncodePLMN(r.MCC, r.MNC)
+		if err != nil {
+			return err
+		}
+		body = append(body, plmn...)
+		body = append(body, byte(r.AcT>>8), byte(r.AcT))
+	}
+	applied := false
+	for _, fid := range []uint16{saip.FIDHPLMNwAcT, saip.FIDPLMNwAcT, saip.FIDOPLMNwAcT} {
+		if f := seq.FindFile(fid); f != nil {
+			f.SetBody(body)
+			applied = true
+		}
+	}
+	if !applied {
+		return fmt.Errorf("personalization: no PLMN list file (EF.PLMNwAcT/EF.HPLMNwAcT) in the template")
+	}
+	return nil
+}
+
+// EncodePLMN encodes an MCC/MNC pair as the 3-byte PLMN of TS 24.008 §10.5.1.13.
+func EncodePLMN(mcc, mnc string) ([]byte, error) {
+	if len(mcc) != 3 {
+		return nil, fmt.Errorf("personalization: MCC %q must be 3 digits", mcc)
+	}
+	if len(mnc) != 2 && len(mnc) != 3 {
+		return nil, fmt.Errorf("personalization: MNC %q must be 2 or 3 digits", mnc)
+	}
+	for _, s := range []string{mcc, mnc} {
+		for i := 0; i < len(s); i++ {
+			if s[i] < '0' || s[i] > '9' {
+				return nil, fmt.Errorf("personalization: non-digit in PLMN %q", s)
+			}
+		}
+	}
+	mnc3 := byte(0xF)
+	if len(mnc) == 3 {
+		mnc3 = mnc[2] - '0'
+	}
+	return []byte{
+		(mcc[1]-'0')<<4 | (mcc[0] - '0'),
+		mnc3<<4 | (mcc[2] - '0'),
+		(mnc[1]-'0')<<4 | (mnc[0] - '0'),
+	}, nil
+}
+
+// applyMSISDN writes EF.MSISDN (length-prefixed international BCD number).
+func applyMSISDN(seq *saip.Sequence, msisdn string) error {
+	f := seq.FindFile(saip.FIDMSISDN)
+	if f == nil {
+		return fmt.Errorf("personalization: EF.MSISDN not found")
+	}
+	for i := 0; i < len(msisdn); i++ {
+		if msisdn[i] < '0' || msisdn[i] > '9' {
+			return fmt.Errorf("personalization: MSISDN %q must be digits only", msisdn)
+		}
+	}
+	digits := msisdn
+	if len(digits)%2 != 0 {
+		digits += "F"
+	}
+	body := make([]byte, 1+len(digits)/2)
+	body[0] = 0x91 // international
+	for i := 0; i < len(digits)/2; i++ {
+		body[i+1] = nibble(digits[2*i+1])<<4 | nibble(digits[2*i])
+	}
+	f.SetBody(append([]byte{byte(len(body))}, body...))
+	return nil
+}
+
+// applyFilePatches overrides raw EF bodies by FID.
+func applyFilePatches(seq *saip.Sequence, patches []FilePatch) error {
+	for _, p := range patches {
+		f := seq.FindFile(p.FID)
+		if f == nil {
+			return fmt.Errorf("personalization: file %04X not found for patch", p.FID)
+		}
+		raw, err := hex.DecodeString(p.Hex)
+		if err != nil {
+			return fmt.Errorf("personalization: file %04X patch is not hex: %w", p.FID, err)
+		}
+		f.SetBody(raw)
+	}
+	return nil
 }
 
 // ICCIDHeaderBytes encodes the ProfileHeader.iccid (plain BCD, 10 bytes).

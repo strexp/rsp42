@@ -16,6 +16,7 @@ import (
 
 type uppView struct {
 	Name      string    `json:"name"`
+	Tenant    string    `json:"tenant,omitempty"`
 	SAIPMajor int       `json:"saipMajor"`
 	SAIPMinor int       `json:"saipMinor"`
 	SAIP      string    `json:"saip"`
@@ -28,15 +29,29 @@ type uppView struct {
 
 func toUPPView(t *store.UPPTemplate) uppView {
 	return uppView{
-		Name: t.Name, SAIPMajor: t.SAIPMajor, SAIPMinor: t.SAIPMinor,
+		Name: t.Name, Tenant: t.TenantID, SAIPMajor: t.SAIPMajor, SAIPMinor: t.SAIPMinor,
 		SAIP:   fmt.Sprintf("%d.%d", t.SAIPMajor, t.SAIPMinor),
 		SHA256: t.SHA256, Active: t.Active, Size: len(t.Bytes),
 		CreatedAt: t.CreatedAt, UpdatedAt: t.UpdatedAt,
 	}
 }
 
-func (h *Handler) listUPP(w http.ResponseWriter, _ *http.Request) {
-	items, err := h.UPP.List()
+// scopeTenantParam returns the exact template scope selected by `?tenant=`
+// (absent or empty = the platform-global scope).
+func scopeTenantParam(r *http.Request) string {
+	return r.URL.Query().Get("tenant")
+}
+
+func (h *Handler) listUPP(w http.ResponseWriter, r *http.Request) {
+	var (
+		items []*store.UPPTemplate
+		err   error
+	)
+	if tenantFilter(r) != nil {
+		items, err = h.UPP.ListForTenant(scopeTenantParam(r))
+	} else {
+		items, err = h.UPP.List()
+	}
 	if err != nil {
 		writeErr(w, http.StatusInternalServerError, err.Error())
 		return
@@ -45,11 +60,11 @@ func (h *Handler) listUPP(w http.ResponseWriter, _ *http.Request) {
 	for _, t := range items {
 		views = append(views, toUPPView(t))
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"items": views})
+	writeJSON(w, http.StatusOK, map[string]any{"items": views, "total": len(views)})
 }
 
 func (h *Handler) getUPP(w http.ResponseWriter, r *http.Request) {
-	t, err := h.UPP.GetByName(chi.URLParam(r, "name"))
+	t, err := h.UPP.GetScoped(scopeTenantParam(r), chi.URLParam(r, "name"))
 	if err != nil {
 		writeErr(w, http.StatusNotFound, "unknown template")
 		return
@@ -58,7 +73,7 @@ func (h *Handler) getUPP(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) getUPPBytes(w http.ResponseWriter, r *http.Request) {
-	t, err := h.UPP.GetByName(chi.URLParam(r, "name"))
+	t, err := h.UPP.GetScoped(scopeTenantParam(r), chi.URLParam(r, "name"))
 	if err != nil {
 		writeErr(w, http.StatusNotFound, "unknown template")
 		return
@@ -70,14 +85,20 @@ func (h *Handler) getUPPBytes(w http.ResponseWriter, r *http.Request) {
 
 func (h *Handler) putUPP(w http.ResponseWriter, r *http.Request) {
 	var req struct {
-		Name string `json:"name"`
-		Data string `json:"data"` // base64-encoded DER
+		Name   string `json:"name"`
+		Tenant string `json:"tenant"`
+		Data   string `json:"data"` // base64-encoded DER
 	}
 	if !readJSON(w, r, &req) {
 		return
 	}
 	if req.Name == "" {
 		writeErr(w, http.StatusBadRequest, "name is required")
+		return
+	}
+	tenant, err := h.effectiveTenant(r, req.Tenant)
+	if err != nil {
+		writeTenantErr(w, err)
 		return
 	}
 	raw, err := base64.StdEncoding.DecodeString(req.Data)
@@ -90,23 +111,51 @@ func (h *Handler) putUPP(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusBadRequest, "invalid UPP profile: "+err.Error())
 		return
 	}
+	if err := h.checkTemplateQuota(tenant, req.Name); err != nil {
+		writeQuotaErr(w, err)
+		return
+	}
 	sum := sha256.Sum256(raw)
 	t := &store.UPPTemplate{
-		Name: req.Name, SAIPMajor: major, SAIPMinor: minor,
+		Name: req.Name, TenantID: tenant, SAIPMajor: major, SAIPMinor: minor,
 		SHA256: hex.EncodeToString(sum[:]), Bytes: raw, Active: true,
 	}
-	if err := h.UPP.Upsert(t); err != nil {
+	if err := h.UPP.UpsertArchived(t, "uploaded through the management API"); err != nil {
 		writeErr(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	h.audit(r, "putUPP", req.Name, "Executed-Success", map[string]any{"saip": fmt.Sprintf("%d.%d", major, minor), "size": len(raw)})
-	got, _ := h.UPP.GetByName(req.Name)
+	h.audit(r, "putUPP", req.Name, "Executed-Success",
+		map[string]any{"tenant": tenant, "saip": fmt.Sprintf("%d.%d", major, minor), "size": len(raw)})
+	got, _ := h.UPP.GetScoped(tenant, req.Name)
 	writeJSON(w, http.StatusOK, toUPPView(got))
+}
+
+// checkTemplateQuota enforces tenants.template_quota when a new tenant template
+// is created (replacing an existing one is always allowed).
+func (h *Handler) checkTemplateQuota(tenant, name string) error {
+	if tenant == "" || h.Tenants == nil {
+		return nil
+	}
+	t, err := h.Tenants.Get(tenant)
+	if err != nil || t.TemplateQuota == nil {
+		return nil
+	}
+	if _, err := h.UPP.GetScoped(tenant, name); err == nil {
+		return nil // replacement
+	}
+	n, err := h.UPP.CountForTenant(tenant)
+	if err != nil {
+		return err
+	}
+	if n >= *t.TemplateQuota {
+		return fmt.Errorf("tenant %q template quota exceeded (%d)", tenant, *t.TemplateQuota)
+	}
+	return nil
 }
 
 func (h *Handler) deleteUPP(w http.ResponseWriter, r *http.Request) {
 	name := chi.URLParam(r, "name")
-	if err := h.UPP.Delete(name); err != nil {
+	if err := h.UPP.Delete(scopeTenantParam(r), name); err != nil {
 		writeErr(w, http.StatusNotFound, "unknown template")
 		return
 	}
@@ -116,12 +165,13 @@ func (h *Handler) deleteUPP(w http.ResponseWriter, r *http.Request) {
 
 func (h *Handler) setUPPActive(w http.ResponseWriter, r *http.Request, active bool) {
 	name := chi.URLParam(r, "name")
-	if err := h.UPP.SetActive(name, active); err != nil {
+	tenant := scopeTenantParam(r)
+	if err := h.UPP.SetActive(tenant, name, active); err != nil {
 		writeErr(w, http.StatusNotFound, "unknown template")
 		return
 	}
-	h.audit(r, "setUPPActive", name, "Executed-Success", map[string]any{"active": active})
-	got, _ := h.UPP.GetByName(name)
+	h.audit(r, "setUPPActive", name, "Executed-Success", map[string]any{"tenant": tenant, "active": active})
+	got, _ := h.UPP.GetScoped(tenant, name)
 	writeJSON(w, http.StatusOK, toUPPView(got))
 }
 

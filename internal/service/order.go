@@ -64,9 +64,17 @@ func AssertTransition(from, to store.ProfileState) error {
 	return nil
 }
 
+// ICCIDRecycler returns pooled ICCIDs to their pool when a profile is cancelled
+// or deleted.
+type ICCIDRecycler interface {
+	SetState(iccid, state, note string) error
+}
+
 // OrderService drives the profile lifecycle.
 type OrderService struct {
 	Profiles ProfileStore
+	// Pool, when set, receives ICCIDs freed by Cancel/Delete.
+	Pool ICCIDRecycler
 }
 
 // NewOrderService builds an OrderService.
@@ -137,11 +145,39 @@ func (s *OrderService) MarkError(iccid, reason string) (*store.Profile, error) {
 	return s.Transition(iccid, store.StateError, func(p *store.Profile) { p.ErrorReason = reason })
 }
 
-// Cancel moves any active (or Error) state to Available or Unavailable.
+// Cancel moves any active (or Error) state to Available or Unavailable. The
+// ICCID is returned to the pool (Available) or parked as blocked (Unavailable).
 func (s *OrderService) Cancel(iccid string, unavailable bool) (*store.Profile, error) {
 	to := store.StateAvailable
 	if unavailable {
 		to = store.StateUnavailable
 	}
-	return s.Transition(iccid, to, nil)
+	p, err := s.Transition(iccid, to, nil)
+	if err != nil {
+		return nil, err
+	}
+	s.recycle(p.ICCID, unavailable)
+	return p, nil
+}
+
+// Delete removes a profile and returns its ICCID to the pool.
+func (s *OrderService) Delete(iccid string) error {
+	if err := s.Profiles.Delete(iccid); err != nil {
+		return err
+	}
+	s.recycle(iccid, false)
+	return nil
+}
+
+// recycle returns a freed ICCID to its pool. ICCIDs that never came from a pool
+// are silently ignored.
+func (s *OrderService) recycle(iccid string, unavailable bool) {
+	if s.Pool == nil {
+		return
+	}
+	state := "available"
+	if unavailable {
+		state = "blocked"
+	}
+	_ = s.Pool.SetState(iccid, state, "")
 }

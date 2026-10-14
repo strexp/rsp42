@@ -62,7 +62,7 @@ func (c *CMAE) GetBoundProfilePackage(transactionID string, prepareDownloadRespo
 		expected := confirmationHash(profile.CCHash, mustHexLower(transactionID))
 		if !equalBytes(expected, ok.EuiccSigned2.HashCc) {
 			c.recordConfirmationFailure(profile)
-			c.notify(context.Background(), sess.EID, profile.ICCID, 2, "Failed")
+			c.notify(context.Background(), progressFor(profile, sess.EID, 2, "Failed"))
 			return nil, rsp.CodeConfirmationCode.Status("Confirmation code invalid")
 		}
 	}
@@ -98,7 +98,7 @@ func (c *CMAE) GetBoundProfilePackage(transactionID string, prepareDownloadRespo
 
 	sess.State = "downloaded"
 	_ = c.Sessions.Put(sess)
-	c.notify(context.Background(), sess.EID, profile.ICCID, 3, "Executed-Success")
+	c.notify(context.Background(), progressFor(profile, sess.EID, 3, "Executed-Success"))
 
 	return &GetBoundProfilePackageResult{TransactionID: transactionID, BoundProfilePackage: bpp}, nil
 }
@@ -207,14 +207,14 @@ func (c *CMAE) buildStoreMetadataWithSSD(profile *store.Profile, ssd []byte) ([]
 }
 
 // pickUPP returns the name of the best UPP template for the eUICC's advertised
-// profile version (the greatest SAIP version not exceeding it), resolved from
-// the template registry. It returns "" when the version is unknown or no
+// profile version (the greatest SAIP version not exceeding it) within the
+// tenant's visible scope. It returns "" when the version is unknown or no
 // template qualifies.
-func (c *CMAE) pickUPP(supported []byte) string {
+func (c *CMAE) pickUPP(tenant string, supported []byte) string {
 	if c.UPP == nil || len(supported) < 2 {
 		return ""
 	}
-	tpl, err := c.UPP.SelectBest(int(supported[0]), int(supported[1]))
+	tpl, err := c.UPP.SelectBestFor(tenant, int(supported[0]), int(supported[1]))
 	if err != nil || tpl == nil {
 		return ""
 	}
@@ -222,31 +222,36 @@ func (c *CMAE) pickUPP(supported []byte) string {
 }
 
 // loadUPP loads, personalizes and encodes the UPP template for a profile from
-// the registry. The operator may pin a template on the order; otherwise the
-// template selected for the session (from the eUICC's profile version) is used.
+// the registry. The resolution order is: the template pinned on the order, then
+// the template selected for the session (eUICC profile version), then the
+// tenant default, then the global default. There is deliberately no "any
+// template" fallback: silently downloading a template from the wrong tenant
+// would be worse than failing the download.
 func (c *CMAE) loadUPP(profile *store.Profile, sess *store.Session) ([]byte, error) {
 	if c.UPP == nil {
 		return nil, fmt.Errorf("no UPP template registry configured")
 	}
+	tenant := profile.TenantID
 	name := profile.UPPTemplate
 	if name == "" && sess != nil {
 		name = sess.UPPTemplate
 	}
+	if name == "" && c.Tenants != nil {
+		def, err := c.Tenants.DefaultUPPForTenant(tenant)
+		if err != nil {
+			return nil, err
+		}
+		name = def
+	}
 	if name == "" {
 		name = c.DefaultUPP
 	}
-	var tpl *store.UPPTemplate
-	var err error
-	if name != "" {
-		tpl, err = c.UPP.GetByName(name)
-		if err != nil {
-			return nil, fmt.Errorf("UPP template %q: %w", name, err)
-		}
-	} else {
-		tpl, err = c.UPP.Any()
-		if err != nil {
-			return nil, fmt.Errorf("no UPP template available: %w", err)
-		}
+	if name == "" {
+		return nil, fmt.Errorf("no UPP template configured for tenant %q", tenant)
+	}
+	tpl, err := c.UPP.GetForTenant(tenant, name)
+	if err != nil {
+		return nil, fmt.Errorf("UPP template %q: %w", name, err)
 	}
 	seq, err := saip.ParseUPP(tpl.Bytes)
 	if err != nil {
@@ -256,9 +261,9 @@ func (c *CMAE) loadUPP(profile *store.Profile, sess *store.Session) ([]byte, err
 	// The download order owns the ICCID: it is what StoreMetadata carries, so
 	// the personalized profile must always use the same value. Per-ICCID
 	// personalization values are merged on top when present.
-	data := &personalization.Data{ICCID: profile.ICCID}
+	data := &personalization.Data{ICCID: profile.ICCID, IMSI: profile.IMSI}
 	if c.Personalization != nil {
-		pd, err := c.Personalization.Resolve(profile.ICCID)
+		pd, err := c.Personalization.Resolve(profile.TenantID, profile.ICCID, profile.IMSI)
 		if err != nil {
 			return nil, err
 		}

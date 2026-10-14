@@ -3,14 +3,15 @@ package store
 import (
 	"database/sql"
 	"errors"
+	"strings"
 	"time"
 )
 
 // EventRepo persists SM-DS event records.
 type EventRepo struct{ db *sql.DB }
 
-const eventCols = `id, eid, event_id, rsp_server_address, caller_oid, forwarding_indicator, cascaded,
-	root_event_id, registered_at, expires_at, deleted_at`
+const eventCols = `id, COALESCE(tenant_id,''), eid, event_id, rsp_server_address, caller_oid, forwarding_indicator, cascaded,
+	root_event_id, COALESCE(iccid,''), COALESCE(matching_id,''), registered_at, expires_at, deleted_at`
 
 func scanEvent(sc interface{ Scan(dest ...any) error }) (*EventRecord, error) {
 	var e EventRecord
@@ -18,8 +19,8 @@ func scanEvent(sc interface{ Scan(dest ...any) error }) (*EventRecord, error) {
 	var root sql.NullString
 	var registered int64
 	var expires, deleted sql.NullInt64
-	if err := sc.Scan(&e.ID, &e.EID, &e.EventID, &e.RSPServerAddress, &e.CallerOID, &fwd, &casc,
-		&root, &registered, &expires, &deleted); err != nil {
+	if err := sc.Scan(&e.ID, &e.TenantID, &e.EID, &e.EventID, &e.RSPServerAddress, &e.CallerOID, &fwd, &casc,
+		&root, &e.ICCID, &e.MatchingID, &registered, &expires, &deleted); err != nil {
 		return nil, err
 	}
 	e.ForwardingIndicator = fwd != 0
@@ -48,10 +49,12 @@ func (r *EventRepo) Insert(e *EventRecord) (int64, error) {
 		expires = e.ExpiresAt.Unix()
 	}
 	res, err := r.db.Exec(`INSERT INTO events
-		(eid, event_id, rsp_server_address, caller_oid, forwarding_indicator, cascaded, root_event_id, registered_at, expires_at)
-		VALUES (?,?,?,?,?,?,?,?,?)`,
+		(eid, event_id, rsp_server_address, caller_oid, forwarding_indicator, cascaded, root_event_id, registered_at, expires_at,
+		 tenant_id, iccid, matching_id)
+		VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`,
 		e.EID, e.EventID, e.RSPServerAddress, e.CallerOID, boolInt(e.ForwardingIndicator), boolInt(e.Cascaded),
-		nullStr(e.RootEventID), e.RegisteredAt.Unix(), expires)
+		nullStr(e.RootEventID), e.RegisteredAt.Unix(), expires,
+		nullStr(e.TenantID), nullStr(e.ICCID), nullStr(e.MatchingID))
 	if err != nil {
 		if isUniqueViolation(err) {
 			return 0, ErrEventIDInUse
@@ -166,4 +169,103 @@ func (r *EventRepo) GCExpired(now time.Time) (int64, error) {
 		return 0, err
 	}
 	return res.RowsAffected()
+}
+
+// EventFilter constrains an SM-DS event listing (all fields optional).
+type EventFilter struct {
+	EID        string
+	EventID    string
+	ICCID      string
+	MatchingID string
+	// Tenant matches an exact tenant id; a non-nil pointer to "" selects the
+	// platform-default rows (tenant_id IS NULL); nil means "any tenant".
+	Tenant *string
+	Since  *time.Time
+	Until  *time.Time
+	// Status selects the lifecycle slice: "active" (default), "expired",
+	// "deleted" or "any".
+	Status string
+	// Sort is "registered_at" (default) or "expires_at", optionally prefixed
+	// with '-' for ascending order.
+	Sort string
+}
+
+func eventOrder(sort string) string {
+	dir := "DESC"
+	col := "registered_at"
+	if len(sort) > 0 && sort[0] == '-' {
+		dir, sort = "ASC", sort[1:]
+	}
+	if sort == "expires_at" {
+		col = "expires_at"
+	}
+	return " ORDER BY " + col + " " + dir + ", id " + dir
+}
+
+// ListFiltered returns a page of event records plus the total matching count.
+func (r *EventRepo) ListFiltered(f EventFilter, limit, offset int, now time.Time) ([]*EventRecord, int, error) {
+	var where []string
+	var args []any
+	add := func(cond string, v any) { where, args = append(where, cond), append(args, v) }
+	if f.EID != "" {
+		add("eid = ?", f.EID)
+	}
+	if f.EventID != "" {
+		add("event_id = ?", f.EventID)
+	}
+	if f.ICCID != "" {
+		add("iccid = ?", f.ICCID)
+	}
+	if f.MatchingID != "" {
+		add("matching_id = ?", f.MatchingID)
+	}
+	if f.Tenant != nil {
+		if *f.Tenant == "" {
+			where = append(where, "tenant_id IS NULL")
+		} else {
+			add("tenant_id = ?", *f.Tenant)
+		}
+	}
+	if f.Since != nil {
+		add("registered_at >= ?", f.Since.Unix())
+	}
+	if f.Until != nil {
+		add("registered_at <= ?", f.Until.Unix())
+	}
+	switch f.Status {
+	case "any", "all":
+	case "deleted":
+		where = append(where, "deleted_at IS NOT NULL")
+	case "expired":
+		where, args = append(where, "deleted_at IS NULL AND expires_at IS NOT NULL AND expires_at <= ?"), append(args, now.Unix())
+	default: // active
+		where, args = append(where, "deleted_at IS NULL AND (expires_at IS NULL OR expires_at > ?)"), append(args, now.Unix())
+	}
+	clause := ""
+	if len(where) > 0 {
+		clause = " WHERE " + strings.Join(where, " AND ")
+	}
+	var total int
+	if err := r.db.QueryRow("SELECT COUNT(*) FROM events"+clause, args...).Scan(&total); err != nil {
+		return nil, 0, err
+	}
+	rows, err := r.db.Query("SELECT "+eventCols+" FROM events"+clause+eventOrder(f.Sort)+" LIMIT ? OFFSET ?",
+		append(args, limit, offset)...)
+	if err != nil {
+		return nil, 0, err
+	}
+	defer func() { _ = rows.Close() }()
+	out, err := collectEvents(rows)
+	if err != nil {
+		return nil, 0, err
+	}
+	return out, total, nil
+}
+
+// SetCorrelation backfills the tenant/ICCID/matchingId correlation fields of a
+// record (used when the tenant is known only after registration).
+func (r *EventRepo) SetCorrelation(id int64, tenant, iccid, matchingID string) error {
+	_, err := r.db.Exec(`UPDATE events SET tenant_id = ?, iccid = ?, matching_id = ? WHERE id = ?`,
+		nullStr(tenant), nullStr(iccid), nullStr(matchingID), id)
+	return err
 }

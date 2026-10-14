@@ -20,7 +20,12 @@ const (
 
 // Profile is a row of the profile inventory.
 type Profile struct {
-	ID               int64
+	ID int64
+	// TenantID is the owning carrier; the empty string is the platform default.
+	TenantID string
+	// ExternalRef is the caller's own identifier for this profile. It is an
+	// Admin API convenience field only and is never carried on ES2+.
+	ExternalRef      string
 	ICCID            string
 	IMSI             string
 	ProfileType      string
@@ -61,9 +66,14 @@ type EventRecord struct {
 	ForwardingIndicator bool
 	Cascaded            bool
 	RootEventID         string
-	RegisteredAt        time.Time
-	ExpiresAt           *time.Time
-	DeletedAt           *time.Time
+	// TenantID/ICCID/MatchingID are rsp42-internal correlation fields (the
+	// ES12 body is a closed set, so the tenant travels in a request header).
+	TenantID     string
+	ICCID        string
+	MatchingID   string
+	RegisteredAt time.Time
+	ExpiresAt    *time.Time
+	DeletedAt    *time.Time
 }
 
 // Notification is a received notification row.

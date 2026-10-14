@@ -1,6 +1,7 @@
 package es9plus
 
 import (
+	"context"
 	"encoding/hex"
 	"errors"
 	"io"
@@ -34,7 +35,7 @@ func (h *Handler) asn1Binding(w http.ResponseWriter, r *http.Request) {
 	case rsp.FuncInitiateAuthentication:
 		h.asn1Initiate(w, inner)
 	case rsp.FuncAuthenticateClient:
-		h.asn1Authenticate(w, inner)
+		h.asn1Authenticate(w, r.Context(), inner)
 	case rsp.FuncGetBoundProfilePackage:
 		h.asn1GetBPP(w, inner)
 	case rsp.FuncCancelSession:
@@ -75,13 +76,13 @@ func (h *Handler) asn1Initiate(w http.ResponseWriter, inner []byte) {
 		txn, res.ServerSigned1, res.ServerSignature1, res.EuiccCiPKIDToBeUsed, res.ServerCertificate))
 }
 
-func (h *Handler) asn1Authenticate(w http.ResponseWriter, inner []byte) {
+func (h *Handler) asn1Authenticate(w http.ResponseWriter, ctx context.Context, inner []byte) {
 	req, err := rsp.DecodeAuthenticateClientRequest(inner)
 	if err != nil {
 		writeASN1Response(w, rsp.AuthenticateClientResponseEs9Error(10)) // invalidTransactionId
 		return
 	}
-	res, err := h.CMAE.AuthenticateClient(hexUpper(req.TransactionID), req.AuthenticateResponse)
+	res, err := h.CMAE.AuthenticateClient(ctx, hexUpper(req.TransactionID), req.AuthenticateResponse)
 	if err != nil {
 		writeASN1Response(w, rsp.AuthenticateClientResponseEs9Error(authenticateErrorCode(err)))
 		return

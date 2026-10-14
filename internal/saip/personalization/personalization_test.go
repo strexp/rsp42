@@ -173,3 +173,94 @@ func mustHex(t *testing.T, s string) []byte {
 	require.NoError(t, err)
 	return b
 }
+
+func TestEncodePLMN(t *testing.T) {
+	// TS 24.008 §10.5.1.13 worked examples.
+	b, err := EncodePLMN("234", "15")
+	require.NoError(t, err)
+	require.Equal(t, []byte{0x32, 0xF4, 0x51}, b)
+
+	b, err = EncodePLMN("208", "01")
+	require.NoError(t, err)
+	require.Equal(t, []byte{0x02, 0xF8, 0x10}, b)
+
+	// Three-digit MNCs keep the third digit in the high nibble of octet 4, and
+	// MCC digit 3 in its low nibble.
+	b, err = EncodePLMN("310", "260")
+	require.NoError(t, err)
+	require.Equal(t, []byte{0x13, 0x00, 0x62}, b)
+
+	b, err = EncodePLMN("311", "260")
+	require.NoError(t, err)
+	require.Equal(t, []byte{0x13, 0x01, 0x62}, b)
+
+	_, err = EncodePLMN("20", "01")
+	require.Error(t, err)
+	_, err = EncodePLMN("208", "0")
+	require.Error(t, err)
+	_, err = EncodePLMN("20a", "01")
+	require.Error(t, err)
+}
+
+// TestApplyOperatorOverrides covers the G7 additions: raw EF patches, the ACC
+// value, the MSISDN and the preferred PLMN list. Each is asserted only when the
+// template actually carries the file, and an override naming an absent file is
+// an error.
+func TestApplyOperatorOverrides(t *testing.T) {
+	seq, _ := loadUPP(t, "TS48v1_A.der")
+
+	// A raw patch of an existing file (EF.SPN).
+	require.NotNil(t, seq.FindFile(saip.FIDSPN))
+	eng := &Engine{}
+	require.NoError(t, eng.Apply(seq, &Data{
+		FilePatches: []FilePatch{{FID: saip.FIDSPN, Hex: "4f70657261746f72"}},
+	}))
+	require.Equal(t, []byte("Operator"), seq.FindFile(saip.FIDSPN).Body())
+
+	// A patch naming a file the template does not have is refused.
+	seq2, _ := loadUPP(t, "TS48v1_A.der")
+	err := eng.Apply(seq2, &Data{FilePatches: []FilePatch{{FID: 0x6F99, Hex: "00"}}})
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "6F99")
+
+	// Non-hex patch content is refused.
+	seq3, _ := loadUPP(t, "TS48v1_A.der")
+	require.Error(t, eng.Apply(seq3, &Data{FilePatches: []FilePatch{{FID: saip.FIDSPN, Hex: "zz"}}}))
+
+	// ACC, MSISDN and PLMN follow the same "file must exist" rule.
+	seq4, _ := loadUPP(t, "TS48v1_A.der")
+	acc := uint16(0x0001)
+	data := &Data{ACC: &acc, MSISDN: "8613800138000", PLMN: []PLMNRecord{{MCC: "208", MNC: "01", AcT: 0x8000}}}
+	err = eng.Apply(seq4, data)
+	if seq4.FindFile(saip.FIDACC) == nil || seq4.FindFile(saip.FIDMSISDN) == nil ||
+		(seq4.FindFile(saip.FIDPLMNwAcT) == nil && seq4.FindFile(saip.FIDHPLMNwAcT) == nil) {
+		require.Error(t, err, "a missing target file must be reported")
+	} else {
+		require.NoError(t, err)
+		require.Equal(t, []byte{0x00, 0x01}, seq4.FindFile(saip.FIDACC).Body())
+		require.Equal(t, "8613800138000", decodeMSISDN(seq4.FindFile(saip.FIDMSISDN).Body()))
+	}
+}
+
+// decodeMSISDN reverses the EF.MSISDN encoding (length, TON/NPI, swapped BCD).
+func decodeMSISDN(b []byte) string {
+	if len(b) < 3 {
+		return ""
+	}
+	out := make([]byte, 0, 2*(len(b)-2))
+	for _, by := range b[2:] {
+		out = append(out, hexDigit(by&0x0f), hexDigit(by>>4))
+	}
+	s := string(out)
+	for len(s) > 0 && (s[len(s)-1] == 'F' || s[len(s)-1] == 'f') {
+		s = s[:len(s)-1]
+	}
+	return s
+}
+
+func hexDigit(n byte) byte {
+	if n < 10 {
+		return '0' + n
+	}
+	return 'A' + (n - 10)
+}

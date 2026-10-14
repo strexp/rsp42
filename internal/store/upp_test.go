@@ -42,13 +42,13 @@ func TestUPPRepoSelectAndActivate(t *testing.T) {
 	require.Equal(t, []byte{4}, off.Bytes)
 
 	// Disabling the highest version falls back to the next active one.
-	require.NoError(t, st.UPP.SetActive("v23", false))
+	require.NoError(t, st.UPP.SetActive("", "v23", false))
 	any, err = st.UPP.Any()
 	require.NoError(t, err)
 	require.Equal(t, "v21a", any.Name)
 
 	// Enabling the other 2.3 template makes it the highest active template.
-	require.NoError(t, st.UPP.SetActive("v23off", true))
+	require.NoError(t, st.UPP.SetActive("", "v23off", true))
 	any, err = st.UPP.Any()
 	require.NoError(t, err)
 	require.Equal(t, "v23off", any.Name)

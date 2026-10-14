@@ -9,6 +9,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
+	"rsp42/internal/service"
 	"rsp42/internal/store"
 )
 
@@ -37,7 +38,9 @@ type createBatchReq struct {
 	Count       int    `json:"count"`
 	ProfileType string `json:"profileType"`
 	EID         string `json:"eid"`
+	UPPTemplate string `json:"uppTemplate"`
 	Note        string `json:"note"`
+	Tenant      string `json:"tenant"`
 }
 
 func (h *Handler) createBatch(w http.ResponseWriter, r *http.Request) {
@@ -49,8 +52,13 @@ func (h *Handler) createBatch(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusBadRequest, "count must be between 1 and "+strconv.Itoa(maxBatchSize))
 		return
 	}
+	tenant, err := h.effectiveTenant(r, req.Tenant)
+	if err != nil {
+		writeTenantErr(w, err)
+		return
+	}
 	id, err := h.Batch.Insert(&store.DownloadBatch{
-		Name: req.Name, ProfileType: req.ProfileType, State: "Open", Total: req.Count, Note: req.Note,
+		Name: req.Name, TenantID: tenant, ProfileType: req.ProfileType, State: "Open", Total: req.Count, Note: req.Note,
 	})
 	if err != nil {
 		writeErr(w, http.StatusInternalServerError, err.Error())
@@ -58,9 +66,15 @@ func (h *Handler) createBatch(w http.ResponseWriter, r *http.Request) {
 	}
 	allocated := 0
 	for i := 0; i < req.Count; i++ {
-		p, err := h.Inventory.Allocate(req.EID, req.ProfileType, "")
+		p, err := h.Inventory.Allocate(service.AllocateRequest{
+			EID: req.EID, ProfileType: req.ProfileType, UPPTemplate: req.UPPTemplate, Tenant: tenant,
+		})
 		if err != nil {
 			h.audit(r, "createBatch", strconv.FormatInt(id, 10), "Failed", err.Error())
+			if errors.Is(err, service.ErrQuotaExceeded) {
+				writeQuotaErr(w, err)
+				return
+			}
 			writeErr(w, http.StatusInternalServerError, "allocated "+strconv.Itoa(allocated)+" of "+strconv.Itoa(req.Count)+": "+err.Error())
 			return
 		}
@@ -86,7 +100,7 @@ func (h *Handler) listBatches(w http.ResponseWriter, r *http.Request) {
 	if page < 1 {
 		page = 1
 	}
-	items, total, err := h.Batch.List(size, (page-1)*size)
+	items, total, err := h.Batch.List(scopeTenantParam(r), size, (page-1)*size)
 	if err != nil {
 		writeErr(w, http.StatusInternalServerError, err.Error())
 		return

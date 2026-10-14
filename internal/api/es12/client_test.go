@@ -27,17 +27,17 @@ func TestES12RegisterDeleteRoundTrip(t *testing.T) {
 	client := service.NewSMDSCClient(srv.URL, "2.999.10", nil)
 	eid := "89049032123451234512345678901235"
 
-	require.NoError(t, client.Register(eid, "dp.example.com", "EVT9", true))
+	require.NoError(t, client.Register(eid, "dp.example.com", "EVT9", true, service.EventMeta{}))
 	// Idempotent duplicate.
-	require.NoError(t, client.Register(eid, "dp.example.com", "EVT9", true))
+	require.NoError(t, client.Register(eid, "dp.example.com", "EVT9", true, service.EventMeta{}))
 
 	recs, err := st.Events.ListByEID(eid)
 	require.NoError(t, err)
 	require.Len(t, recs, 1)
 	require.Equal(t, "2.999.10", recs[0].CallerOID)
 
-	require.NoError(t, client.Delete(eid, "EVT9"))
-	err = client.Delete(eid, "EVT9")
+	require.NoError(t, client.Delete(eid, "EVT9", service.EventMeta{}))
+	err = client.Delete(eid, "EVT9", service.EventMeta{})
 	require.Error(t, err)
 	require.True(t, client.IsNotFound(err))
 }

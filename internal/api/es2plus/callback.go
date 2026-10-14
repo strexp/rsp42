@@ -7,6 +7,8 @@ import (
 	"log/slog"
 	"time"
 
+	"rsp42/internal/metrics"
+	"rsp42/internal/service"
 	"rsp42/internal/store"
 )
 
@@ -16,8 +18,13 @@ import (
 // it becomes a dead letter). It satisfies the service.OperatorCallback
 // signature and can be wired directly into the notification/download services.
 type CallbackQueue struct {
-	Repo        *store.CallbackRepo
-	Client      *CallbackClient
+	Repo   *store.CallbackRepo
+	Client *CallbackClient
+	// URLForTenant, when set, overrides the delivery URL for a tenant; an empty
+	// return falls back to Client.URL.
+	URLForTenant func(tenant string) string
+	// Metrics, when set, counts delivery outcomes by tenant/point/status.
+	Metrics     *metrics.Registry
 	MaxAttempts int
 	Batch       int
 	Backoff     func(attempt int) time.Duration
@@ -40,19 +47,41 @@ func NewCallbackQueue(repo *store.CallbackRepo, client *CallbackClient, log *slo
 
 // Deliver persists a progress notification and attempts immediate delivery.
 // A failed immediate attempt leaves a pending row that RunOnce will retry.
-func (q *CallbackQueue) Deliver(ctx context.Context, eid, iccid string, pointID int, status string) error {
-	if q.Client == nil || q.Client.URL == "" {
+func (q *CallbackQueue) Deliver(ctx context.Context, info service.ProgressInfo) error {
+	if q.Metrics != nil {
+		q.Metrics.Inc("rsp42_progress_notifications_total", map[string]string{
+			"tenant": info.TenantID,
+			"point":  fmt.Sprintf("%d", info.PointID),
+			"status": info.Status,
+		})
+	}
+	url := q.urlFor(info.TenantID)
+	if url == "" {
 		return fmt.Errorf("es2plus: no callback URL configured")
 	}
-	payload, err := q.encode(eid, iccid, pointID, status)
+	payload, err := q.encode(info)
 	if err != nil {
 		return err
 	}
-	id, err := q.Repo.Enqueue(q.Client.URL, string(payload), pointID)
+	id, err := q.Repo.Enqueue(url, string(payload), info.PointID)
 	if err != nil {
 		return err
 	}
-	return q.attempt(ctx, id, q.Client.URL, payload)
+	return q.attempt(ctx, id, url, payload)
+}
+
+// urlFor resolves the delivery URL for a tenant (per-tenant override, else the
+// global callback URL).
+func (q *CallbackQueue) urlFor(tenant string) string {
+	if q.URLForTenant != nil && tenant != "" {
+		if u := q.URLForTenant(tenant); u != "" {
+			return u
+		}
+	}
+	if q.Client == nil {
+		return ""
+	}
+	return q.Client.URL
 }
 
 // RunOnce delivers due pending notifications and returns how many were
@@ -87,17 +116,20 @@ func (q *CallbackQueue) Run(ctx context.Context, interval time.Duration) {
 	}
 }
 
-func (q *CallbackQueue) encode(eid, iccid string, pointID int, status string) ([]byte, error) {
+func (q *CallbackQueue) encode(info service.ProgressInfo) ([]byte, error) {
 	return json.Marshal(ProgressInfo{
 		Header: map[string]string{
 			"functionRequesterIdentifier": q.Client.RequesterID,
 			"functionCallIdentifier":      fmt.Sprintf("CB-%d", q.Now().UnixNano()),
 		},
-		EID:                     eid,
-		ICCID:                   iccid,
+		EID:                     info.EID,
+		ICCID:                   info.ICCID,
 		Timestamp:               q.Now().Format(time.RFC3339),
-		NotificationPointID:     pointID,
-		NotificationPointStatus: map[string]any{"status": status},
+		NotificationPointID:     info.PointID,
+		NotificationPointStatus: map[string]any{"status": info.Status},
+		TenantID:                info.TenantID,
+		ExternalRef:             info.ExternalRef,
+		MatchingID:              info.MatchingID,
 	})
 }
 

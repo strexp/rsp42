@@ -44,13 +44,17 @@ type CMAE struct {
 	Personalization PersonalizationResolver
 	UPP             UPPStore
 	DefaultUPP      string
-	Engine          *personalization.Engine
-	Log             *slog.Logger
+	// Tenants resolves the tenant default template; optional.
+	Tenants TenantLookup
+	Engine  *personalization.Engine
+	Log     *slog.Logger
 	// Notify, when set, delivers ES2+ progress notifications (SGP.22 §5.3.5).
 	Notify OperatorCallback
 	// ACRCheck, when set, calls the Operator's ES2+.HandleAcrRequest to confirm
-	// an Activation Code Retrieval (SGP.22 §5.3.8).
-	ACRCheck func(ctx context.Context, iccid string) error
+	// an Activation Code Retrieval (SGP.22 §5.3.8). It is invoked for both ACR
+	// types (redownload and availability check) and its refusal fails the
+	// retrieval.
+	ACRCheck func(ctx context.Context, profile *store.Profile) error
 
 	core *cmaeCore
 }
@@ -89,10 +93,10 @@ func (c *CMAE) pbFor(sess *store.Session) (*x509.Certificate, stdcrypto.Signer) 
 }
 
 // notify delivers an operator progress notification if configured.
-func (c *CMAE) notify(ctx context.Context, eid, iccid string, point int, status string) {
+func (c *CMAE) notify(ctx context.Context, info ProgressInfo) {
 	if c.Notify != nil {
-		if err := c.Notify(ctx, eid, iccid, point, status); err != nil && c.Log != nil {
-			c.Log.Warn("operator callback", "point", point, "err", err)
+		if err := c.Notify(ctx, info); err != nil && c.Log != nil {
+			c.Log.Warn("operator callback", "point", info.PointID, "err", err)
 		}
 	}
 }
@@ -118,8 +122,10 @@ type AuthenticateResult struct {
 	ACROnly bool
 }
 
-// AuthenticateClient implements ES9+.AuthenticateClient (SGP.22 §5.6.3).
-func (c *CMAE) AuthenticateClient(transactionID string, authenticateServerResponse []byte) (*AuthenticateResult, error) {
+// AuthenticateClient implements ES9+.AuthenticateClient (SGP.22 §5.6.3). ctx
+// bounds any outbound call made on behalf of the request (currently the
+// Operator's ES2+.HandleAcrRequest confirmation).
+func (c *CMAE) AuthenticateClient(ctx context.Context, transactionID string, authenticateServerResponse []byte) (*AuthenticateResult, error) {
 	ca, err := c.core.verify(transactionID, authenticateServerResponse)
 	if err != nil {
 		return nil, mapDPStatus(err)
@@ -127,12 +133,22 @@ func (c *CMAE) AuthenticateClient(transactionID string, authenticateServerRespon
 
 	// Activation Code Retrieval (§3.1.7/§3.1.8).
 	if activationcode.IsACR(ca.MatchingID) {
-		return c.handleACR(transactionID, ca)
+		return c.handleACR(ctx, transactionID, ca)
 	}
 
 	profile, err := c.lookupProfile(ca.MatchingID, ca.EID)
 	if err != nil {
 		return nil, err
+	}
+	// Bind the profile to the eUICC that actually performs the download (G4):
+	// an anonymously claimed profile has no EID until the LPA authenticates,
+	// and without this the same activation code could be downloaded by several
+	// devices. registerDownloadAttempt persists the change.
+	if profile.EID == "" && ca.EID != "" {
+		profile.EID = ca.EID
+		if profile.State == store.StateAllocated {
+			profile.State = store.StateLinked
+		}
 	}
 	if err := c.registerDownloadAttempt(profile); err != nil {
 		return nil, err
@@ -166,7 +182,7 @@ func (c *CMAE) AuthenticateClient(transactionID string, authenticateServerRespon
 	// Select a UPP template compatible with the eUICC's advertised profile
 	// version when the order does not pin one explicitly.
 	if profile.UPPTemplate == "" && ca.Signed1.EuiccInfo2 != nil {
-		if tpl := c.pickUPP(ca.Signed1.EuiccInfo2.ProfileVersion); tpl != "" {
+		if tpl := c.pickUPP(profile.TenantID, ca.Signed1.EuiccInfo2.ProfileVersion); tpl != "" {
 			sess.UPPTemplate = tpl
 		}
 	}
@@ -197,12 +213,12 @@ func (c *CMAE) lookupProfile(matchingID, eid string) (*store.Profile, error) {
 	switch p.State {
 	case store.StateReleased, store.StateDownloaded:
 	default:
-		return nil, rsp.CodeProfileNotFound.Status("Profile not eligible for download")
+		return nil, rsp.CodeProfileNotEligible.Status("Profile not eligible for download")
 	}
 	// Download order TTL: an order that is older than the configured window is
 	// no longer eligible for download.
 	if c.Cfg.DownloadTTL > 0 && !p.CreatedAt.IsZero() && time.Since(p.CreatedAt) > c.Cfg.DownloadTTL {
-		return nil, rsp.CodeProfileNotFound.Status("Download order expired")
+		return nil, rsp.CodeProfileNotEligible.Status("Download order expired")
 	}
 	return p, nil
 }
@@ -218,8 +234,8 @@ func (c *CMAE) registerDownloadAttempt(p *store.Profile) error {
 		if err := c.Profiles.Update(p); err != nil {
 			return err
 		}
-		c.notify(context.Background(), p.EID, p.ICCID, 1, "Failed")
-		return rsp.CodeProfileNotFound.Status("Download attempts exceeded")
+		c.notify(context.Background(), progressFor(p, p.EID, 1, "Failed"))
+		return rsp.CodeProfileNotEligible.Status("Download attempts exceeded")
 	}
 	return c.Profiles.Update(p)
 }

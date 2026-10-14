@@ -16,6 +16,9 @@ type Operator struct {
 	mu          sync.Mutex
 	Progress    []json.RawMessage
 	ACRRequests []json.RawMessage
+	// RefuseACR makes handleAcrRequest answer Failed with the spec's specific
+	// code (8.2.1/1.2, "Profile ICCID Not Allowed"), exercising the refusal path.
+	RefuseACR bool
 }
 
 // NewOperator returns a mock operator.
@@ -47,7 +50,23 @@ func (o *Operator) handleACR(w http.ResponseWriter, r *http.Request) {
 		o.ACRRequests = append(o.ACRRequests, raw)
 		o.mu.Unlock()
 	}
+	o.mu.Lock()
+	refuse := o.RefuseACR
+	o.mu.Unlock()
+	if refuse {
+		common.WriteJSON(w, common.NewFailure(&common.StatusCodeData{
+			SubjectCode: "8.2.1", ReasonCode: "1.2", Message: "Profile ICCID Not Allowed",
+		}))
+		return
+	}
 	common.WriteJSON(w, map[string]any{"header": common.NewSuccess().Header})
+}
+
+// ACRCount returns the number of received HandleAcrRequest calls.
+func (o *Operator) ACRCount() int {
+	o.mu.Lock()
+	defer o.mu.Unlock()
+	return len(o.ACRRequests)
 }
 
 // ProgressCount returns the number of received progress notifications.

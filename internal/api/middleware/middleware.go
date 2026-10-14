@@ -150,7 +150,23 @@ func Chain(h http.Handler, mws ...func(http.Handler) http.Handler) http.Handler 
 	return h
 }
 
-// Audit records each request to the configured audit sinks.
+// RequestScope installs a mutable per-request audit scope. The actor is
+// pre-filled from the mTLS peer certificate subject when present; handlers may
+// refine it (ES2+ functionRequesterIdentifier, ES12 caller OID) and record the
+// tenant attribution.
+func RequestScope(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		s := &common.Scope{}
+		if r.TLS != nil && len(r.TLS.PeerCertificates) > 0 {
+			s.Actor = r.TLS.PeerCertificates[0].Subject.String()
+		}
+		next.ServeHTTP(w, r.WithContext(common.WithScope(r.Context(), s)))
+	})
+}
+
+// Audit records each request to the configured audit sinks. The actor and
+// tenant come from the request scope (mTLS subject, ES2+ requester identifier,
+// or the ES12 caller OID); X-Request-ID is kept as a correlation detail.
 func Audit(l *audit.Logger, iface string) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -160,13 +176,26 @@ func Audit(l *audit.Logger, iface string) func(http.Handler) http.Handler {
 			if sw.status >= 400 {
 				outcome = "Failed"
 			}
+			var actor, tenant string
+			if s := common.ScopeFrom(r.Context()); s != nil {
+				actor, tenant = s.Actor, s.TenantID
+			}
+			detail := map[string]any{}
+			if id := r.Header.Get("X-Request-ID"); id != "" {
+				detail["requestId"] = id
+			}
+			if len(detail) == 0 {
+				detail = nil
+			}
 			l.Log(audit.Entry{
-				Actor:      r.Header.Get("X-Request-ID"),
+				Actor:      actor,
+				TenantID:   tenant,
 				Interface:  iface,
 				Function:   r.URL.Path,
 				Outcome:    outcome,
 				StatusCode: fmt.Sprintf("%d", sw.status),
 				RemoteAddr: r.RemoteAddr,
+				Detail:     detail,
 			})
 		})
 	}

@@ -82,10 +82,15 @@ func (f *FileHandle) SetBody(body []byte) {
 
 // Common file identifiers.
 const (
-	FIDICCID = 0x2FE2
-	FIDIMSI  = 0x6F07
-	FIDSPN   = 0x6F46
-	FIDKeys  = 0x6F08
+	FIDICCID     = 0x2FE2
+	FIDIMSI      = 0x6F07
+	FIDSPN       = 0x6F46
+	FIDKeys      = 0x6F08
+	FIDHPLMNwAcT = 0x6F31
+	FIDPLMNwAcT  = 0x6F60
+	FIDOPLMNwAcT = 0x6F61
+	FIDACC       = 0x6F78
+	FIDMSISDN    = 0x6F40
 )
 
 // ErrFileNotFound is returned when a required file is absent.

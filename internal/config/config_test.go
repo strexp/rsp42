@@ -4,6 +4,7 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
 )
@@ -81,4 +82,89 @@ func TestKEKValidation(t *testing.T) {
 	bad := filepath.Join(dir, "short.bin")
 	require.NoError(t, os.WriteFile(bad, make([]byte, 16), 0o600))
 	require.Error(t, validateKEK(bad))
+}
+
+// TestRepositoryIsSQLiteOnly pins decision 7 in docs/esim42-integration-gaps.md
+// §8.4: no other storage backend is supported, and asking for one fails
+// validation instead of being silently ignored.
+func TestRepositoryIsSQLiteOnly(t *testing.T) {
+	chdirRepo(t)
+	load := func() *Config {
+		t.Helper()
+		cfg, err := Load(exampleConfig, RoleDP)
+		require.NoError(t, err)
+		return cfg
+	}
+
+	for _, backend := range []string{"postgres", "postgresql", "mysql", "memory", "SQLite"} {
+		cfg := load()
+		cfg.Profiles.Repository = backend
+		err := cfg.Validate(RoleDP)
+		require.Error(t, err, "backend %q must be rejected", backend)
+		require.Contains(t, err.Error(), "profiles.repository")
+	}
+
+	cfg := load()
+	cfg.Profiles.Repository = "sqlite"
+	require.NoError(t, cfg.Validate(RoleDP))
+
+	// An empty value is a misconfiguration, not "use the default".
+	cfg = load()
+	cfg.Profiles.Repository = ""
+	err := cfg.Validate(RoleDP)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "profiles.repository")
+}
+
+// TestValidateACRConfig pins the G13 configuration contract: acr_url enables the
+// Activation Code Retrieval confirmation independently of the progress
+// callbacks, and a malformed ACR configuration fails fast.
+func TestValidateACRConfig(t *testing.T) {
+	chdirRepo(t)
+	load := func() *Config {
+		t.Helper()
+		cfg, err := Load(exampleConfig, RoleDP)
+		require.NoError(t, err)
+		return cfg
+	}
+
+	// The G13 case: ACR configured while the progress callbacks stay disabled.
+	cfg := load()
+	require.False(t, cfg.Notifications.ES2PCallback.Enabled)
+	require.Empty(t, cfg.Notifications.ES2PCallback.URL)
+	cfg.Notifications.ES2PCallback.ACRURL = "https://operator.example/gsma/rsp2/es2plus/handleAcrRequest"
+	require.NoError(t, cfg.Validate(RoleDP))
+
+	// The default timeout is applied by the loader and is valid.
+	require.Equal(t, 10*time.Second, time.Duration(cfg.Notifications.ES2PCallback.ACRTimeout))
+
+	bad := []struct {
+		name string
+		mut  func(*CallbackConfig)
+		want string
+	}{
+		{"relative acr_url", func(c *CallbackConfig) { c.ACRURL = "/gsma/rsp2/es2plus/handleAcrRequest" }, "not a valid absolute URL"},
+		{"scheme only", func(c *CallbackConfig) { c.ACRURL = "operator.example/acr" }, "not a valid absolute URL"},
+		{"negative timeout", func(c *CallbackConfig) {
+			c.ACRURL = "https://operator.example/acr"
+			c.ACRTimeout = Duration(-time.Second)
+		}, "acr_timeout must be >= 0"},
+		{"cert without key", func(c *CallbackConfig) {
+			c.ACRURL = "https://operator.example/acr"
+			c.ClientCertFile = "testdata/sgp26/x.pem"
+		}, "must be set together"},
+		{"missing cert file", func(c *CallbackConfig) {
+			c.ACRURL = "https://operator.example/acr"
+			c.ClientCertFile, c.ClientKeyFile = "testdata/nope.pem", "testdata/nope.key"
+		}, "not found at"},
+	}
+	for _, tc := range bad {
+		t.Run(tc.name, func(t *testing.T) {
+			cfg := load()
+			tc.mut(&cfg.Notifications.ES2PCallback)
+			err := cfg.Validate(RoleDP)
+			require.Error(t, err)
+			require.Contains(t, err.Error(), tc.want)
+		})
+	}
 }
