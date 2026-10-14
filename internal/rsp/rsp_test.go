@@ -74,6 +74,28 @@ func TestEncodeInitialiseSecureChannelRequest(t *testing.T) {
 	require.Contains(t, g["BoundProfilePackage"], hex.EncodeToString(r.Encode()))
 }
 
+// TestEncodeDoesNotMutateRemoteOpID pins that Encode is a pure function: it used
+// to default a zero RemoteOpID to 1 in the receiver, which made encoding
+// order-dependent and could desynchronise the signed bytes from the encoded
+// element.
+func TestEncodeDoesNotMutateRemoteOpID(t *testing.T) {
+	r := &InitialiseSecureChannelRequest{
+		TransactionID: seqBytes(16, 0),
+		ControlRefTemplate: ControlRefTemplate{
+			KeyType: []byte{0x88}, KeyLen: []byte{0x10}, HostID: []byte("00000000"),
+		},
+		SmdpOtpk: seqBytes(65, 0),
+	}
+	first := r.Encode()
+	require.Zero(t, r.RemoteOpID, "Encode must not modify the receiver")
+	require.Equal(t, first, r.Encode(), "Encode must be idempotent")
+
+	// The zero RemoteOpID still defaults to 1 on the wire, and SignedBytes must
+	// cover exactly that value.
+	require.Contains(t, hex.EncodeToString(first), hex.EncodeToString([]byte{0x82, 0x01, 0x01}))
+	require.Contains(t, hex.EncodeToString(r.SignedBytes(nil)), hex.EncodeToString([]byte{0x82, 0x01, 0x01}))
+}
+
 func TestEncodeConfigureISDPRequest(t *testing.T) {
 	r := &ConfigureISDPRequest{DpOID: "2.999.10"}
 	// Value captured from asn1tools.

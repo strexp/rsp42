@@ -24,18 +24,26 @@ type InitialiseSecureChannelRequest struct {
 	SmdpSign           []byte
 }
 
-// Encode returns the BF23 encoding of the request.
-func (r *InitialiseSecureChannelRequest) Encode() []byte {
+// remoteOpID returns the effective remote operation id: 1 unless the caller set
+// one explicitly. Encode and SignedBytes both go through it, so the signed bytes
+// and the encoded element can never disagree (SGP.22 §5.5.4).
+func (r *InitialiseSecureChannelRequest) remoteOpID() int64 {
 	if r.RemoteOpID == 0 {
-		r.RemoteOpID = 1
+		return 1
 	}
+	return r.RemoteOpID
+}
+
+// Encode returns the BF23 encoding of the request. It does not modify the
+// receiver.
+func (r *InitialiseSecureChannelRequest) Encode() []byte {
 	crt := asn1.New(asn1.Ctx(6, true),
 		asn1.Prim(asn1.Ctx(0, false), r.ControlRefTemplate.KeyType),
 		asn1.Prim(asn1.Ctx(1, false), r.ControlRefTemplate.KeyLen),
 		asn1.Prim(asn1.Ctx(4, false), r.ControlRefTemplate.HostID),
 	)
 	return asn1.Marshal(asn1.New(asn1.Ctx(35, true),
-		asn1.Prim(asn1.Ctx(2, false), encodeInt(r.RemoteOpID)),
+		asn1.Prim(asn1.Ctx(2, false), encodeInt(r.remoteOpID())),
 		asn1.Prim(asn1.Ctx(0, false), r.TransactionID),
 		crt,
 		asn1.Prim(asn1.App(73, false), r.SmdpOtpk),
@@ -53,7 +61,7 @@ func (r *InitialiseSecureChannelRequest) SignedBytes(euiccOtpk []byte) []byte {
 		asn1.Prim(asn1.Ctx(4, false), r.ControlRefTemplate.HostID),
 	)
 	out := concat(
-		asn1.Marshal(asn1.Prim(asn1.Ctx(2, false), asn1.IntBytes(r.RemoteOpID))),
+		asn1.Marshal(asn1.Prim(asn1.Ctx(2, false), asn1.IntBytes(r.remoteOpID()))),
 		asn1.Marshal(asn1.Prim(asn1.Ctx(0, false), r.TransactionID)),
 		asn1.Marshal(crt),
 		asn1.Marshal(asn1.Prim(asn1.App(73, false), r.SmdpOtpk)),
