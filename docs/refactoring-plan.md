@@ -586,7 +586,14 @@
 | `f09d78e` | `saip/personalization/personalization.go`（628 行）拆为 `personalization.go`（模型+Engine）、`apply_sdkeys.go`、`apply_values.go`、`fields_codec.go` |
 | `f470dc2` | ES2+ 客户端（`client.go`/`clientlib.go`/`callback.go`）移到 `internal/client/es2p`，与 ES12/ES15 客户端（`service/smdsc.go`）位置一致；服务端包不再拥有出站客户端 |
 
-待办：`service/upp.go`/`smds_event.go` 的文件级拆分；`cmdSMDS` 是否需要与 DP 对称的 graph 抽取（当前 153 行尚可读）。
+已完成（本轮追加）：
+
+| 提交 | 内容 |
+|---|---|
+| `2d1a56e` | `CascadeClient` 端口移到 `interfaces.go`（与其余消费方端口同处）；随机 token 与 `NewEventID` 移入 `token.go` |
+| `2214862` | `service.ImportUPPTemplates` → `internal/uppio`（依赖 `Writer` 接口 + `CheckVersion` 回调，不依赖 service 与具体 repo）：service 层不再做文件系统 IO |
+
+`cmdSMDS` 不再需要与 DP 对称的 graph 抽取：153 行的 config → build → wire → serve 顺序已可读，且其对象图比 DP 小得多。
 
 ### 阶段 5：测试与工程化收尾（进行中）
 
