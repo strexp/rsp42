@@ -17,7 +17,7 @@ func (c *CMAE) handleACR(ctx context.Context, transactionID string, ca *clientAu
 	if err != nil {
 		return nil, rsp.CodeInputRefused.Status(err.Error())
 	}
-	profile, err := c.Profiles.GetByICCID(iccid.Normalize(acr.ICCID))
+	profile, err := c.Deps.Profiles.GetByICCID(iccid.Normalize(acr.ICCID))
 	if err != nil {
 		return nil, rsp.CodeInputRefused.Status("unknown ICCID")
 	}
@@ -45,7 +45,7 @@ func (c *CMAE) handleACR(ctx context.Context, transactionID string, ca *clientAu
 	if acr.Check == 0 {
 		token := "ACR-" + randomToken()
 		profile.MatchingID = token
-		if err := c.Profiles.Update(profile); err != nil {
+		if err := c.Deps.Profiles.Update(profile); err != nil {
 			return nil, err
 		}
 		ac := &activationcode.Code{FQDN: c.Cfg.FQDN, MatchingID: token}
@@ -62,7 +62,7 @@ func (c *CMAE) handleACR(ctx context.Context, transactionID string, ca *clientAu
 	sess.State = "acr"
 	sess.EID = ca.EID
 	sess.ProfileID = profile.ID
-	if err := c.Sessions.Put(sess); err != nil {
+	if err := c.Deps.Sessions.Put(sess); err != nil {
 		return nil, err
 	}
 	c.notify(ctx, progressFor(profile, ca.EID, 17, "Executed-Success"))

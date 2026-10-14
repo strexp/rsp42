@@ -17,9 +17,11 @@ import (
 // from the database until it succeeds or the attempt budget is exhausted (then
 // it becomes a dead letter). It satisfies the service.OperatorCallback
 // signature and can be wired directly into the notification/download services.
-type CallbackQueue struct {
-	Repo   *store.CallbackRepo
-	Client *CallbackClient
+// QueueOptions are the tunables of the durable callback queue. The zero value
+// selects the production defaults (five attempts, batches of 20, exponential
+// backoff, the wall clock), so a caller only sets what it wants to override;
+// tests use it to make retries immediate and deterministic.
+type QueueOptions struct {
 	// URLForTenant, when set, overrides the delivery URL for a tenant; an empty
 	// return falls back to Client.URL.
 	URLForTenant func(tenant string) string
@@ -32,17 +34,27 @@ type CallbackQueue struct {
 	Now         func() time.Time
 }
 
+type CallbackQueue struct {
+	Repo   *store.CallbackRepo
+	Client *CallbackClient
+	QueueOptions
+}
+
 // NewCallbackQueue builds a queue with sane defaults.
-func NewCallbackQueue(repo *store.CallbackRepo, client *CallbackClient, log *slog.Logger) *CallbackQueue {
-	return &CallbackQueue{
-		Repo:        repo,
-		Client:      client,
-		MaxAttempts: 5,
-		Batch:       20,
-		Backoff:     func(attempt int) time.Duration { return time.Duration(1<<uint(attempt)) * time.Second },
-		Log:         log,
-		Now:         func() time.Time { return time.Now().UTC() },
+func NewCallbackQueue(repo *store.CallbackRepo, client *CallbackClient, opts QueueOptions) *CallbackQueue {
+	if opts.MaxAttempts < 1 {
+		opts.MaxAttempts = 5
 	}
+	if opts.Batch < 1 {
+		opts.Batch = 20
+	}
+	if opts.Backoff == nil {
+		opts.Backoff = func(attempt int) time.Duration { return time.Duration(1<<uint(attempt)) * time.Second }
+	}
+	if opts.Now == nil {
+		opts.Now = func() time.Time { return time.Now().UTC() }
+	}
+	return &CallbackQueue{Repo: repo, Client: client, QueueOptions: opts}
 }
 
 // Deliver persists a progress notification and attempts immediate delivery.

@@ -21,14 +21,14 @@ func TestResolveUPPTemplateViaFakes(t *testing.T) {
 		&store.UPPTemplate{Name: "tenant-def", TenantID: "carrier-a", SAIPMajor: 2, SAIPMinor: 0, Active: true},
 		&store.UPPTemplate{Name: "global", SAIPMajor: 1, SAIPMinor: 0, Active: true},
 	)
-	cmae := &CMAE{
+	cmae := &CMAE{Deps: CMAEDeps{
 		UPP:        upp,
 		DefaultUPP: "global",
 		Tenants: fakeTenantLookup{
 			defaultUPP: map[string]string{"carrier-a": "tenant-def"},
 		},
 		Personalization: newFakePersoResolver(),
-	}
+	}}
 	profile := &store.Profile{TenantID: "carrier-a", ICCID: "89000123456789012341"}
 
 	// An unknown version set never picks a template, and the registry is not
@@ -72,11 +72,11 @@ func TestLoadUPPViaFakes(t *testing.T) {
 	})
 	perso := newFakePersoResolver()
 	perso.byKey["/"+testICCID] = nil // no per-ICCID record: the resolver is still called
-	cmae := &CMAE{
+	cmae := &CMAE{Deps: CMAEDeps{
 		UPP:             upp,
 		DefaultUPP:      "v21",
 		Personalization: perso,
-	}
+	}}
 	profile := &store.Profile{ICCID: testICCID}
 	raw, err := cmae.loadUPP(profile, &store.Session{EuiccSupportedVersions: []string{"2.1"}})
 	require.NoError(t, err)

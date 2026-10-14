@@ -140,7 +140,7 @@ func TestMockOperatorCallback(t *testing.T) {
 
 	st := newCallbackStore(t)
 	cb := es2p.NewCallbackClient(srv.URL+"/gsma/rsp2/es2plus/handleDownloadProgressInfo", "smdpp", nil)
-	q := es2p.NewCallbackQueue(st.Callbacks, cb, slog.Default())
+	q := es2p.NewCallbackQueue(st.Callbacks, cb, es2p.QueueOptions{Log: slog.Default()})
 
 	err := q.Deliver(context.Background(), service.ProgressInfo{
 		ICCID:                   "8900012345678901234F",

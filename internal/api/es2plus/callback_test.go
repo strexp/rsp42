@@ -38,8 +38,10 @@ func TestCallbackQueueRetriesThenSucceeds(t *testing.T) {
 	defer srv.Close()
 
 	cb := es2p.NewCallbackClient(srv.URL, "2.999.10", nil)
-	q := es2p.NewCallbackQueue(st.Callbacks, cb, slog.Default())
-	q.Backoff = func(int) time.Duration { return 0 } // retry immediately
+	q := es2p.NewCallbackQueue(st.Callbacks, cb, es2p.QueueOptions{
+		Log:     slog.Default(),
+		Backoff: func(int) time.Duration { return 0 }, // retry immediately
+	})
 
 	// The first delivery fails and is persisted as pending.
 	err := q.Deliver(context.Background(), service.ProgressInfo{EID: "89049032123451234512345678901235", ICCID: "8900012345678901234", NotificationPointID: 4, NotificationPointStatus: service.PointStatus{Status: "Executed-Success"}})
@@ -70,9 +72,11 @@ func TestCallbackQueueDeadLetter(t *testing.T) {
 	defer srv.Close()
 
 	cb := es2p.NewCallbackClient(srv.URL, "2.999.10", nil)
-	q := es2p.NewCallbackQueue(st.Callbacks, cb, slog.Default())
-	q.MaxAttempts = 2
-	q.Backoff = func(int) time.Duration { return 0 }
+	q := es2p.NewCallbackQueue(st.Callbacks, cb, es2p.QueueOptions{
+		Log:         slog.Default(),
+		MaxAttempts: 2,
+		Backoff:     func(int) time.Duration { return 0 },
+	})
 
 	require.Error(t, q.Deliver(context.Background(), service.ProgressInfo{EID: "", ICCID: "8900012345678901234", NotificationPointID: 4, NotificationPointStatus: service.PointStatus{Status: "Failed"}}))
 	_, err := q.RunOnce(context.Background())

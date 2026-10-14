@@ -26,7 +26,7 @@ type GetBoundProfilePackageResult struct {
 
 // GetBoundProfilePackage implements ES9+.GetBoundProfilePackage (SGP.22 §5.6.2).
 func (c *CMAE) GetBoundProfilePackage(transactionID string, prepareDownloadResponse []byte) (*GetBoundProfilePackageResult, error) {
-	sess, err := c.Sessions.Get(transactionID)
+	sess, err := c.Deps.Sessions.Get(transactionID)
 	if err != nil {
 		return nil, rsp.CodeUnknownTransaction.Status("Unknown TransactionID")
 	}
@@ -63,7 +63,7 @@ func (c *CMAE) GetBoundProfilePackage(transactionID string, prepareDownloadRespo
 		return nil, rsp.CodeVerificationFailed.Status("eUICC signature verification failed")
 	}
 
-	profile, err := c.Profiles.GetByID(sess.ProfileID)
+	profile, err := c.Deps.Profiles.GetByID(sess.ProfileID)
 	if err != nil {
 		return nil, rsp.CodeUnknownTransaction.Status("Unknown profile")
 	}
@@ -110,12 +110,12 @@ func (c *CMAE) GetBoundProfilePackage(transactionID string, prepareDownloadRespo
 	// lets a subsequent install notification transition it to Installed.
 	profile.State = store.StateDownloaded
 	profile.ErrorReason = ""
-	if err := c.Profiles.Update(profile); err != nil {
+	if err := c.Deps.Profiles.Update(profile); err != nil {
 		return nil, err
 	}
 
 	sess.State = "downloaded"
-	_ = c.Sessions.Put(sess)
+	_ = c.Deps.Sessions.Put(sess)
 	c.notify(context.Background(), progressFor(profile, sess.EID, 3, "Executed-Success"))
 
 	return &GetBoundProfilePackageResult{TransactionID: transactionID, BoundProfilePackage: bpp}, nil
@@ -130,7 +130,7 @@ func (c *CMAE) recordConfirmationFailure(p *store.Profile) {
 		p.State = store.StateError
 		p.ErrorReason = "confirmation code attempts exceeded"
 	}
-	_ = c.Profiles.Update(p)
+	_ = c.Deps.Profiles.Update(p)
 }
 
 func (c *CMAE) buildBPP(eid string, transactionID, smdpOtpk, smdpOtSK, euiccOtpk, upp []byte, profile *store.Profile, pbSigner stdcrypto.Signer) ([]byte, error) {
@@ -281,7 +281,7 @@ func sessionVersions(sess *store.Session) []saipver.Version {
 // is deliberately no "any template" fallback, and an unknown version set never
 // selects a template.
 func (c *CMAE) resolveUPPTemplate(profile *store.Profile, sess *store.Session) (*store.UPPTemplate, error) {
-	if c.UPP == nil {
+	if c.Deps.UPP == nil {
 		return nil, fmt.Errorf("no UPP template registry configured")
 	}
 	tenant := profile.TenantID
@@ -300,12 +300,12 @@ func (c *CMAE) resolveUPPTemplate(profile *store.Profile, sess *store.Session) (
 		cands = append(cands, candidate{name: sess.UPPTemplate, explicit: true})
 	}
 	if len(supported) > 0 {
-		if best, err := c.UPP.SelectBestFor(tenant, supported); err == nil && best != nil {
+		if best, err := c.Deps.UPP.SelectBestFor(tenant, supported); err == nil && best != nil {
 			cands = append(cands, candidate{name: best.Name, tpl: best})
 		}
 	}
-	if c.Tenants != nil {
-		def, err := c.Tenants.DefaultUPPForTenant(tenant)
+	if c.Deps.Tenants != nil {
+		def, err := c.Deps.Tenants.DefaultUPPForTenant(tenant)
 		if err != nil {
 			return nil, err
 		}
@@ -313,8 +313,8 @@ func (c *CMAE) resolveUPPTemplate(profile *store.Profile, sess *store.Session) (
 			cands = append(cands, candidate{name: def})
 		}
 	}
-	if c.DefaultUPP != "" {
-		cands = append(cands, candidate{name: c.DefaultUPP})
+	if c.Deps.DefaultUPP != "" {
+		cands = append(cands, candidate{name: c.Deps.DefaultUPP})
 	}
 	if len(cands) == 0 {
 		return nil, fmt.Errorf("no UPP template configured for tenant %q", tenant)
@@ -333,7 +333,7 @@ func (c *CMAE) resolveUPPTemplate(profile *store.Profile, sess *store.Session) (
 		tpl := cand.tpl
 		if tpl == nil {
 			var err error
-			tpl, err = c.UPP.GetForTenant(tenant, cand.name)
+			tpl, err = c.Deps.UPP.GetForTenant(tenant, cand.name)
 			if err != nil {
 				if cand.explicit {
 					return nil, fmt.Errorf("UPP template %q: %w", cand.name, err)
@@ -385,8 +385,8 @@ func (c *CMAE) loadUPP(profile *store.Profile, sess *store.Session) ([]byte, err
 	// the personalized profile must always use the same value. Per-ICCID
 	// personalization values are merged on top when present.
 	data := &personalization.Data{ICCID: profile.ICCID, IMSI: profile.IMSI}
-	if c.Personalization != nil {
-		pd, err := c.Personalization.Resolve(profile.TenantID, profile.ICCID, profile.IMSI)
+	if c.Deps.Personalization != nil {
+		pd, err := c.Deps.Personalization.Resolve(profile.TenantID, profile.ICCID, profile.IMSI)
 		if err != nil {
 			return nil, err
 		}
@@ -395,7 +395,7 @@ func (c *CMAE) loadUPP(profile *store.Profile, sess *store.Session) ([]byte, err
 			data.ICCID = profile.ICCID
 		}
 	}
-	eng := c.Engine
+	eng := c.Deps.Engine
 	if eng == nil {
 		eng = &personalization.Engine{}
 	}

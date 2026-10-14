@@ -54,8 +54,11 @@ func newTestHandler(t *testing.T) (*Handler, *cert.Manager) {
 		FQDN: "testsmdpplus1.example.com", OID: "2.999.10", HostID: make([]byte, 8),
 		TransactionIDLen: 16, MaxDownloadAttempts: 5, MaxCCAttempts: 3,
 		SessionTTL: 30 * time.Minute, DownloadTTL: 24 * time.Hour,
-	}, certs, service.NewSessionService(st.Sessions, provider, 30*time.Minute), st.Profiles,
-		nil, st.UPP, "TS48v1_A.der", &personalization.Engine{Algorithm: "milenage"}, slog.Default())
+	}, service.CMAEDeps{
+		Certs: certs, Sessions: service.NewSessionService(st.Sessions, provider, 30*time.Minute),
+		Profiles: st.Profiles, UPP: st.UPP, DefaultUPP: "TS48v1_A.der",
+		Engine: &personalization.Engine{Algorithm: "milenage"}, Log: slog.Default(),
+	})
 	require.NoError(t, err)
 	return New(slog.Default(), cmae), certs
 }

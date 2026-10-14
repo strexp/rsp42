@@ -96,16 +96,17 @@ func bootstrapDP(cfg *config.Config, log *slog.Logger) (*dpGraph, error) {
 		SessionTTL:          cfg.SMDpp.SessionTTL.Duration(),
 		DownloadTTL:         cfg.SMDpp.DownloadTTL.Duration(),
 		PPRIds:              rsp.PPRIDBits(cfg.Profiles.PPRIds),
-	}, certs, g.sessions, st.Profiles, g.perso, st.UPP, cfg.Profiles.DefaultUPP,
-		&personalization.Engine{Algorithm: cfg.Profiles.Personalization.DefaultAlgorithm}, log)
+	}, service.CMAEDeps{
+		Certs: certs, Sessions: g.sessions, Profiles: st.Profiles,
+		Personalization: g.perso, UPP: st.UPP, DefaultUPP: cfg.Profiles.DefaultUPP,
+		Engine:  &personalization.Engine{Algorithm: cfg.Profiles.Personalization.DefaultAlgorithm},
+		Log:     log,
+		Tenants: st.Tenants, Audit: st.Audit, Metrics: g.metrics,
+	})
 	if err != nil {
 		g.close()
 		return nil, fmt.Errorf("cmae: %w", err)
 	}
-	g.cmae.Tenants = st.Tenants
-	g.cmae.Audit = st.Audit
-	g.cmae.Metrics = g.metrics
-
 	g.notifs = service.NewNotificationService(service.NotificationDeps{
 		Log: log, Notifs: st.Notifs, Profiles: st.Profiles, Orders: g.orders,
 		Sessions: g.sessions, Certs: certs,

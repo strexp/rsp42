@@ -287,19 +287,19 @@ func wireOperatorES2P(
 	if !wantCallbacks {
 		return nil, nil
 	}
-	queue := es2p.NewCallbackQueue(st.Callbacks, cb, log)
-	queue.Metrics = reg
-	queue.URLForTenant = func(tenant string) string {
-		url, err := st.Tenants.CallbackURLForTenant(tenant)
-		if err != nil {
-			log.Warn("tenant callback url", "tenant", tenant, "err", err)
-			return ""
-		}
-		return url
-	}
-	if n := cbCfg.MaxAttempts; n > 0 {
-		queue.MaxAttempts = n
-	}
+	queue := es2p.NewCallbackQueue(st.Callbacks, cb, es2p.QueueOptions{
+		Metrics: reg,
+		Log:     log,
+		URLForTenant: func(tenant string) string {
+			url, err := st.Tenants.CallbackURLForTenant(tenant)
+			if err != nil {
+				log.Warn("tenant callback url", "tenant", tenant, "err", err)
+				return ""
+			}
+			return url
+		},
+		MaxAttempts: cbCfg.MaxAttempts,
+	})
 	notifs.Callback = queue.Deliver
 	cmae.Notify = queue.Deliver
 	return queue, nil

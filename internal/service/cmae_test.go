@@ -107,8 +107,11 @@ func setupCMAE(t *testing.T) (*CMAE, *store.Store) {
 		FQDN: testFQDN, OID: testOID, HostID: make([]byte, 8),
 		TransactionIDLen: 16, MaxDownloadAttempts: 5, MaxCCAttempts: 3,
 		SessionTTL: 30 * time.Minute, DownloadTTL: 24 * time.Hour,
-	}, certs, NewSessionService(st.Sessions, provider, 30*time.Minute), st.Profiles,
-		perso, st.UPP, "TS48v1_A.der", &personalization.Engine{Algorithm: "milenage"}, slog.Default())
+	}, CMAEDeps{
+		Certs: certs, Sessions: NewSessionService(st.Sessions, provider, 30*time.Minute),
+		Profiles: st.Profiles, Personalization: perso, UPP: st.UPP, DefaultUPP: "TS48v1_A.der",
+		Engine: &personalization.Engine{Algorithm: "milenage"}, Log: slog.Default(),
+	})
 	require.NoError(t, err)
 	return cmae, st
 }
@@ -131,12 +134,12 @@ func TestFullDownloadFlow(t *testing.T) {
 	// --- InitiateAuthentication ---
 	euiccChallenge := make([]byte, 16)
 	_, _ = rand.Read(euiccChallenge)
-	ciSKI := cmae.Certs.CI().SubjectKeyId
+	ciSKI := cmae.Deps.Certs.CI().SubjectKeyId
 	init, err := cmae.Initiate(euiccChallenge, buildEUICCInfo1(ciSKI), testFQDN)
 	require.NoError(t, err)
 
 	// Verify serverSignature1 over serverSigned1 with CERT.DPauth.
-	dpAuthPub := cmae.Certs.DPAuth().PublicKey.(*ecdsa.PublicKey)
+	dpAuthPub := cmae.Deps.Certs.DPAuth().PublicKey.(*ecdsa.PublicKey)
 	require.True(t, crypto.VerifyRaw(dpAuthPub, init.ServerSigned1, rsp.SignatureValue(init.ServerSignature1)))
 
 	serverSigned1, _, err := asn1.ReadTLV(init.ServerSigned1)
@@ -177,7 +180,7 @@ func TestFullDownloadFlow(t *testing.T) {
 	require.NoError(t, err)
 
 	// Verify smdpSignature2 over smdpSigned2 || euiccSignature1.
-	dpPbPub := cmae.Certs.DPPb().PublicKey.(*ecdsa.PublicKey)
+	dpPbPub := cmae.Deps.Certs.DPPb().PublicKey.(*ecdsa.PublicKey)
 	require.True(t, crypto.VerifyRaw(dpPbPub, testutil.Concat(auth.SmdpSigned2, tlv(tSig, euiccSig1)), rsp.SignatureValue(auth.SmdpSignature2)))
 
 	// --- eUICC builds PrepareDownloadResponse ---
@@ -738,7 +741,7 @@ func authenticateForTest(t *testing.T, cmae *CMAE, matchingID string) error {
 	t.Helper()
 	euiccChallenge := make([]byte, 16)
 	_, _ = rand.Read(euiccChallenge)
-	ciSKI := cmae.Certs.CI().SubjectKeyId
+	ciSKI := cmae.Deps.Certs.CI().SubjectKeyId
 	init, err := cmae.Initiate(euiccChallenge, buildEUICCInfo1(ciSKI), testFQDN)
 	require.NoError(t, err)
 
@@ -827,7 +830,7 @@ func TestLoadUPPUsesTenantTemplate(t *testing.T) {
 
 	// With no template pinned anywhere and no tenant default, resolution fails
 	// rather than silently picking an arbitrary template.
-	cmae.DefaultUPP = ""
+	cmae.Deps.DefaultUPP = ""
 	profile.UPPTemplate = ""
 	_, err = cmae.loadUPP(profile, nil)
 	require.Error(t, err)

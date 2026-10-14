@@ -39,18 +39,32 @@ type CMAEConfig struct {
 
 // CMAE implements the SM-DP+ ES9+ authentication and download flow (SGP.22
 // §5.6). The shared handshake logic lives in cmaeCore.
-type CMAE struct {
-	Cfg             CMAEConfig
+// CMAEDeps is the dependency set of the SM-DP+ authentication/download service.
+// Everything needed at construction time is here; Notify and ACRCheck are the
+// exception because they deliver through the operator callback queue, which is
+// built from the CMAE (and the notification service), and are installed by the
+// composition root's callback wiring.
+type CMAEDeps struct {
 	Certs           *cert.Manager
 	Sessions        *SessionService
 	Profiles        ProfileStore
 	Personalization PersonalizationResolver
 	UPP             UPPStore
 	DefaultUPP      string
+	Engine          *personalization.Engine
+	Log             *slog.Logger
 	// Tenants resolves the tenant default template; optional.
 	Tenants TenantLookup
-	Engine  *personalization.Engine
-	Log     *slog.Logger
+	// Audit, when set, records eUICC-capability failures that the HTTP audit
+	// middleware cannot observe (ES9+ answers HTTP 200 with an RSP status).
+	Audit *store.AuditRepo
+	// Metrics, when set, counts V3-capable eUICCs and version failures (N11/N12).
+	Metrics *metrics.Registry
+}
+
+type CMAE struct {
+	Cfg  CMAEConfig
+	Deps CMAEDeps
 	// Notify, when set, delivers ES2+ progress notifications (SGP.22 §5.3.5).
 	Notify OperatorCallback
 	// ACRCheck, when set, calls the Operator's ES2+.HandleAcrRequest to confirm
@@ -58,28 +72,21 @@ type CMAE struct {
 	// types (redownload and availability check) and its refusal fails the
 	// retrieval.
 	ACRCheck func(ctx context.Context, profile *store.Profile) error
-	// Audit, when set, records eUICC-capability failures that the HTTP audit
-	// middleware cannot observe (ES9+ answers HTTP 200 with an RSP status).
-	Audit *store.AuditRepo
-	// Metrics, when set, counts V3-capable eUICCs and version failures (N11/N12).
-	Metrics *metrics.Registry
 
 	core *cmaeCore
 }
 
 // NewCMAE builds an SM-DP+ CMAE using CERT.DPauth for server signatures.
-func NewCMAE(cfg CMAEConfig, certs *cert.Manager, sessions *SessionService, profiles ProfileStore, perso PersonalizationResolver, upp UPPStore, defaultUPP string, engine *personalization.Engine, log *slog.Logger) (*CMAE, error) {
-	if certs.DPAuth() == nil || certs.DPAuthKey() == nil {
+func NewCMAE(cfg CMAEConfig, d CMAEDeps) (*CMAE, error) {
+	if d.Certs == nil || d.Certs.DPAuth() == nil || d.Certs.DPAuthKey() == nil {
 		return nil, fmt.Errorf("cmae: CERT.DPAuth/SK.DPAuth not configured")
 	}
-	if upp == nil {
+	if d.UPP == nil {
 		return nil, fmt.Errorf("cmae: UPP template store not configured")
 	}
-	c := &CMAE{
-		Cfg: cfg, Certs: certs, Sessions: sessions, Profiles: profiles,
-		Personalization: perso, UPP: upp, DefaultUPP: defaultUPP, Engine: engine, Log: log,
-	}
-	c.core = newCMAECore(cfg.FQDN, certs.DPAuth(), certs.DPAuthKey(), certs, sessions, cfg.TransactionIDLen, cfg.SessionTTL, false, log)
+	c := &CMAE{Cfg: cfg, Deps: d}
+	c.core = newCMAECore(cfg.FQDN, d.Certs.DPAuth(), d.Certs.DPAuthKey(), d.Certs, d.Sessions,
+		cfg.TransactionIDLen, cfg.SessionTTL, false, d.Log)
 	return c, nil
 }
 
@@ -89,7 +96,7 @@ func (c *CMAE) identityFor(sess *store.Session) *cert.Identity {
 	if sess == nil || len(sess.CICertID) == 0 {
 		return nil
 	}
-	return c.Certs.IdentityByCIKeyID(sess.CICertID)
+	return c.Deps.Certs.IdentityByCIKeyID(sess.CICertID)
 }
 
 // pbFor returns the profile-binding certificate/key for a session's identity.
@@ -97,14 +104,14 @@ func (c *CMAE) pbFor(sess *store.Session) (*x509.Certificate, stdcrypto.Signer) 
 	if id := c.identityFor(sess); id != nil && id.DPPbCert != nil {
 		return id.DPPbCert, id.DPPbKey
 	}
-	return c.Certs.DPPb(), c.Certs.DPPbKey()
+	return c.Deps.Certs.DPPb(), c.Deps.Certs.DPPbKey()
 }
 
 // notify delivers an operator progress notification if configured.
 func (c *CMAE) notify(ctx context.Context, info ProgressInfo) {
 	if c.Notify != nil {
-		if err := c.Notify(ctx, info); err != nil && c.Log != nil {
-			c.Log.Warn("operator callback", "point", info.NotificationPointID, "err", err)
+		if err := c.Notify(ctx, info); err != nil && c.Deps.Log != nil {
+			c.Deps.Log.Warn("operator callback", "point", info.NotificationPointID, "err", err)
 		}
 	}
 }
@@ -206,7 +213,7 @@ func (c *CMAE) AuthenticateClient(ctx context.Context, transactionID string, aut
 		return nil, rsp.CodeProfileLoadFailed.Status(err.Error())
 	}
 	sess.UPPTemplate = tpl.Name
-	if err := c.Sessions.Put(sess); err != nil {
+	if err := c.Deps.Sessions.Put(sess); err != nil {
 		return nil, err
 	}
 
@@ -233,8 +240,8 @@ func (c *CMAE) recordEuiccVersions(tenant string, sess *store.Session, info *rsp
 	if len(info.UICCCapability) > 0 {
 		sess.UICCCapability = hex.EncodeToString(info.UICCCapability)
 	}
-	if info.IsV3Capable() && c.Metrics != nil {
-		c.Metrics.Inc("rsp42_euicc_v3_capable_total", map[string]string{"tenant": tenant})
+	if info.IsV3Capable() && c.Deps.Metrics != nil {
+		c.Deps.Metrics.Inc("rsp42_euicc_v3_capable_total", map[string]string{"tenant": tenant})
 	}
 }
 
@@ -242,15 +249,15 @@ func (c *CMAE) recordEuiccVersions(tenant string, sess *store.Session, info *rsp
 // middleware cannot see it because ES9+ answers HTTP 200 with an RSP status
 // code in the body, so the failure is recorded explicitly.
 func (c *CMAE) noteVersionFailure(tenant string, profile *store.Profile, rej *ErrProfileVersionNotSupported) {
-	if c.Metrics != nil {
-		c.Metrics.Inc("rsp42_profile_version_not_supported_total", map[string]string{"tenant": tenant})
+	if c.Deps.Metrics != nil {
+		c.Deps.Metrics.Inc("rsp42_profile_version_not_supported_total", map[string]string{"tenant": tenant})
 	}
-	if c.Log != nil {
-		c.Log.Warn("profile version not supported",
+	if c.Deps.Log != nil {
+		c.Deps.Log.Warn("profile version not supported",
 			"iccid", profile.ICCID, "tenant", tenant,
 			"euiccProfileVersion", rej.EuiccProfileVersion, "supportedVersions", rej.SupportedVersions)
 	}
-	if c.Audit == nil {
+	if c.Deps.Audit == nil {
 		return
 	}
 	detail, _ := json.Marshal(map[string]any{
@@ -259,7 +266,7 @@ func (c *CMAE) noteVersionFailure(tenant string, profile *store.Profile, rej *Er
 		"supportedVersions":     rej.SupportedVersions,
 		"lowestTemplateVersion": rej.LowestTemplateVersion,
 	})
-	_ = c.Audit.Insert(&store.AuditEntry{
+	_ = c.Deps.Audit.Insert(&store.AuditEntry{
 		TenantID: tenant, Interface: "es9p", Function: "authenticateClient",
 		Subject: profile.ICCID, Outcome: "Failed", DetailJSON: string(detail),
 	})
@@ -269,7 +276,7 @@ func (c *CMAE) lookupProfile(matchingID, eid string) (*store.Profile, error) {
 	if matchingID == "" {
 		return nil, rsp.CodeProfileNotEligible.Status("Refused")
 	}
-	p, err := c.Profiles.GetByMatchingID(matchingID)
+	p, err := c.Deps.Profiles.GetByMatchingID(matchingID)
 	if err != nil {
 		return nil, rsp.CodeProfileNotEligible.Status("Refused")
 	}
@@ -297,13 +304,13 @@ func (c *CMAE) registerDownloadAttempt(p *store.Profile) error {
 	if c.Cfg.MaxDownloadAttempts > 0 && p.DownloadAttempts > c.Cfg.MaxDownloadAttempts {
 		p.State = store.StateError
 		p.ErrorReason = "download attempts exceeded"
-		if err := c.Profiles.Update(p); err != nil {
+		if err := c.Deps.Profiles.Update(p); err != nil {
 			return err
 		}
 		c.notify(context.Background(), progressFor(p, p.EID, 1, "Failed"))
 		return rsp.CodeProfileNotEligible.Status("Download attempts exceeded")
 	}
-	return c.Profiles.Update(p)
+	return c.Deps.Profiles.Update(p)
 }
 
 // mapDPStatus translates a typed CMAE error into the ES9+ status codes.

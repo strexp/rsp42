@@ -18,19 +18,19 @@ func (c *CMAE) CancelSession(transactionID string, cancelSessionResponse []byte)
 		return "", 0, rsp.CodeUnknownTransaction.Status("transactionId mismatch")
 	}
 	reason := req.Reason
-	if sess, err := c.Sessions.Get(transactionID); err == nil && sess.ProfileID != 0 {
-		if p, err := c.Profiles.GetByID(sess.ProfileID); err == nil {
+	if sess, err := c.Deps.Sessions.Get(transactionID); err == nil && sess.ProfileID != 0 {
+		if p, err := c.Deps.Profiles.GetByID(sess.ProfileID); err == nil {
 			switch reason {
 			case 1, 2: // postponed, timeout: keep the profile released
 			default:
 				if p.State == store.StateReleased || p.State == store.StateDownloaded {
 					p.State = store.StateError
 					p.ErrorReason = "cancelSession"
-					_ = c.Profiles.Update(p)
+					_ = c.Deps.Profiles.Update(p)
 				}
 			}
 		}
 	}
-	_ = c.Sessions.Delete(transactionID)
+	_ = c.Deps.Sessions.Delete(transactionID)
 	return transactionID, reason, nil
 }
