@@ -14,6 +14,8 @@ import (
 	"syscall"
 	"time"
 
+	"golang.org/x/sync/errgroup"
+
 	"rsp42/internal/cert"
 	"rsp42/internal/config"
 	"rsp42/internal/kms"
@@ -175,30 +177,37 @@ func newKMSProvider(cfg *config.KMSConfig) (*kms.FileProvider, error) {
 }
 
 func serveAll(log *slog.Logger, servers ...namedServer) int {
-	errCh := make(chan error, len(servers))
+	g, ctx := errgroup.WithContext(context.Background())
 	for _, ns := range servers {
-		ns := ns
-		go func() {
+		g.Go(func() error {
 			if err := ns.srv.Serve(ns.ln); err != nil && !errors.Is(err, http.ErrServerClosed) {
-				errCh <- fmt.Errorf("%s: %w", ns.name, err)
+				return fmt.Errorf("%s: %w", ns.name, err)
 			}
-		}()
+			return nil
+		})
 		log.Info("listening", "server", ns.name, "addr", ns.ln.Addr().String())
 	}
 
+	// A SIGINT/SIGTERM shuts every listener down; the Serve goroutines then
+	// return http.ErrServerClosed, so the group finishes without an error.
 	sigCh := make(chan os.Signal, 1)
 	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
+	defer signal.Stop(sigCh)
+	go func() {
+		select {
+		case sig := <-sigCh:
+			log.Info("shutting down", "signal", sig.String())
+			shutdown(log, servers)
+		case <-ctx.Done():
+		}
+	}()
 
-	select {
-	case err := <-errCh:
+	if err := g.Wait(); err != nil {
 		log.Error("server failed", "err", err)
 		shutdown(log, servers)
 		return 1
-	case sig := <-sigCh:
-		log.Info("shutting down", "signal", sig.String())
-		shutdown(log, servers)
-		return 0
 	}
+	return 0
 }
 
 func shutdown(log *slog.Logger, servers []namedServer) {

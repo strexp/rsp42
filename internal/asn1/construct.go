@@ -23,6 +23,14 @@ var (
 // Tag is re-exported for callers that build tags directly.
 type Tag = bertlv.Tag
 
+// Builder is the mutable BER-TLV value produced by the construction helpers in
+// this file (New, Seq, Prim, Octet, ...) and serialized by Marshal. It is an
+// alias for the low-level bertlv type, exported so that callers outside this
+// package never have to import github.com/euicc-go/bertlv themselves. It is a
+// different type from Node, which is the editable tree used for SAIP
+// ProfileElements.
+type Builder = bertlv.TLV
+
 // BER tag classes and forms.
 const (
 	classUniversal   = 0
@@ -67,24 +75,24 @@ func Ctx(n uint64, constructed bool) bertlv.Tag {
 }
 
 // Seq builds a universal SEQUENCE.
-func Seq(children ...*bertlv.TLV) *bertlv.TLV { return bertlv.NewChildren(TagSequence, children...) }
+func Seq(children ...*Builder) *Builder { return bertlv.NewChildren(TagSequence, children...) }
 
 // New builds a constructed TLV with an arbitrary tag.
-func New(tag bertlv.Tag, children ...*bertlv.TLV) *bertlv.TLV {
+func New(tag bertlv.Tag, children ...*Builder) *Builder {
 	return bertlv.NewChildren(tag, children...)
 }
 
 // Prim builds a primitive TLV with an arbitrary tag.
-func Prim(tag bertlv.Tag, value []byte) *bertlv.TLV { return bertlv.NewValue(tag, value) }
+func Prim(tag bertlv.Tag, value []byte) *Builder { return bertlv.NewValue(tag, value) }
 
 // Octet builds an OCTET STRING.
-func Octet(b []byte) *bertlv.TLV { return bertlv.NewValue(TagOctetStr, b) }
+func Octet(b []byte) *Builder { return bertlv.NewValue(TagOctetStr, b) }
 
 // Null builds a NULL.
-func Null() *bertlv.TLV { return bertlv.NewValue(TagNull, nil) }
+func Null() *Builder { return bertlv.NewValue(TagNull, nil) }
 
 // Bool builds a BOOLEAN.
-func Bool(v bool) *bertlv.TLV {
+func Bool(v bool) *Builder {
 	if v {
 		return bertlv.NewValue(TagBoolean, []byte{0xff})
 	}
@@ -92,29 +100,29 @@ func Bool(v bool) *bertlv.TLV {
 }
 
 // UTF8 builds a UTF8String.
-func UTF8(s string) *bertlv.TLV { return bertlv.NewValue(TagUTF8String, []byte(s)) }
+func UTF8(s string) *Builder { return bertlv.NewValue(TagUTF8String, []byte(s)) }
 
 // Int builds an INTEGER from the minimal two's-complement encoding.
-func Int(v int64) *bertlv.TLV { return bertlv.NewValue(TagInteger, encodeInt(v)) }
+func Int(v int64) *Builder { return bertlv.NewValue(TagInteger, encodeInt(v)) }
 
 // IntBytes returns the minimal two's-complement content of an INTEGER value.
 func IntBytes(v int64) []byte { return encodeInt(v) }
 
 // Enumerated builds an ENUMERATED.
-func Enumerated(v int64) *bertlv.TLV { return bertlv.NewValue(TagEnumerated, encodeInt(v)) }
+func Enumerated(v int64) *Builder { return bertlv.NewValue(TagEnumerated, encodeInt(v)) }
 
 // BitString builds a BIT STRING. bits is the value with trailing bits already
 // zeroed; unused is the number of unused trailing bits (0..7).
-func BitString(unused uint8, bits []byte) *bertlv.TLV {
+func BitString(unused uint8, bits []byte) *Builder {
 	value := append([]byte{unused}, bits...)
 	return bertlv.NewValue(TagBitString, value)
 }
 
 // OID builds an OBJECT IDENTIFIER from its dotted string form.
-func OID(oid string) *bertlv.TLV { return bertlv.NewValue(TagOID, EncodeOID(oid)) }
+func OID(oid string) *Builder { return bertlv.NewValue(TagOID, EncodeOID(oid)) }
 
 // Sequence wraps children in a UNIVERSAL SEQUENCE and returns the encoded bytes.
-func Marshal(t *bertlv.TLV) []byte {
+func Marshal(t *Builder) []byte {
 	b, err := t.MarshalBinary()
 	if err != nil {
 		panic(err)

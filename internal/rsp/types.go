@@ -12,8 +12,6 @@ import (
 	"encoding/hex"
 	"fmt"
 
-	"github.com/euicc-go/bertlv"
-
 	"rsp42/internal/asn1"
 )
 
@@ -288,7 +286,7 @@ type SmdpSigned2 struct {
 
 // Encode returns the DER/BER encoding of SmdpSigned2.
 func (s *SmdpSigned2) Encode() []byte {
-	children := []*bertlv.TLV{
+	children := []*asn1.Builder{
 		asn1.Prim(asn1.Ctx(0, false), s.TransactionID),
 		asn1.Bool(s.CCRequiredFlag),
 	}

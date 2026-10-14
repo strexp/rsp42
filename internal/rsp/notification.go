@@ -3,8 +3,6 @@ package rsp
 import (
 	"fmt"
 
-	"github.com/euicc-go/bertlv"
-
 	"rsp42/internal/asn1"
 )
 
@@ -20,7 +18,7 @@ type NotificationMetadata struct {
 
 // Encode returns the BF2F encoding of the metadata.
 func (m *NotificationMetadata) Encode() []byte {
-	children := []*bertlv.TLV{
+	children := []*asn1.Builder{
 		asn1.Prim(asn1.Ctx(0, false), asn1.IntBytes(m.SeqNumber)),
 		asn1.Prim(asn1.Ctx(1, false), []byte{0x00, m.Operation}),
 		asn1.UTF8(m.NotificationAddress),

@@ -536,7 +536,7 @@
 | C2 | `profileType` 解析静默降级 | 原不含 `/` 的值直接回落版本选择 | **已修**：`resolveProfileType` 返回 `parsed` 标志，未解析时计数 `rsp42_es2p_profile_type_unparsed_total` 并写审计（`detail.warning=profileType-unparsed`），不再静默 |
 | C3 | `8.2.1/3.8` 语义重载 | 原 `CodeAllocateFailed` 为 `8.2.1/3.8`，不在 Table 24 内 | **已修**：配额/无可用 Profile → `8.2.5/3.7`（`CodeNoMoreProfileAvailable`）；ICCID 不可用 → `8.2.1/3.3`（`CodeICCIDInUse`，新增 `service.ErrICCIDInUse`）；其余分配失败 → `8.2/4.2` |
 | C4 | `8.2.6/3.7` 语义错位 | `8.2.6` 是 Matching ID、`3.7` 是 Unavailable | **已修**：`CodeProfileUpdateFailed` 改为 `8.2/4.2`（Profile / Execution Error） |
-| C5 | `internal/asn1/doc.go` 陈述过期 | 原写 “wraps `github.com/euicc-go/bertlv`”，但该包自成一层 | **已修**：doc 改为准确描述（仅 `construct.go` 用 bertlv；上层直接 import 的收紧仍登记在 `TODO.md` §3.1） |
+| C5 | `internal/asn1/doc.go` 陈述过期 | 原写 “wraps `github.com/euicc-go/bertlv`”，但该包自成一层 | **已修**：doc 改为准确描述；并随 `TODO.md` §3.1 **完成依赖收紧** —— 导出 `asn1.Builder` 别名后，`internal/rsp` 与 `internal/crypto` 不再直接 import bertlv，仅 `internal/asn1/construct.go` 使用 |
 | C6 | `FileHandle.Body()` 忽略 `fillFileOffset` | `internal/saip/files.go:59-67` 只拼接 `fillFileContent`；`SetBody`（`:71-81`）会删除 offset 并线性化 | 补 offset 分片模板的定向回归测试（已并入 N13 第 4 条） |
 | C7 | `ServicesList` 命名 `bertlv` vs 规范 `ber-tlv` | `internal/saip/header.go:231` | **已修**（随 N15）：`serviceNames[SvcBERTLV] = "ber-tlv"`；这是 `/upp/{name}/decoded` 的对外契约变更 |
 | C8 | BER 不定长（indefinite length）被显式拒绝 | `internal/asn1/tlv.go:152`；长度字段 `> 4` 字节亦报错 | **已核查**：`testdata/upp` 全部 TS.48 向量与 SGP.26 证书均以定长编码解析通过（N13 回归门禁），未观察到不定长样本；**登记为已知边界**（`TODO.md` §4.3），若将来出现真实样本再决定支持 |
@@ -983,7 +983,7 @@ esim42 `02` §7.2 与 `06` §13.1 给出的顺序，与第一轮的 M1–M4 **�
 - **C2【已落地】**：`resolveProfileType` 返回 `parsed` 标志；未解析时计数 `rsp42_es2p_profile_type_unparsed_total{tenant}` 并写审计（`function=downloadOrder`，`detail.warning=profileType-unparsed`，`subject` 为分配到的 ICCID）。
 - **C3【已落地】**：`8.2.1/3.8` 拆为三条有效码 —— 配额/无可用 Profile → `8.2.5/3.7`（新增 `CodeNoMoreProfileAvailable`）；ICCID 不可用（占用/阻塞/创建冲突）→ `8.2.1/3.3`（新增 `CodeICCIDInUse` + `service.ErrICCIDInUse`）；其余 → `8.2/4.2`。
 - **C4【已落地】**：`CodeProfileUpdateFailed` 由 `8.2.6/3.7` 改为 `8.2/4.2`（Profile / Execution Error）。
-- **C5【已落地】**：`internal/asn1/doc.go` 改为准确描述；上层直接 import `bertlv` 的收紧仍登记在 `TODO.md` §3.1。
+- **C5【已落地】**：`internal/asn1/doc.go` 改为准确描述，并**一并完成 `TODO.md` §3.1 的依赖收紧** —— `internal/asn1` 导出 `Builder = bertlv.TLV`；`internal/rsp`（`types.go`/`notification.go`）与 `internal/crypto/ecdsa.go` 改用 `asn1.Builder`/`asn1.Prim`/`asn1.New`，现在仅 `internal/asn1/construct.go` import bertlv。
 - **C6 / C10 / C11【已落地】**：并入 N13（`File.Body()` 的 offset、约束校验）与 N15（服务位/GFSTE 职责边界注释）；值域校验（C10）依赖逐文件默认表，**该表未编码**，登记在 `TODO.md` §2-2。
 - **C7【已落地】**：并入 N15（`ber-tlv`）。
 - **C8【已核查并登记】**：`testdata/upp` 全部 TS.48 向量与 SGP.26 证书均以定长编码解析通过，无不定长样本；登记为已知边界（`TODO.md` §2-6 / §4.3），出现真实样本再评估。

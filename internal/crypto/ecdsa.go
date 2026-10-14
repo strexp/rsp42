@@ -12,8 +12,6 @@ import (
 	"fmt"
 	"math/big"
 
-	"github.com/euicc-go/bertlv"
-
 	"rsp42/internal/asn1"
 )
 
@@ -104,10 +102,9 @@ func RawToDer(curve elliptic.Curve, raw []byte) ([]byte, error) {
 	}
 	r := new(big.Int).SetBytes(raw[:n])
 	s := new(big.Int).SetBytes(raw[n:])
-	rt := bertlv.NewValue(bertlv.Universal.Primitive(2), trimInt(r))
-	st := bertlv.NewValue(bertlv.Universal.Primitive(2), trimInt(s))
-	seq := bertlv.NewChildren(bertlv.Universal.Constructed(16), rt, st)
-	return seq.MarshalBinary()
+	rt := asn1.Prim(asn1.TagInteger, trimInt(r))
+	st := asn1.Prim(asn1.TagInteger, trimInt(s))
+	return asn1.Marshal(asn1.New(asn1.TagSequence, rt, st)), nil
 }
 
 func trimInt(v *big.Int) []byte {
