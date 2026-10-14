@@ -97,8 +97,7 @@ func profileFilterFromQuery(q map[string][]string) store.ProfileFilter {
 
 func (h *Handler) listProfiles(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query()
-	size := clampSize(atoiDefault(q.Get("size"), defaultPageSize))
-	page := clampPage(atoiDefault(q.Get("page"), 1))
+	page, size := parsePage(r)
 	items, total, err := h.Profiles.ListFiltered(profileFilterFromQuery(q), size, (page-1)*size, q.Get("sort"))
 	if err != nil {
 		writeErr(w, http.StatusInternalServerError, err.Error())
@@ -108,7 +107,7 @@ func (h *Handler) listProfiles(w http.ResponseWriter, r *http.Request) {
 	for _, p := range items {
 		views = append(views, toProfileView(p))
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"items": views, "page": page, "size": size, "total": total})
+	writeListEnvelope(w, views, page, size, total)
 }
 
 func (h *Handler) getProfile(w http.ResponseWriter, r *http.Request) {

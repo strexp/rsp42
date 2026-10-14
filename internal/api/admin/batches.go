@@ -88,18 +88,7 @@ func (h *Handler) createBatch(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) listBatches(w http.ResponseWriter, r *http.Request) {
-	q := r.URL.Query()
-	size := atoiDefault(q.Get("size"), defaultPageSize)
-	if size < 1 {
-		size = defaultPageSize
-	}
-	if size > maxPageSize {
-		size = maxPageSize
-	}
-	page := atoiDefault(q.Get("page"), 1)
-	if page < 1 {
-		page = 1
-	}
+	page, size := parsePage(r)
 	items, total, err := h.Batch.List(scopeTenantParam(r), size, (page-1)*size)
 	if err != nil {
 		writeErr(w, http.StatusInternalServerError, err.Error())
@@ -109,7 +98,7 @@ func (h *Handler) listBatches(w http.ResponseWriter, r *http.Request) {
 	for _, b := range items {
 		views = append(views, toBatchView(b))
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"items": views, "page": page, "size": size, "total": total})
+	writeListEnvelope(w, views, page, size, total)
 }
 
 func (h *Handler) getBatch(w http.ResponseWriter, r *http.Request) {
@@ -146,17 +135,7 @@ func (h *Handler) listBatchItems(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	q := r.URL.Query()
-	size := atoiDefault(q.Get("size"), defaultPageSize)
-	if size < 1 {
-		size = defaultPageSize
-	}
-	if size > maxPageSize {
-		size = maxPageSize
-	}
-	page := atoiDefault(q.Get("page"), 1)
-	if page < 1 {
-		page = 1
-	}
+	page, size := parsePage(r)
 	items, total, err := h.Profiles.ListFiltered(store.ProfileFilter{BatchID: &id, State: q.Get("state")}, size, (page-1)*size, q.Get("sort"))
 	if err != nil {
 		writeErr(w, http.StatusInternalServerError, err.Error())
@@ -166,7 +145,7 @@ func (h *Handler) listBatchItems(w http.ResponseWriter, r *http.Request) {
 	for _, p := range items {
 		views = append(views, toProfileView(p))
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"items": views, "page": page, "size": size, "total": total})
+	writeListEnvelope(w, views, page, size, total)
 }
 
 func (h *Handler) confirmBatch(w http.ResponseWriter, r *http.Request) {

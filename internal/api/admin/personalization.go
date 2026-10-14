@@ -56,8 +56,7 @@ func toPersoView(d *personalization.Data, reveal bool) persoView {
 
 func (h *Handler) listPerso(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query()
-	size := clampSize(atoiDefault(q.Get("size"), defaultPageSize))
-	page := clampPage(atoiDefault(q.Get("page"), 1))
+	page, size := parsePage(r)
 	reveal := q.Get("reveal") == "1"
 	items, total, err := h.Perso.ListPage(q.Get("iccid"), scopeTenantParam(r), size, (page-1)*size)
 	if err != nil {
@@ -70,7 +69,7 @@ func (h *Handler) listPerso(w http.ResponseWriter, r *http.Request) {
 		v.Tenant = scopeTenantParam(r)
 		views = append(views, v)
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"items": views, "page": page, "size": size, "total": total})
+	writeListEnvelope(w, views, page, size, total)
 }
 
 func (h *Handler) getPerso(w http.ResponseWriter, r *http.Request) {

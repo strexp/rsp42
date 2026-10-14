@@ -63,8 +63,7 @@ type eventView struct {
 // lifecycle filters (G20).
 func listDSEvents(w http.ResponseWriter, r *http.Request, events *store.EventRepo) {
 	q := r.URL.Query()
-	size := clampSize(atoiDefault(q.Get("size"), defaultPageSize))
-	page := clampPage(atoiDefault(q.Get("page"), 1))
+	page, size := parsePage(r)
 
 	filter := store.EventFilter{
 		EID: q.Get("eid"), EventID: q.Get("eventId"),
@@ -94,7 +93,7 @@ func listDSEvents(w http.ResponseWriter, r *http.Request, events *store.EventRep
 			ExpiresAt: rec.ExpiresAt, DeletedAt: rec.DeletedAt,
 		})
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"items": views, "page": page, "size": size, "total": total})
+	writeListEnvelope(w, views, page, size, total)
 }
 
 // createDSEvent registers an event through the management API (N8). It exists

@@ -101,8 +101,7 @@ func (h *Handler) listAudit(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	size := clampSize(atoiDefault(q.Get("size"), defaultPageSize))
-	page := clampPage(atoiDefault(q.Get("page"), 1))
+	page, size := parsePage(r)
 	entries, total, err := h.Audit.ListFiltered(filter, size, (page-1)*size)
 	if err != nil {
 		writeErr(w, http.StatusInternalServerError, err.Error())
@@ -112,5 +111,5 @@ func (h *Handler) listAudit(w http.ResponseWriter, r *http.Request) {
 	for _, e := range entries {
 		views = append(views, toAuditView(e))
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"items": views, "page": page, "size": size, "total": total})
+	writeListEnvelope(w, views, page, size, total)
 }

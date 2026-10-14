@@ -42,8 +42,7 @@ type rangeView struct {
 
 func (h *Handler) listPool(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query()
-	size := clampSize(atoiDefault(q.Get("size"), defaultPageSize))
-	page := clampPage(atoiDefault(q.Get("page"), 1))
+	page, size := parsePage(r)
 	items, total, err := h.Pool.ListPage(q.Get("state"), q.Get("iccid"), tenantFilter(r), size, (page-1)*size)
 	if err != nil {
 		writeErr(w, http.StatusInternalServerError, err.Error())
@@ -53,7 +52,7 @@ func (h *Handler) listPool(w http.ResponseWriter, r *http.Request) {
 	for _, e := range items {
 		views = append(views, toPoolView(e))
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"items": views, "page": page, "size": size, "total": total})
+	writeListEnvelope(w, views, page, size, total)
 }
 
 func (h *Handler) poolStats(w http.ResponseWriter, r *http.Request) {

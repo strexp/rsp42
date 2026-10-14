@@ -53,8 +53,7 @@ func (h *Handler) listCallbacks(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	q := r.URL.Query()
-	size := clampSize(atoiDefault(q.Get("size"), defaultPageSize))
-	page := clampPage(atoiDefault(q.Get("page"), 1))
+	page, size := parsePage(r)
 	filter := store.CallbackFilter{
 		Status: q.Get("state"),
 		ICCID:  normalizeICCID(q.Get("iccid")),
@@ -75,7 +74,7 @@ func (h *Handler) listCallbacks(w http.ResponseWriter, r *http.Request) {
 	for _, c := range items {
 		views = append(views, toCallbackView(c))
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"items": views, "page": page, "size": size, "total": total})
+	writeListEnvelope(w, views, page, size, total)
 }
 
 // retryCallback re-queues one dead-lettered callback.

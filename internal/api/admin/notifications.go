@@ -27,8 +27,7 @@ func (h *Handler) listNotifications(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	q := r.URL.Query()
-	size := clampSize(atoiDefault(q.Get("size"), defaultPageSize))
-	page := clampPage(atoiDefault(q.Get("page"), 1))
+	page, size := parsePage(r)
 	filter := store.NotificationFilter{ICCID: normalizeICCID(q.Get("iccid")), EID: q.Get("eid")}
 	if t := parseTime(q.Get("from")); t != nil {
 		filter.Since = t
@@ -49,5 +48,5 @@ func (h *Handler) listNotifications(w http.ResponseWriter, r *http.Request) {
 			SignatureOK: n.SignatureOK, Processed: n.Processed, ReceivedAt: n.ReceivedAt,
 		})
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"items": views, "page": page, "size": size, "total": total})
+	writeListEnvelope(w, views, page, size, total)
 }
