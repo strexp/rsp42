@@ -127,11 +127,13 @@ func cmdSMDpp(prog string, args []string) int {
 		DownloadTTL:         cfg.SMDpp.DownloadTTL.Duration(),
 		PPRIds:              rsp.PPRIDBits(cfg.Profiles.PPRIds),
 	}, certs, sessions, st.Profiles, perso, st.UPP, cfg.Profiles.DefaultUPP, &personalization.Engine{Algorithm: cfg.Profiles.Personalization.DefaultAlgorithm}, log)
-	cmae.Tenants = st.Tenants
 	if err != nil {
 		log.Error("cmae", "err", err)
 		return 1
 	}
+	cmae.Tenants = st.Tenants
+	cmae.Audit = st.Audit
+	cmae.Metrics = reg
 	notifs := service.NewNotificationService(log, st.Notifs, st.Profiles, orders)
 	notifs.Sessions = sessions
 	notifs.Certs = certs
@@ -201,11 +203,17 @@ func cmdSMDpp(prog string, args []string) int {
 		log.Error("es2p listener", "err", err)
 		return 1
 	}
+	saipPolicy, err := service.NewSAIPVersionPolicy(cfg.Profiles.AllowedSAIPVersions)
+	if err != nil {
+		log.Error("saip version policy", "err", err)
+		return 1
+	}
 	adminH := &adminapi.Handler{
 		Log: log, Tenants: st.Tenants, Profiles: st.Profiles, Orders: orders, Inventory: inventory,
 		UPP: st.UPP, Perso: perso, Audit: st.Audit, Batch: st.Batch,
 		OrderRepo: st.Orders, Notifs: st.Notifs, Sessions: st.Sessions, Pool: st.Pool, Events: st.Events,
-		Idem: st.Idem, DefaultReserveTTL: cfg.Profiles.Personalization.ReserveTTL.Duration(),
+		Idem: st.Idem, AllowedSAIP: saipPolicy,
+		DefaultReserveTTL: cfg.Profiles.Personalization.ReserveTTL.Duration(),
 		FQDN: cfg.SMDpp.FQDN, OID: cfg.SMDpp.OID,
 	}
 	admin, err := buildServer(log, "admin", cfg.SMDpp.Server.Bind, cfg.SMDpp.Server.Admin,

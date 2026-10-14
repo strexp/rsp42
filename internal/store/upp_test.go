@@ -5,6 +5,8 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
+
+	"rsp42/internal/rsp"
 )
 
 func TestUPPRepoSelectAndActivate(t *testing.T) {
@@ -22,14 +24,28 @@ func TestUPPRepoSelectAndActivate(t *testing.T) {
 		require.NoError(t, st.UPP.Upsert(&seed[i]))
 	}
 
-	// Greatest active version not exceeding the requested one (tie broken by name).
-	best, err := st.UPP.SelectBest(2, 2)
+	// Greatest active version not exceeding the requested version set
+	// (tie broken by name).
+	best, err := st.UPP.SelectBest([]rsp.Version{{Major: 2, Minor: 2}})
 	require.NoError(t, err)
 	require.Equal(t, "v21a", best.Name)
 
 	// Nothing qualifies below the lowest template.
-	_, err = st.UPP.SelectBest(1, 0)
+	_, err = st.UPP.SelectBest([]rsp.Version{{Major: 1, Minor: 0}})
 	require.ErrorIs(t, err, ErrNotFound)
+
+	// An unknown (empty) version set never selects a template: "unknown" must
+	// not silently fall back to an arbitrary one (N11).
+	_, err = st.UPP.SelectBest(nil)
+	require.ErrorIs(t, err, ErrNotFound)
+
+	// The version-set form is the reserved interface for a future dual-major
+	// rule; until that rule exists, compatibility follows the numeric
+	// (major,minor) order, so the greatest supported version bounds the choice
+	// (docs/esim42-integration-gaps.md §8.1 decision 9).
+	best, err = st.UPP.SelectBest([]rsp.Version{{Major: 2, Minor: 1}, {Major: 3, Minor: 2}})
+	require.NoError(t, err)
+	require.Equal(t, "v23", best.Name)
 
 	// Inactive templates are excluded from selection but readable by name.
 	any, err := st.UPP.Any()

@@ -76,6 +76,12 @@ var (
 	CodeEventNotFound       = Code{"8.9.5", "3.9"}
 	CodeUnknownTransaction  = Code{"8.10.1", "3.9"}
 
+	// CodeProfileVersionNotSupported is returned when no UPP template is
+	// compatible with the eUICC's advertised SAIP versions (N12). SGP.22 has no
+	// dedicated code for this condition, so 8.2.6/3.8 is used with a readable
+	// message; it deliberately does not reuse 8.8.5/4.10 (unsupported curve).
+	CodeProfileVersionNotSupported = Code{"8.2.6", "3.8"}
+
 	// ES2+ argument/authorisation codes (SGP.22 §5.2.6, Tables 23/24/26).
 	//
 	// CodeInvalidAssociation is returned by ConfirmOrder when its EID does not

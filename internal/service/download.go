@@ -6,6 +6,7 @@ import (
 	"crypto/ecdsa"
 	"crypto/rand"
 	"crypto/x509"
+	"errors"
 	"fmt"
 
 	"rsp42/internal/crypto"
@@ -69,6 +70,14 @@ func (c *CMAE) GetBoundProfilePackage(transactionID string, prepareDownloadRespo
 
 	upp, err := c.loadUPP(profile, sess)
 	if err != nil {
+		var vErr *ErrProfileVersionNotSupported
+		if errors.As(err, &vErr) {
+			// N12: no BoundProfilePackage segment has been produced yet, so the
+			// eUICC receives a clean, distinguishable failure instead of a
+			// package it would reject at the end of the download.
+			c.noteVersionFailure(profile.TenantID, profile, vErr)
+			return nil, rsp.CodeProfileVersionNotSupported.Status(vErr.Error())
+		}
 		return nil, rsp.CodeProfileLoadFailed.Status(err.Error())
 	}
 
@@ -206,52 +215,174 @@ func (c *CMAE) buildStoreMetadataWithSSD(profile *store.Profile, ssd []byte) ([]
 	return req.Encode(), nil
 }
 
-// pickUPP returns the name of the best UPP template for the eUICC's advertised
-// profile version (the greatest SAIP version not exceeding it) within the
-// tenant's visible scope. It returns "" when the version is unknown or no
-// template qualifies.
-func (c *CMAE) pickUPP(tenant string, supported []byte) string {
-	if c.UPP == nil || len(supported) < 2 {
-		return ""
-	}
-	tpl, err := c.UPP.SelectBestFor(tenant, int(supported[0]), int(supported[1]))
-	if err != nil || tpl == nil {
-		return ""
-	}
-	return tpl.Name
+// ErrProfileVersionNotSupported reports that no UPP template compatible with
+// the eUICC's advertised SAIP versions is available (N12). It must fail the
+// download before any BoundProfilePackage segment is produced, so the eUICC
+// never sees a template it would reject at the very end of the download.
+type ErrProfileVersionNotSupported struct {
+	// EuiccProfileVersion is the base SAIP version the eUICC declared, or ""
+	// when the session carries no version information.
+	EuiccProfileVersion string
+	// SupportedVersions lists every version the eUICC declared.
+	SupportedVersions []string
+	// LowestTemplateVersion is the lowest template version that was considered,
+	// or "" when no template could be loaded at all.
+	LowestTemplateVersion string
 }
 
-// loadUPP loads, personalizes and encodes the UPP template for a profile from
-// the registry. The resolution order is: the template pinned on the order, then
-// the template selected for the session (eUICC profile version), then the
-// tenant default, then the global default. There is deliberately no "any
-// template" fallback: silently downloading a template from the wrong tenant
-// would be worse than failing the download.
-func (c *CMAE) loadUPP(profile *store.Profile, sess *store.Session) ([]byte, error) {
+func (e *ErrProfileVersionNotSupported) Error() string {
+	if len(e.SupportedVersions) == 0 {
+		return "eUICC advertised no usable SAIP profile version; no template can be selected"
+	}
+	if e.LowestTemplateVersion == "" {
+		return fmt.Sprintf("no UPP template compatible with the eUICC's SAIP versions %v",
+			e.SupportedVersions)
+	}
+	return fmt.Sprintf("no UPP template compatible with the eUICC's SAIP versions %v (lowest registered template is %s)",
+		e.SupportedVersions, e.LowestTemplateVersion)
+}
+
+// sessionVersions decodes the SAIP version set persisted on a session at
+// AuthenticateClient (N11).
+func sessionVersions(sess *store.Session) []rsp.Version {
+	if sess == nil {
+		return nil
+	}
+	var out []rsp.Version
+	for _, s := range sess.EuiccSupportedVersions {
+		if v, err := rsp.ParseVersion(s); err == nil {
+			out = append(out, v)
+		}
+	}
+	return out
+}
+
+// versionStrings renders a version set for audit/timeline details.
+func versionStrings(versions []rsp.Version) []string {
+	out := make([]string, 0, len(versions))
+	for _, v := range versions {
+		out = append(out, v.String())
+	}
+	return out
+}
+
+// versionSupported reports whether a template version is covered by the eUICC's
+// advertised version set (compared by major/minor only).
+func versionSupported(v rsp.Version, supported []rsp.Version) bool {
+	for _, s := range supported {
+		if v.Compare(s) <= 0 {
+			return true
+		}
+	}
+	return false
+}
+
+// resolveUPPTemplate returns the template loadUPP must use, enforcing N12's
+// version compatibility at every fallback level. The resolution order is: the
+// template pinned on the order, then the template selected for the session,
+// then the best template the eUICC's version set supports, then the tenant
+// default, then the global default.
+//
+// A pinned template (order or session) is authoritative: when it is missing or
+// incompatible the download fails instead of silently substituting another
+// template. Soft defaults (tenant/global) may fall through to each other. There
+// is deliberately no "any template" fallback, and an unknown version set never
+// selects a template.
+func (c *CMAE) resolveUPPTemplate(profile *store.Profile, sess *store.Session) (*store.UPPTemplate, error) {
 	if c.UPP == nil {
 		return nil, fmt.Errorf("no UPP template registry configured")
 	}
 	tenant := profile.TenantID
-	name := profile.UPPTemplate
-	if name == "" && sess != nil {
-		name = sess.UPPTemplate
+	supported := sessionVersions(sess)
+
+	type candidate struct {
+		name     string
+		explicit bool
+		tpl      *store.UPPTemplate
 	}
-	if name == "" && c.Tenants != nil {
+	var cands []candidate
+	if profile.UPPTemplate != "" {
+		cands = append(cands, candidate{name: profile.UPPTemplate, explicit: true})
+	}
+	if sess != nil && sess.UPPTemplate != "" {
+		cands = append(cands, candidate{name: sess.UPPTemplate, explicit: true})
+	}
+	if len(supported) > 0 {
+		if best, err := c.UPP.SelectBestFor(tenant, supported); err == nil && best != nil {
+			cands = append(cands, candidate{name: best.Name, tpl: best})
+		}
+	}
+	if c.Tenants != nil {
 		def, err := c.Tenants.DefaultUPPForTenant(tenant)
 		if err != nil {
 			return nil, err
 		}
-		name = def
+		if def != "" {
+			cands = append(cands, candidate{name: def})
+		}
 	}
-	if name == "" {
-		name = c.DefaultUPP
+	if c.DefaultUPP != "" {
+		cands = append(cands, candidate{name: c.DefaultUPP})
 	}
-	if name == "" {
+	if len(cands) == 0 {
 		return nil, fmt.Errorf("no UPP template configured for tenant %q", tenant)
 	}
-	tpl, err := c.UPP.GetForTenant(tenant, name)
+
+	rej := &ErrProfileVersionNotSupported{
+		SupportedVersions: versionStrings(supported),
+	}
+	if sess != nil {
+		rej.EuiccProfileVersion = sess.EuiccProfileVersion
+	}
+	var lowest *rsp.Version
+	var missing error
+	var loaded bool
+	for _, cand := range cands {
+		tpl := cand.tpl
+		if tpl == nil {
+			var err error
+			tpl, err = c.UPP.GetForTenant(tenant, cand.name)
+			if err != nil {
+				if cand.explicit {
+					return nil, fmt.Errorf("UPP template %q: %w", cand.name, err)
+				}
+				if missing == nil {
+					missing = fmt.Errorf("UPP template %q: %w", cand.name, err)
+				}
+				continue
+			}
+		}
+		loaded = true
+		v := rsp.Version{Major: tpl.SAIPMajor, Minor: tpl.SAIPMinor}
+		if lowest == nil || v.Compare(*lowest) < 0 {
+			vv := v
+			lowest = &vv
+		}
+		if !versionSupported(v, supported) {
+			if cand.explicit {
+				rej.LowestTemplateVersion = v.String()
+				return nil, rej
+			}
+			continue
+		}
+		return tpl, nil
+	}
+	if !loaded && missing != nil {
+		// Nothing in the registry could even be loaded: report the template
+		// resolution failure rather than a version mismatch.
+		return nil, missing
+	}
+	if lowest != nil {
+		rej.LowestTemplateVersion = lowest.String()
+	}
+	return nil, rej
+}
+
+// loadUPP resolves, personalizes and encodes the UPP template for a profile.
+func (c *CMAE) loadUPP(profile *store.Profile, sess *store.Session) ([]byte, error) {
+	tpl, err := c.resolveUPPTemplate(profile, sess)
 	if err != nil {
-		return nil, fmt.Errorf("UPP template %q: %w", name, err)
+		return nil, err
 	}
 	seq, err := saip.ParseUPP(tpl.Bytes)
 	if err != nil {

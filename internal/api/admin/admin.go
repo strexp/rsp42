@@ -45,6 +45,9 @@ type Handler struct {
 	Events    *store.EventRepo
 	// Idem enables Idempotency-Key replay on the management writes.
 	Idem *store.IdempotencyRepo
+	// AllowedSAIP enforces profiles.allowed_saip_versions on every template
+	// write (N16). A nil policy means "no limit".
+	AllowedSAIP *service.SAIPVersionPolicy
 	// DefaultReserveTTL bounds how long an unclaimed pool reservation may live.
 	DefaultReserveTTL time.Duration
 	// FQDN and OID are used when generating activation codes.
@@ -160,6 +163,26 @@ func writeErr(w http.ResponseWriter, status int, msg string) {
 // errorBody is the stable management-API error model (G10).
 func errorBody(code, message string) map[string]string {
 	return map[string]string{"code": code, "message": message}
+}
+
+// errorBodyDetails is errorBody plus a machine-readable details object. It is
+// used where a stable code alone is not enough to act on (N16, N3).
+func errorBodyDetails(code, message string, details any) map[string]any {
+	body := map[string]any{"code": code, "message": message}
+	if details != nil {
+		body["details"] = details
+	}
+	return body
+}
+
+// writeSAIPVersionErr reports a template refused by profiles.allowed_saip_versions
+// (N16). The stable code is saip_version_not_supported.
+func (h *Handler) writeSAIPVersionErr(w http.ResponseWriter, rej *service.SAIPVersionRejection) {
+	if rej == nil {
+		return
+	}
+	writeJSON(w, http.StatusConflict, errorBodyDetails("saip_version_not_supported", rej.Error(),
+		map[string]any{"templateVersion": rej.TemplateVersion, "maxSupported": rej.MaxSupported}))
 }
 
 // errCode derives a stable machine-readable code from the HTTP status when a

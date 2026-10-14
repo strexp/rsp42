@@ -7,6 +7,8 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+
+	"rsp42/internal/rsp"
 )
 
 // Validate checks the configuration for the given role and returns an
@@ -147,6 +149,11 @@ func (c *Config) validateDP() error {
 	for i, m := range s.ES2P.RequesterTenants {
 		if strings.TrimSpace(m.Requester) == "" {
 			return fmt.Errorf("smdpp.es2p.requester_tenants[%d].requester must not be empty", i)
+		}
+	}
+	for i, raw := range c.Profiles.AllowedSAIPVersions {
+		if _, err := rsp.ParseVersion(raw); err != nil {
+			return fmt.Errorf("profiles.allowed_saip_versions[%d]: %w", i, err)
 		}
 	}
 	if ttl := c.Profiles.Personalization.ReserveTTL; ttl < 0 {

@@ -59,7 +59,12 @@ func cmdUPP(prog string, args []string) int {
 			fmt.Fprintln(os.Stderr, "upp import: --dir is required")
 			return 2
 		}
-		n, err := service.ImportUPPTemplates(*dir, st.UPP)
+		policy, err := service.NewSAIPVersionPolicy(cfg.Profiles.AllowedSAIPVersions)
+		if err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			return 1
+		}
+		n, err := service.ImportUPPTemplates(*dir, st.UPP, policy)
 		if err != nil {
 			fmt.Fprintln(os.Stderr, err)
 			return 1

@@ -44,7 +44,9 @@ func newTestHandler(t *testing.T) (*Handler, *cert.Manager) {
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = st.Close() })
 
-	_, err = service.ImportUPPTemplates("../../../testdata/upp", st.UPP)
+	policy, err := service.NewSAIPVersionPolicy([]string{"2.3"})
+	require.NoError(t, err)
+	_, err = service.ImportUPPTemplates("../../../testdata/upp", st.UPP, policy)
 	require.NoError(t, err)
 
 	cmae, err := service.NewCMAE(service.CMAEConfig{

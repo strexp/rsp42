@@ -137,6 +137,13 @@ type ProfilesConfig struct {
 	Repository      string                `mapstructure:"repository"`
 	Store           StoreConfig           `mapstructure:"store"`
 	Personalization PersonalizationConfig `mapstructure:"personalization"`
+	// AllowedSAIPVersions lists the SAIP (eUICC Profile Package) versions the
+	// template registry accepts, as "<major>.<minor>" entries. It is a list
+	// rather than a scalar so admitting a second major family later needs no
+	// configuration-shape change (docs/esim42-integration-gaps.md §8.1
+	// decision 8). V2.3.1 is a document revision number and is encoded in the
+	// package as 2.3.
+	AllowedSAIPVersions []string `mapstructure:"allowed_saip_versions"`
 	// PPRIds lists the Profile Policy Rules to attach to downloaded profiles
 	// (SGP.22 §2.4a: 1 = PPR1 disabling not allowed, 2 = PPR2 deletion not
 	// allowed).
@@ -338,6 +345,7 @@ func setDefaults(v *viper.Viper) {
 	v.SetDefault("notifications.es2p_callback.retry_interval", "30s")
 	v.SetDefault("notifications.es2p_callback.acr_timeout", "10s")
 	v.SetDefault("profiles.repository", "sqlite")
+	v.SetDefault("profiles.allowed_saip_versions", []string{"2.3"})
 	v.SetDefault("profiles.store.dsn", "file:rsp42.db?_pragma=journal_mode(WAL)&_pragma=busy_timeout(5000)")
 	v.SetDefault("profiles.personalization.default_algorithm", "milenage")
 	v.SetDefault("profiles.personalization.reserve_ttl", "24h")

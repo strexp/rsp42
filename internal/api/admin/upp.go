@@ -111,6 +111,13 @@ func (h *Handler) putUPP(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusBadRequest, "invalid UPP profile: "+err.Error())
 		return
 	}
+	// N16: refuse templates above the configured SAIP baseline. V2.3.1 is a
+	// document revision number and is encoded in the package exactly like
+	// V2.3, so the comparison only ever uses (major, minor).
+	if rej := h.AllowedSAIP.CheckSAIPVersion(major, minor); rej != nil {
+		h.writeSAIPVersionErr(w, rej)
+		return
+	}
 	if err := h.checkTemplateQuota(tenant, req.Name); err != nil {
 		writeQuotaErr(w, err)
 		return

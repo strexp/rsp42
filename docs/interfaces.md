@@ -160,6 +160,21 @@ branch correctly:
 | Profile Type / template (or ICCID) not allowed for the caller | `8.2.5/1.2` / `8.2.1/1.2` |
 | Mandatory request element missing (e.g. `iccid`) | `8.1.1/2.2` |
 | `confirmOrder.eid` disagrees with the download order | `8.1.1/3.10` |
+| No template compatible with the eUICC's SAIP versions (N12) | `8.2.6/3.8` + readable message |
+
+**Template / eUICC version compatibility (N11/N12).** The eUICC advertises its
+SAIP versions in EuiccInfo2 (`profileVersion` plus, since SGP.22 v2.7 §5.7.6,
+`additionalEuiccProfilePackageVersions`). The SM-DP+ persists that set on the
+session and resolves the UPP template against it, in order: the template pinned
+on the order, the session template, the best template the version set supports,
+the tenant default, the global default. A pinned template is authoritative: if it
+is missing or incompatible the download fails instead of silently substituting
+another template. A version-incompatible or unknown case fails at
+`authenticateClient`/`getBoundProfilePackage` with `8.2.6/3.8` **before any
+BoundProfilePackage segment is produced**, so the eUICC never rejects the package
+at the end of the download. The failure is audited (`interface=es9p`,
+`function=authenticateClient`, `outcome=Failed`, with `euiccProfileVersion`,
+`supportedVersions`, `lowestTemplateVersion`) and counted in `/metrics`.
 
 ## Management API (admin listener)
 

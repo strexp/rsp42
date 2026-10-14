@@ -104,7 +104,9 @@ func setupCMAE(t *testing.T) (*CMAE, *store.Store) {
 	t.Cleanup(func() { _ = st.Close() })
 
 	// UPP templates live in the registry; seed it from the test fixtures.
-	_, err = ImportUPPTemplates("../../testdata/upp", st.UPP)
+	policy, err := NewSAIPVersionPolicy([]string{"2.3"})
+	require.NoError(t, err)
+	_, err = ImportUPPTemplates("../../testdata/upp", st.UPP, policy)
 	require.NoError(t, err)
 
 	perso := NewPersonalizationService(st.Perso, provider)
@@ -457,16 +459,57 @@ func TestNotificationOtherSignedVerification(t *testing.T) {
 	require.False(t, got[1].SignatureOK)
 }
 
-func TestPickUPPSelectsCompatibleVersion(t *testing.T) {
+func TestResolveUPPTemplateVersionSet(t *testing.T) {
 	cmae, _ := setupCMAE(t)
-	require.Equal(t, "", cmae.pickUPP("", nil))
+	profile := &store.Profile{}
 
-	// The TS.48 v1 templates declare SAIP 2.1 and sort first, so an eUICC
-	// advertising 2.2 gets the highest compatible template (2.1).
-	require.Equal(t, "TS48v1_A.der", cmae.pickUPP("", []byte{2, 2, 0}))
-	require.Equal(t, "TS48v2_SAIP2.3_BERTLV.der", cmae.pickUPP("", []byte{2, 3, 0}))
-	// Nothing qualifies below SAIP 2.1.
-	require.Empty(t, cmae.pickUPP("", []byte{1, 0, 0}))
+	// An empty version set is "unknown": no template may be selected silently.
+	_, err := cmae.resolveUPPTemplate(profile, &store.Session{})
+	var vErr *ErrProfileVersionNotSupported
+	require.ErrorAs(t, err, &vErr)
+	require.Empty(t, vErr.SupportedVersions)
+
+	// An eUICC advertising 2.2 gets the highest compatible template (2.1).
+	tpl, err := cmae.resolveUPPTemplate(profile, &store.Session{EuiccSupportedVersions: []string{"2.2"}})
+	require.NoError(t, err)
+	require.Equal(t, "TS48v1_A.der", tpl.Name)
+
+	// 2.3 gets a 2.3 template.
+	tpl, err = cmae.resolveUPPTemplate(profile, &store.Session{EuiccSupportedVersions: []string{"2.3"}})
+	require.NoError(t, err)
+	require.Equal(t, "TS48v2_SAIP2.3_BERTLV.der", tpl.Name)
+
+	// Nothing qualifies below SAIP 2.1: a clean, distinguishable failure that
+	// reports the lowest registered template version (N12).
+	_, err = cmae.resolveUPPTemplate(profile, &store.Session{EuiccSupportedVersions: []string{"1.0"}})
+	require.ErrorAs(t, err, &vErr)
+	require.Equal(t, []string{"1.0"}, vErr.SupportedVersions)
+	require.Equal(t, "2.1", vErr.LowestTemplateVersion)
+}
+
+// TestResolveUPPTemplatePinnedIncompatible pins N12's strictness: an explicitly
+// pinned template (order or session) that is above the eUICC's versions fails
+// instead of silently substituting a compatible default template.
+func TestResolveUPPTemplatePinnedIncompatible(t *testing.T) {
+	cmae, _ := setupCMAE(t)
+
+	profile := &store.Profile{UPPTemplate: "TS48v2_SAIP2.3_BERTLV.der"}
+	_, err := cmae.resolveUPPTemplate(profile, &store.Session{EuiccSupportedVersions: []string{"2.1"}})
+	var vErr *ErrProfileVersionNotSupported
+	require.ErrorAs(t, err, &vErr)
+	require.Equal(t, "2.3", vErr.LowestTemplateVersion)
+	require.Equal(t, []string{"2.1"}, vErr.SupportedVersions)
+
+	// The same pinned template is honoured when the eUICC supports it.
+	tpl, err := cmae.resolveUPPTemplate(profile, &store.Session{EuiccSupportedVersions: []string{"2.3"}})
+	require.NoError(t, err)
+	require.Equal(t, "TS48v2_SAIP2.3_BERTLV.der", tpl.Name)
+
+	// A pinned template that does not exist is a configuration error, not a
+	// version failure.
+	_, err = cmae.resolveUPPTemplate(&store.Profile{UPPTemplate: "nope.der"}, &store.Session{EuiccSupportedVersions: []string{"2.3"}})
+	require.Error(t, err)
+	require.NotErrorAs(t, err, &vErr)
 }
 
 func TestLoadUPPAppliesPersonalization(t *testing.T) {
@@ -481,7 +524,7 @@ func TestLoadUPPAppliesPersonalization(t *testing.T) {
 	// Even without a record the order's ICCID must be applied; here a record
 	// exists, so both the ICCID and the IMSI/SPN are written.
 	profile := &store.Profile{ICCID: "89000123456789012341"}
-	sess := &store.Session{UPPTemplate: "TS48v1_A.der"}
+	sess := &store.Session{UPPTemplate: "TS48v1_A.der", EuiccSupportedVersions: []string{"2.1"}}
 
 	upp, err := cmae.loadUPP(profile, sess)
 	require.NoError(t, err)

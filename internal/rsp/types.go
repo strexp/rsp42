@@ -111,6 +111,13 @@ type EUICCInfo2 struct {
 	CiPKIDListForSigning      [][]byte
 	PPVersion                 []byte
 	SASAcreditationNumber     string
+	// AdditionalEuiccProfilePackageVersions lists the higher-major SAIP
+	// packages the eUICC also supports (SGP.22 v2.7 §5.7.6, tag [15]). The
+	// field is present only when a major version above ProfileVersion is
+	// supported, so its presence marks a "V3-capable" eUICC.
+	AdditionalEuiccProfilePackageVersions [][]byte
+	// UICCCapability is the raw uiccCapability BIT STRING content ([5]).
+	UICCCapability []byte
 }
 
 // ParseEUICCInfo2 parses a EUICCInfo2 (BF22) data object.
@@ -133,10 +140,52 @@ func ParseEUICCInfo2(raw []byte) (*EUICCInfo2, error) {
 	if v, ok := t.Find(asn1.Ctx(10, true)); ok {
 		info.CiPKIDListForSigning = octetList(v)
 	}
+	if v, ok := t.Find(asn1.Ctx(15, true)); ok {
+		info.AdditionalEuiccProfilePackageVersions = octetList(v)
+	}
+	if v, ok := t.Find(asn1.Ctx(5, false)); ok {
+		info.UICCCapability = v.Value
+	}
 	// ppVersion and sasAcreditationNumber are untagged (universal tags).
 	info.PPVersion = childBytes(t, []byte{0x04})
 	info.SASAcreditationNumber = childString(t, []byte{0x0c})
 	return info, nil
+}
+
+// ProfilePackageVersion returns the base SAIP version the eUICC declares.
+func (i *EUICCInfo2) ProfilePackageVersion() (Version, bool) {
+	return VersionFromBytes(i.ProfileVersion)
+}
+
+// SupportedVersions returns every SAIP version the eUICC declares support for:
+// profileVersion plus the additionalEuiccProfilePackageVersions list. Versions
+// are compared by (major, minor) only.
+func (i *EUICCInfo2) SupportedVersions() []Version {
+	var out []Version
+	seen := map[Version]bool{}
+	add := func(b []byte) {
+		v, ok := VersionFromBytes(b)
+		if !ok || seen[v] {
+			return
+		}
+		seen[v] = true
+		out = append(out, v)
+	}
+	add(i.ProfileVersion)
+	for _, b := range i.AdditionalEuiccProfilePackageVersions {
+		add(b)
+	}
+	return out
+}
+
+// IsV3Capable reports whether the eUICC declares support for a SAIP v3 package.
+func (i *EUICCInfo2) IsV3Capable() bool {
+	for _, v := range i.SupportedVersions() {
+		if v.Major >= 3 {
+			return true
+		}
+	}
+	return false
 }
 
 func octetList(t asn1.TLV) [][]byte {

@@ -842,13 +842,13 @@ esim42 `02` §7.2 与 `06` §13.1 给出的顺序，与第一轮的 M1–M4 **�
 
 | # | 项 | 状态 | 现状证据 |
 |---|---|---|---|
-| N16 | SAIP 版本上限 | `[ ]` | `internal/api/admin/upp.go:113-121` 无上限；配置无 `allowed_saip_versions` |
-| N12 | 版本不兼容干净失败 | `[ ]` | `internal/service/download.go:224-250` 后两级回落不校验版本 |
+| N16 | SAIP 版本上限 | `[x]` | `profiles.allowed_saip_versions`（`internal/config/config.go`、`config/config.example.yaml`）+ 唯一 choke point `internal/service/saip_version.go`；`api/admin/upp.go`（`putUPP` 409 `saip_version_not_supported` + `details`）、`api/admin/upp_tools.go`（`validateUPP` warning、`clone`/`promote`/`restore` 同校验）、`internal/cli/admin_upp.go`（CLI import 同策略）；迁移 `00011` 无关，仅版本比对 `(major,minor)` |
+| N12 | 版本不兼容干净失败 | `[x]` | `internal/service/download.go` `resolveUPPTemplate`/`loadUPP`（四级回落均校验，显式 pin 不回落）；`ErrProfileVersionNotSupported`；`rsp.CodeProfileVersionNotSupported`（8.2.6/3.8）；`CMAE.noteVersionFailure` 写审计 `interface=es9p, function=authenticateClient, outcome=Failed` 并计数；`AuthenticateClient` 提前干净失败；迁移 `00011` |
 | N1 | 审计单调游标 | `[ ]` | `internal/store/audit.go:12-23` 无 `id` |
 | N2 | 回调队列管理 API | `[ ]` | `internal/api/admin/admin.go` 的 `Mount` 无 `/callbacks` |
 | N3 | 租户删除引用保护 | `[ ]` | `internal/store/tenant.go:112-114` “dangling by design”；`internal/api/admin/tenants.go:137-149` 直接删 |
 | N6 | admin 监听面 / 密钥导出加固 | `—` | **范围外**（§8.4 决策 11、§10.3 步骤 2.4）；现状：`config/config.example.yaml:19,73` = `0.0.0.0`，无 reveal 头校验，**本轮不改** |
-| N11 | `additionalEuiccProfilePackageVersions` | `[ ]` | 全仓零命中；`internal/store/upp.go:114-116` 的 `major<=0` 回退仍在 |
+| N11 | `additionalEuiccProfilePackageVersions` | `[x]` | `internal/rsp/types.go`（`EUICCInfo2` 解析 `[15]`、`SupportedVersions()`、`IsV3Capable()`）+ `internal/rsp/version.go`（`Version`）；`store.SelectBestFor` 改版本集合入参并移除 `major<=0 → AnyForTenant()` 回退；会话持久化 `euicc_profile_version`/`euicc_supported_versions`/`uicc_capability`（迁移 `00011`）；`v3-capable-euicc` 指标 |
 | N15 | `ServicesList` 24 项 | `[ ]` | `internal/saip/header.go:101-119`、`:237` 止于 18；`SvcTUAK256` 从未置位 |
 | N13 | Annex A 模板表 + 约束 + 向量 | `[ ]` | `internal/saip/` 无 `templates.go`；`TODO.md` §2 |
 | N17 | `SdKey*` / `MncLen` | `[ ]` | `TODO.md` §2 |
@@ -884,7 +884,7 @@ esim42 `02` §7.2 与 `06` §13.1 给出的顺序，与第一轮的 M1–M4 **�
 2. **会话版本列的必要性**：`loadUPP` 在 `GetBoundProfilePackage` 阶段执行，届时只有 `sessions` 行；eUICC 版本仅在 `AuthenticateClient` 的 `ca.Signed1.EuiccInfo2` 可见 → 必须经 `00011` 持久化（见 §10.7）。
 3. **choke point 约定**：SAIP 版本校验统一收敛到一个 `service` 函数，禁止只在 handler 内联（否则 CLI 导入等路径会绕过）。
 
-### 10.2 批 1（P0）
+### 10.2 批 1（P0）—— **已落地**（见 §9.4）
 
 #### 步骤 1.1 — N16：SAIP 版本上限 `≤(2,3)`
 
@@ -989,7 +989,7 @@ esim42 `02` §7.2 与 `06` §13.1 给出的顺序，与第一轮的 M1–M4 **�
 
 | 迁移 | 内容 | 来源 |
 |---|---|---|
-| `00011_session_euicc_versions.sql` | `sessions` 增 `euicc_profile_version`、`euicc_supported_versions`（JSON），可选 `uicc_capability` | N11 / N12 |
+| `00011_session_euicc_versions.sql` | `sessions` 增 `euicc_profile_version`、`euicc_supported_versions`（JSON），可选 `uicc_capability` | N11 / N12 —— **已落地** |
 | `00012_audit_autoincrement.sql` | `audit_log` 重建为 `AUTOINCREMENT`（保证 `id` 单调不回收） | N1 |
 | `00013_callback_columns.sql`（**仅当** `json_extract` spike 不通过） | `es2p_callbacks` 增 `tenant_id`/`iccid` + 索引 | N2 |
 

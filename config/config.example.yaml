@@ -149,6 +149,13 @@ profiles:
   # startup. PostgreSQL and multi-replica deployments are deliberate non-goals
   # (docs/esim42-integration-gaps.md §8.4).
   repository: "sqlite"
+  # SAIP (eUICC Profile Package) versions the template registry accepts. A
+  # template above the baseline is refused by POST /upp with
+  # 409 saip_version_not_supported (docs/esim42-integration-gaps.md N16).
+  # This is a LIST on purpose: admitting a second major family later needs no
+  # configuration-shape change. Note that "V2.3.1" is a document revision number
+  # and is encoded inside the package exactly like V2.3, i.e. as 2.3.
+  allowed_saip_versions: ["2.3"]
   store:
     dsn: "file:db/rsp42-smdpp.db?_pragma=journal_mode(WAL)&_pragma=busy_timeout(5000)"
   personalization:

@@ -5,6 +5,8 @@ import (
 	"errors"
 	"fmt"
 	"time"
+
+	"rsp42/internal/rsp"
 )
 
 // UPPTemplate is a row of the SAIP profile-package template registry.
@@ -107,18 +109,22 @@ func (r *UPPRepo) list(query string, args ...any) ([]*UPPTemplate, error) {
 	return out, rows.Err()
 }
 
-// SelectBestFor returns the active template with the greatest SAIP version not
-// exceeding (major, minor), preferring the tenant's own template on a version
-// tie. With an unknown version (0) it returns the highest active template.
-func (r *UPPRepo) SelectBestFor(tenant string, major, minor int) (*UPPTemplate, error) {
-	if major <= 0 {
-		return r.AnyForTenant(tenant)
+// SelectBestFor returns the active template with the greatest SAIP version that
+// the eUICC's advertised version set supports, preferring the tenant's own
+// template on a version tie. The caller passes the full set
+// (profileVersion plus additionalEuiccProfilePackageVersions, N11); an empty
+// set yields ErrNotFound rather than an arbitrary template, because
+// "unknown version" must never silently select a template.
+func (r *UPPRepo) SelectBestFor(tenant string, versions []rsp.Version) (*UPPTemplate, error) {
+	best, ok := maxVersion(versions)
+	if !ok {
+		return nil, ErrNotFound
 	}
 	row := r.db.QueryRow(`SELECT `+uppColsMeta+` FROM upp_templates
 		WHERE active = 1 AND (tenant_id = ? OR tenant_id IS NULL)
 		  AND (saip_major < ? OR (saip_major = ? AND saip_minor <= ?))
 		ORDER BY saip_major DESC, saip_minor DESC, CASE WHEN tenant_id IS NULL THEN 1 ELSE 0 END, name ASC LIMIT 1`,
-		nullStr(tenant), major, major, minor)
+		nullStr(tenant), best.Major, best.Major, best.Minor)
 	t, err := scanUPP(row, false)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, ErrNotFound
@@ -126,9 +132,23 @@ func (r *UPPRepo) SelectBestFor(tenant string, major, minor int) (*UPPTemplate, 
 	return t, err
 }
 
+// maxVersion returns the highest version in a set.
+func maxVersion(versions []rsp.Version) (rsp.Version, bool) {
+	if len(versions) == 0 {
+		return rsp.Version{}, false
+	}
+	best := versions[0]
+	for _, v := range versions[1:] {
+		if v.Compare(best) > 0 {
+			best = v
+		}
+	}
+	return best, true
+}
+
 // SelectBest is the platform-global variant of SelectBestFor.
-func (r *UPPRepo) SelectBest(major, minor int) (*UPPTemplate, error) {
-	return r.SelectBestFor("", major, minor)
+func (r *UPPRepo) SelectBest(versions []rsp.Version) (*UPPTemplate, error) {
+	return r.SelectBestFor("", versions)
 }
 
 // AnyForTenant returns the highest active template visible to a tenant

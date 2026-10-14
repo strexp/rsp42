@@ -24,7 +24,7 @@ import (
 	"rsp42/internal/store"
 )
 
-func newTestServer(t *testing.T) (*httptest.Server, *store.Store) {
+func newTestServer(t *testing.T, opts ...func(*Handler)) (*httptest.Server, *store.Store) {
 	t.Helper()
 	st, err := store.Open("file:" + filepath.Join(t.TempDir(), "admin.db"))
 	require.NoError(t, err)
@@ -57,6 +57,9 @@ func newTestServer(t *testing.T) (*httptest.Server, *store.Store) {
 		OrderRepo: st.Orders, Notifs: st.Notifs, Sessions: st.Sessions, Pool: st.Pool, Events: st.Events,
 		Idem: st.Idem, DefaultReserveTTL: time.Hour,
 		FQDN: "testsmdpplus1.example.com", OID: "2.999.10",
+	}
+	for _, o := range opts {
+		o(h)
 	}
 	r := chi.NewRouter()
 	Mount(r, h)

@@ -88,8 +88,15 @@ func (h *Handler) validateUPP(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusOK, map[string]any{"valid": false, "error": err.Error()})
 		return
 	}
+	// N16: uploading a template just to look at its structure stays possible
+	// (valid: true), but a version above the baseline is reported explicitly so
+	// the caller learns now rather than at POST /upp time.
+	warnings := append([]string{}, ins.Warnings...)
+	if rej := h.AllowedSAIP.CheckSAIPVersion(ins.SAIPMajor, ins.SAIPMinor); rej != nil {
+		warnings = append(warnings, rej.Error())
+	}
 	h.audit(r, "validateUPP", req.Name, "Executed-Success", map[string]any{"sha256": ins.SHA256, "saip": ins.SAIP})
-	writeJSON(w, http.StatusOK, map[string]any{"valid": true, "inspection": ins})
+	writeJSON(w, http.StatusOK, map[string]any{"valid": true, "inspection": ins, "warnings": warnings})
 }
 
 // renderUPP is a dry-run: it applies personalization to a template and reports
@@ -161,6 +168,10 @@ func (h *Handler) cloneUPP(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusNotFound, "unknown template "+source)
 		return
 	}
+	if rej := h.AllowedSAIP.CheckSAIPVersion(src.SAIPMajor, src.SAIPMinor); rej != nil {
+		h.writeSAIPVersionErr(w, rej)
+		return
+	}
 	name := strings.TrimSpace(req.Name)
 	if name == "" {
 		name = source
@@ -193,6 +204,10 @@ func (h *Handler) promoteUPP(w http.ResponseWriter, r *http.Request) {
 	src, err := h.UPP.GetScoped(tenant, name)
 	if err != nil {
 		writeErr(w, http.StatusNotFound, "unknown template")
+		return
+	}
+	if rej := h.AllowedSAIP.CheckSAIPVersion(src.SAIPMajor, src.SAIPMinor); rej != nil {
+		h.writeSAIPVersionErr(w, rej)
 		return
 	}
 	if _, err := h.UPP.GetScoped("", name); err == nil && r.URL.Query().Get("overwrite") != "1" {
@@ -258,6 +273,10 @@ func (h *Handler) restoreUPP(w http.ResponseWriter, r *http.Request) {
 	v, err := h.UPP.GetVersion(tenant, name, id)
 	if err != nil {
 		writeErr(w, http.StatusNotFound, "unknown template version")
+		return
+	}
+	if rej := h.AllowedSAIP.CheckSAIPVersion(v.SAIPMajor, v.SAIPMinor); rej != nil {
+		h.writeSAIPVersionErr(w, rej)
 		return
 	}
 	tpl := &store.UPPTemplate{

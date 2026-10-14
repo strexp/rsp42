@@ -6,6 +6,8 @@ import (
 	"crypto/rand"
 	"crypto/x509"
 	"encoding/hex"
+	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"strings"
@@ -14,6 +16,7 @@ import (
 	"rsp42/internal/activationcode"
 	"rsp42/internal/cert"
 	"rsp42/internal/crypto"
+	"rsp42/internal/metrics"
 	"rsp42/internal/rsp"
 	"rsp42/internal/saip/personalization"
 	"rsp42/internal/store"
@@ -55,6 +58,11 @@ type CMAE struct {
 	// types (redownload and availability check) and its refusal fails the
 	// retrieval.
 	ACRCheck func(ctx context.Context, profile *store.Profile) error
+	// Audit, when set, records eUICC-capability failures that the HTTP audit
+	// middleware cannot observe (ES9+ answers HTTP 200 with an RSP status).
+	Audit *store.AuditRepo
+	// Metrics, when set, counts V3-capable eUICCs and version failures (N11/N12).
+	Metrics *metrics.Registry
 
 	core *cmaeCore
 }
@@ -179,13 +187,25 @@ func (c *CMAE) AuthenticateClient(ctx context.Context, transactionID string, aut
 	sess.EumCert = ca.Response.EumCertificate
 	sess.ProfileID = profile.ID
 	sess.SmdpSignature2 = smdpSignature2
-	// Select a UPP template compatible with the eUICC's advertised profile
-	// version when the order does not pin one explicitly.
-	if profile.UPPTemplate == "" && ca.Signed1.EuiccInfo2 != nil {
-		if tpl := c.pickUPP(profile.TenantID, ca.Signed1.EuiccInfo2.ProfileVersion); tpl != "" {
-			sess.UPPTemplate = tpl
-		}
+	// N11: persist the eUICC's advertised SAIP versions (profileVersion plus
+	// additionalEuiccProfilePackageVersions) so the template compatibility
+	// check can run again at GetBoundProfilePackage.
+	if info := ca.Signed1.EuiccInfo2; info != nil {
+		c.recordEuiccVersions(profile.TenantID, sess, info)
 	}
+	// N12: resolve the template now and fail cleanly when nothing compatible
+	// exists, rather than letting the eUICC reject the package at the very end
+	// of the download. The resolved template is remembered on the session.
+	tpl, err := c.resolveUPPTemplate(profile, sess)
+	if err != nil {
+		var vErr *ErrProfileVersionNotSupported
+		if errors.As(err, &vErr) {
+			c.noteVersionFailure(profile.TenantID, profile, vErr)
+			return nil, rsp.CodeProfileVersionNotSupported.Status(vErr.Error())
+		}
+		return nil, rsp.CodeProfileLoadFailed.Status(err.Error())
+	}
+	sess.UPPTemplate = tpl.Name
 	if err := c.Sessions.Put(sess); err != nil {
 		return nil, err
 	}
@@ -197,6 +217,52 @@ func (c *CMAE) AuthenticateClient(ctx context.Context, transactionID string, aut
 		SmdpSignature2:  smdpSignature2,
 		SmdpCertificate: pbCert.Raw,
 	}, nil
+}
+
+// recordEuiccVersions stores the eUICC's advertised SAIP versions and V3
+// capability on the session (N11). The version set drives the template
+// compatibility check; the V3 marker is surfaced as a counter for the SEC
+// qualification work on the esim42 side.
+func (c *CMAE) recordEuiccVersions(tenant string, sess *store.Session, info *rsp.EUICCInfo2) {
+	if v, ok := info.ProfilePackageVersion(); ok {
+		sess.EuiccProfileVersion = v.String()
+	}
+	for _, v := range info.SupportedVersions() {
+		sess.EuiccSupportedVersions = append(sess.EuiccSupportedVersions, v.String())
+	}
+	if len(info.UICCCapability) > 0 {
+		sess.UICCCapability = hex.EncodeToString(info.UICCCapability)
+	}
+	if info.IsV3Capable() && c.Metrics != nil {
+		c.Metrics.Inc("rsp42_euicc_v3_capable_total", map[string]string{"tenant": tenant})
+	}
+}
+
+// noteVersionFailure makes an N12 clean failure observable. The ES9+ audit
+// middleware cannot see it because ES9+ answers HTTP 200 with an RSP status
+// code in the body, so the failure is recorded explicitly.
+func (c *CMAE) noteVersionFailure(tenant string, profile *store.Profile, rej *ErrProfileVersionNotSupported) {
+	if c.Metrics != nil {
+		c.Metrics.Inc("rsp42_profile_version_not_supported_total", map[string]string{"tenant": tenant})
+	}
+	if c.Log != nil {
+		c.Log.Warn("profile version not supported",
+			"iccid", profile.ICCID, "tenant", tenant,
+			"euiccProfileVersion", rej.EuiccProfileVersion, "supportedVersions", rej.SupportedVersions)
+	}
+	if c.Audit == nil {
+		return
+	}
+	detail, _ := json.Marshal(map[string]any{
+		"iccid":                 profile.ICCID,
+		"euiccProfileVersion":   rej.EuiccProfileVersion,
+		"supportedVersions":     rej.SupportedVersions,
+		"lowestTemplateVersion": rej.LowestTemplateVersion,
+	})
+	_ = c.Audit.Insert(&store.AuditEntry{
+		TenantID: tenant, Interface: "es9p", Function: "authenticateClient",
+		Subject: profile.ICCID, Outcome: "Failed", DetailJSON: string(detail),
+	})
 }
 
 func (c *CMAE) lookupProfile(matchingID, eid string) (*store.Profile, error) {
