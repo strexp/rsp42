@@ -53,7 +53,6 @@ func cmdSMDS(prog string, args []string) int {
 	// TTL: the two govern different lifetimes.
 	sessions := service.NewSessionService(st.Sessions, provider, cfg.SMDS.SessionTTL.Duration())
 	eventSvc := service.NewEventService(st.Events, cfg.SMDS.Role, cfg.SMDS.FQDN, cfg.SMDS.EventTTL.Duration())
-	eventSvc.Log = log
 	reg := newDSMetricsRegistry()
 	startGC(log, func() {
 		if n, err := st.Events.GCExpired(time.Now().UTC()); err == nil {

@@ -3,7 +3,6 @@ package service
 import (
 	"errors"
 	"fmt"
-	"log/slog"
 	"time"
 
 	"rsp42/internal/store"
@@ -32,7 +31,6 @@ type EventService struct {
 	OwnAddress string
 	Cascade    CascadeClient
 	EventTTL   time.Duration
-	Log        *slog.Logger
 }
 
 // NewEventService builds an EventService.

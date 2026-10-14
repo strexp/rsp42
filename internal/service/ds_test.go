@@ -33,7 +33,6 @@ func setupDS(t *testing.T) (*DSService, *EventService, *store.Store) {
 	t.Cleanup(func() { _ = st.Close() })
 	sessions := NewSessionService(st.Sessions, provider, 30*time.Minute)
 	events := NewEventService(st.Events, "root", "testrootsmds.example.com", time.Hour)
-	events.Log = slog.Default()
 	ds, err := NewDSService(
 		DSConfig{FQDN: "testrootsmds.example.com", OID: "2.999.15", Role: "root", TransactionIDLen: 16, SessionTTL: 30 * time.Minute},
 		certs, sessions, events, slog.Default())
