@@ -4,8 +4,8 @@ import (
 	"fmt"
 	"time"
 
-	"rsp42/internal/rsp"
 	"rsp42/internal/saip/personalization"
+	"rsp42/internal/saipver"
 	"rsp42/internal/store"
 )
 
@@ -129,7 +129,7 @@ func (f *fakeUPPStore) GetForTenant(tenant, name string) (*store.UPPTemplate, er
 	return nil, fmt.Errorf("fake: upp %s: %w", name, store.ErrNotFound)
 }
 
-func (f *fakeUPPStore) SelectBestFor(tenant string, versions []rsp.Version) (*store.UPPTemplate, error) {
+func (f *fakeUPPStore) SelectBestFor(tenant string, versions []saipver.Version) (*store.UPPTemplate, error) {
 	f.Selects++
 	if len(versions) == 0 {
 		return nil, store.ErrNotFound
@@ -142,7 +142,7 @@ func (f *fakeUPPStore) SelectBestFor(tenant string, versions []rsp.Version) (*st
 		if !t.Active {
 			continue
 		}
-		v := rsp.Version{Major: t.SAIPMajor, Minor: t.SAIPMinor}
+		v := saipver.Version{Major: t.SAIPMajor, Minor: t.SAIPMinor}
 		supported := false
 		for _, s := range versions {
 			if v.Compare(s) <= 0 {
@@ -153,8 +153,8 @@ func (f *fakeUPPStore) SelectBestFor(tenant string, versions []rsp.Version) (*st
 		if !supported {
 			continue
 		}
-		if best == nil || v.Compare(rsp.Version{Major: best.SAIPMajor, Minor: best.SAIPMinor}) > 0 ||
-			(v == rsp.Version{Major: best.SAIPMajor, Minor: best.SAIPMinor} && t.Name < best.Name) {
+		if best == nil || v.Compare(saipver.Version{Major: best.SAIPMajor, Minor: best.SAIPMinor}) > 0 ||
+			(v == saipver.Version{Major: best.SAIPMajor, Minor: best.SAIPMinor} && t.Name < best.Name) {
 			best = t
 		}
 	}

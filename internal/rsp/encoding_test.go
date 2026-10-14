@@ -7,15 +7,6 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestLuhn(t *testing.T) {
-	// Well-known Luhn example: 79927398713 is valid.
-	require.True(t, LuhnValid("79927398713"))
-	require.False(t, LuhnValid("79927398710"))
-	d, err := LuhnCheckDigit("7992739871")
-	require.NoError(t, err)
-	require.Equal(t, byte('3'), '0'+d)
-}
-
 func TestEID(t *testing.T) {
 	eid := "89049032123451234512345678901235"
 	b, err := EIDBytes(eid)

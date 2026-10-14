@@ -14,7 +14,7 @@ import (
 	"rsp42/internal/api/es12"
 	"rsp42/internal/api/es2plus"
 	"rsp42/internal/api/mock"
-	"rsp42/internal/rsp"
+	"rsp42/internal/iccid"
 	"rsp42/internal/service"
 	"rsp42/internal/store"
 	"time"
@@ -166,7 +166,7 @@ func TestMockOperatorCallback(t *testing.T) {
 // luhnICCID appends the Luhn check digit for an 18-digit body.
 func luhnICCID(t *testing.T, body string) string {
 	t.Helper()
-	check, err := rsp.LuhnCheckDigit(body)
+	check, err := iccid.LuhnCheckDigit(body)
 	require.NoError(t, err)
 	return body + string(rune('0'+check))
 }
@@ -217,7 +217,7 @@ func TestDownloadOrderRequestedICCIDInvalid(t *testing.T) {
 
 	// Bad Luhn check digit.
 	body := "890001234567890123"
-	check, err := rsp.LuhnCheckDigit(body)
+	check, err := iccid.LuhnCheckDigit(body)
 	require.NoError(t, err)
 	bad := body + string(rune('0'+(check+1)%10))
 	_, err = client.DownloadOrder(ctx, "", bad, "operational")
