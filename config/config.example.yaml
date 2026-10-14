@@ -59,6 +59,15 @@ certs:
   ds_auth: "SM-DS/DSauth"
   ds_tls: "SM-DS/DStls"
   allow_expired_test_certs: true
+  # Additional certificate sets let one deployment serve eUICCs that propose a
+  # different CI key id (SGP.26 variants). Each entry has the same shape as the
+  # block above; the matching identity is selected from euiccCiPKIdToBeUsed.
+  # identities:
+  #   - root_dir: "testdata/sgp26-variantA"
+  #     ci: "CertificateIssuer"
+  #     eum: "EUM"
+  #     dp_auth: "SM-DP+/DPauth"
+  #     dp_pb: "SM-DP+/DPpb"
 
 profiles:
   upp_dir: "testdata/upp"
@@ -78,11 +87,18 @@ profiles:
         opc: "opc"
     iccid_pool_prefix: "8900012"
     imsi_pool_prefix: "00101"
+  # Profile Policy Rules attached to downloaded profiles (SGP.22 §2.4a).
+  # 1 = PPR1 (disabling not allowed), 2 = PPR2 (deletion not allowed).
+  # An order may override this via its "pprIds" field.
+  ppr_ids: []
 
 notifications:
   es2p_callback:
     enabled: false
     url: ""
+    # Optional Operator ES2+.HandleAcrRequest endpoint; when set the SM-DP+
+    # confirms an Activation Code Retrieval with the Operator (SGP.22 §5.3.8).
+    acr_url: ""
     client_cert_file: ""
     client_key_file: ""
     ca_file: ""

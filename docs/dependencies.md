@@ -9,8 +9,9 @@ purpose.
   actively maintained, with a stable release tag and an MIT/BSD/Apache-2.0
   license. Low-star, tag-less, unmaintained, or license-less projects are not
   admitted.
-- **No generated-code dependencies**: the SGP.22 RSP codec (`internal/rsp`) and
-  SAIP model (`internal/saip`) are hand-written.
+- **No generated-code dependencies**: the SGP.22 RSP codec (`internal/rsp`,
+  including the ASN.1 binding envelopes of §6.6) and SAIP model
+  (`internal/saip`) are hand-written.
 - **Record**: every dependency is listed here with source/tag/license/purpose.
 - **Licenses**: GPL/AGPL are only allowed for separate, non-linked processes;
   code from repositories without a declared license is never copied.

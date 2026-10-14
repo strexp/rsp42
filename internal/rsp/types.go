@@ -349,6 +349,9 @@ type AuthenticateResponseOk struct {
 	EuiccSignature1  []byte
 	EuiccCertificate []byte
 	EumCertificate   []byte
+	// OtherCertsInChain carries any additional certificates between the EUM and
+	// the CI (SGP.22 §5.7.9 / §6.5.2, eUICC certificate chain variants).
+	OtherCertsInChain [][]byte
 }
 
 // AuthenticateResponseError is the error branch.
@@ -391,6 +394,9 @@ func DecodeAuthenticateServerResponse(raw []byte) (*AuthenticateResponseOk, *Aut
 		}
 		if len(certs) >= 2 {
 			out.EumCertificate = certs[1]
+		}
+		if len(certs) > 2 {
+			out.OtherCertsInChain = certs[2:]
 		}
 		return out, nil, nil
 	}

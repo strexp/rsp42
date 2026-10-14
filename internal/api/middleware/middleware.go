@@ -92,16 +92,13 @@ func AdminProtocol(next http.Handler) http.Handler {
 	})
 }
 
-// ContentType rejects POST bodies that are not JSON when a body is present.
+// ContentType rejects POST bodies that are neither the JSON binding nor the
+// ASN.1 binding (SGP.22 §6.5/§6.6) when a Content-Type is present.
 func ContentType(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method == http.MethodPost {
-			ct := r.Header.Get("Content-Type")
-			if i := strings.IndexByte(ct, ';'); i >= 0 {
-				ct = ct[:i]
-			}
-			ct = strings.TrimSpace(ct)
-			if ct != "" && ct != common.ContentTypeJSON {
+			ct := common.MediaType(r.Header.Get("Content-Type"))
+			if ct != "" && ct != common.ContentTypeJSON && ct != common.ContentTypeASN1 {
 				http.Error(w, "unsupported Content-Type", http.StatusUnsupportedMediaType)
 				return
 			}

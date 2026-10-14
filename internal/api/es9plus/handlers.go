@@ -33,6 +33,8 @@ func Mount(r chi.Router, h *Handler) {
 	r.Post("/gsma/rsp2/es9plus/getBoundProfilePackage", h.getBoundProfilePackage)
 	r.Post("/gsma/rsp2/es9plus/handleNotification", h.handleNotification)
 	r.Post("/gsma/rsp2/es9plus/cancelSession", h.cancelSession)
+	// ASN.1 binding (SGP.22 §6.6): all functions use the generic path.
+	r.Post("/gsma/rsp2/asn1", h.asn1Binding)
 }
 
 type initiateReq struct {

@@ -26,6 +26,15 @@ func (c *CMAE) handleACR(transactionID string, ca *clientAuth) (*AuthenticateRes
 		return nil, rsp.CodeInputRefused.Status("profile is not installed")
 	}
 
+	// Confirm with the Operator when ES2+.HandleAcrRequest is configured
+	// (SGP.22 §3.1.7 / §5.3.8).
+	if c.ACRCheck != nil {
+		if err := c.ACRCheck(context.Background(), profile.ICCID); err != nil {
+			c.notify(context.Background(), ca.EID, profile.ICCID, 17, "Failed")
+			return nil, rsp.CodeInputRefused.Status("Operator rejected Activation Code Retrieval")
+		}
+	}
+
 	var ssd []byte
 	if acr.Check == 0 {
 		token := "ACR-" + randomToken()

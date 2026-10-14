@@ -22,7 +22,11 @@ import (
 // certProvider is the minimal certificate interface the CMAE core needs. Both
 // the SM-DP+ and SM-DS provide it (via cert.Manager).
 type certProvider interface {
-	SelectCI(proposed [][]byte) (*x509.Certificate, error)
+	// SelectIdentity picks the certificate identity whose CI matches one of the
+	// eUICC-proposed CI key identifiers.
+	SelectIdentity(proposed [][]byte) (*cert.Identity, error)
+	// IdentityByCIKeyID returns the identity owning a CI SubjectKeyIdentifier.
+	IdentityByCIKeyID(ski []byte) *cert.Identity
 	CI() *x509.Certificate
 }
 
@@ -92,17 +96,32 @@ type cmaeCore struct {
 	sessions   *SessionService
 	txnLen     int
 	sessionTTL time.Duration
+	useDSAuth  bool
 	log        *slog.Logger
 }
 
-func newCMAECore(fqdn string, authCert *x509.Certificate, authKey stdcrypto.Signer, certs certProvider, sessions *SessionService, txnLen int, ttl time.Duration, log *slog.Logger) *cmaeCore {
+func newCMAECore(fqdn string, authCert *x509.Certificate, authKey stdcrypto.Signer, certs certProvider, sessions *SessionService, txnLen int, ttl time.Duration, useDSAuth bool, log *slog.Logger) *cmaeCore {
 	if txnLen <= 0 {
 		txnLen = 16
 	}
 	if ttl <= 0 {
 		ttl = 30 * time.Minute
 	}
-	return &cmaeCore{fqdn: fqdn, authCert: authCert, authKey: authKey, certs: certs, sessions: sessions, txnLen: txnLen, sessionTTL: ttl, log: log}
+	return &cmaeCore{fqdn: fqdn, authCert: authCert, authKey: authKey, certs: certs, sessions: sessions, txnLen: txnLen, sessionTTL: ttl, useDSAuth: useDSAuth, log: log}
+}
+
+// authFor returns the authentication certificate/key of the identity for the
+// core's role, falling back to the configured primary pair.
+func (c *cmaeCore) authFor(id *cert.Identity) (*x509.Certificate, stdcrypto.Signer) {
+	if id != nil {
+		if c.useDSAuth && id.DSAuthCert != nil {
+			return id.DSAuthCert, id.DSAuthKey
+		}
+		if !c.useDSAuth && id.DPAuthCert != nil {
+			return id.DPAuthCert, id.DPAuthKey
+		}
+	}
+	return c.authCert, c.authKey
 }
 
 // initiate implements InitiateAuthentication (SGP.22 §5.6.1 / §5.8.1).
@@ -118,10 +137,11 @@ func (c *cmaeCore) initiate(euiccChallenge, euiccInfo1 []byte, address string) (
 		return nil, cmErr(cmBadResponse, "invalid euiccInfo1: "+err.Error())
 	}
 	proposed := append(append([][]byte{}, info.CiPKIDListForSigning...), info.CiPKIDListForSigningV3...)
-	ci, err := c.certs.SelectCI(proposed)
+	id, err := c.certs.SelectIdentity(proposed)
 	if err != nil {
 		return nil, cmErr(cmCI, "none of the proposed CI key identifiers is supported")
 	}
+	ci := id.CI
 
 	transactionID := make([]byte, c.txnLen)
 	if _, err := rand.Read(transactionID); err != nil {
@@ -132,7 +152,8 @@ func (c *cmaeCore) initiate(euiccChallenge, euiccInfo1 []byte, address string) (
 		return nil, err
 	}
 
-	authKey, err := ecdsaKey(c.authKey)
+	authCert, authSigner := c.authFor(id)
+	authKey, err := ecdsaKey(authSigner)
 	if err != nil {
 		return nil, err
 	}
@@ -165,7 +186,7 @@ func (c *cmaeCore) initiate(euiccChallenge, euiccInfo1 []byte, address string) (
 		ServerSigned1:       serverSigned1,
 		ServerSignature1:    rsp.WrapSignature(sig),
 		EuiccCiPKIDToBeUsed: append([]byte{0x04, 0x14}, ci.SubjectKeyId...),
-		ServerCertificate:   c.authCert.Raw,
+		ServerCertificate:   authCert.Raw,
 	}, nil
 }
 
@@ -197,7 +218,15 @@ func (c *cmaeCore) verify(transactionID string, authenticateServerResponse []byt
 	if err != nil {
 		return nil, cmErr(cmCertChain, "invalid EUM certificate")
 	}
-	if err := validateEUICCChain(euiccCert, eumCert, c.certs.CI(), sess.CICertID); err != nil {
+	intermediates, err := parseCertificates(ok.OtherCertsInChain)
+	if err != nil {
+		return nil, cmErr(cmCertChain, "invalid certificate in otherCertsInChain")
+	}
+	ci := c.certs.CI()
+	if id := c.certs.IdentityByCIKeyID(sess.CICertID); id != nil {
+		ci = id.CI
+	}
+	if err := validateEUICCChain(euiccCert, eumCert, intermediates, ci, sess.CICertID); err != nil {
 		return nil, cmErr(cmCertChain, err.Error())
 	}
 

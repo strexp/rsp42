@@ -117,7 +117,10 @@ func (e *Engine) Apply(seq *saip.Sequence, d *Data) error {
 			f.SetBody([]byte(d.SPN))
 		}
 	}
-	return seq.RebuildMandatoryServices()
+	if err := seq.RebuildMandatoryServices(); err != nil {
+		return err
+	}
+	return seq.RebuildMandatoryGFSTEList()
 }
 
 // ICCIDHeaderBytes encodes the ProfileHeader.iccid (plain BCD, 10 bytes).

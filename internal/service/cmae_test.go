@@ -5,6 +5,7 @@ import (
 	"crypto/ecdsa"
 	"crypto/rand"
 	"encoding/hex"
+	"errors"
 	"log/slog"
 	"os"
 	"path/filepath"
@@ -19,6 +20,7 @@ import (
 	"rsp42/internal/crypto"
 	"rsp42/internal/kms"
 	"rsp42/internal/rsp"
+	"rsp42/internal/saip"
 	"rsp42/internal/saip/personalization"
 	"rsp42/internal/store"
 )
@@ -333,6 +335,177 @@ func TestNotificationInstalled(t *testing.T) {
 	require.Equal(t, 4, gotPoint)
 }
 
+// testCertificateManager builds the SGP.26 Variant O (NIST) certificate manager
+// used by the notification tests.
+func testCertificateManager(t *testing.T) *cert.Manager {
+	t.Helper()
+	provider, err := kms.NewFileProviderFromKEK(testKEK)
+	require.NoError(t, err)
+	certs, err := cert.Load(cert.Options{
+		RootDir: testRoot, CI: "CertificateIssuer", EUM: "EUM", EUICC: "eUICC",
+		DPAuth: "SM-DP+/DPauth", DPPb: "SM-DP+/DPpb", DPTLS: "SM-DP+/DPtls",
+		DSAuth: "SM-DS/DSauth", DSTLS: "SM-DS/DStls", Curve: "nist",
+		DPFQDN: testFQDN, DPOID: testOID, DSFQDN: "testrootsmds.example.com", DSOID: "2.999.15",
+	}, provider)
+	require.NoError(t, err)
+	return certs
+}
+
+func TestNotificationInstallRejectsBadSignature(t *testing.T) {
+	_, st := setupCMAE(t)
+	orders := NewOrderService(st.Profiles)
+	notifs := NewNotificationService(slog.Default(), st.Notifs, st.Profiles, orders)
+
+	profile, err := NewInventory(st.Profiles, "8900012", "00101").Allocate(testEID, "operational", "")
+	require.NoError(t, err)
+	profile.MatchingID = "MATCH-BADSIG"
+	require.NoError(t, st.Profiles.Update(profile))
+	_, err = orders.Confirm(profile.ICCID, true)
+	require.NoError(t, err)
+	_, err = orders.MarkDownloaded(profile.ICCID)
+	require.NoError(t, err)
+
+	provider, err := kms.NewFileProviderFromKEK(testKEK)
+	require.NoError(t, err)
+	txn := mustHexLower("00112233445566778899AABBCCDDEEFF")
+	ss := NewSessionService(st.Sessions, provider, time.Hour)
+	require.NoError(t, ss.Put(&store.Session{
+		TransactionID: strings.ToUpper(hex.EncodeToString(txn)),
+		State:         "downloaded", ProfileID: profile.ID,
+		EuiccCert: readFile(t, testRoot+"/eUICC/CERT_EUICC_NIST.der"),
+	}))
+	notifs.Sessions = ss
+
+	meta := tlv([]byte{0xbf, 0x2f}, concat(
+		tlv([]byte{0x80}, []byte{0x01}),
+		tlv([]byte{0x81}, []byte{0x00, 0x80}),
+		tlv([]byte{0x0c}, []byte("x")),
+	))
+	success := tlv([]byte{0xa2}, tlv([]byte{0xa0}, concat(
+		tlv([]byte{0x4f}, mustHex(t, "a0000005591010ffffffff8900001000")),
+		tlv([]byte{0x04}, nil),
+	)))
+	pird := tlv([]byte{0xbf, 0x27}, concat(tlv(tCtx0p, txn), meta, success))
+	pir := tlv([]byte{0xbf, 0x37}, concat(pird, tlv(tSig, make([]byte, 64))))
+
+	require.NoError(t, notifs.HandlePendingNotification(context.Background(), pir))
+
+	p, err := st.Profiles.GetByICCID(profile.ICCID)
+	require.NoError(t, err)
+	require.Equal(t, store.StateDownloaded, p.State) // not installed
+	got, err := st.Notifs.ListByEID(testEID)
+	require.NoError(t, err)
+	require.Len(t, got, 1)
+	require.False(t, got[0].SignatureOK)
+	require.False(t, got[0].Processed)
+}
+
+func TestNotificationOtherSignedVerification(t *testing.T) {
+	_, st := setupCMAE(t)
+	orders := NewOrderService(st.Profiles)
+	notifs := NewNotificationService(slog.Default(), st.Notifs, st.Profiles, orders)
+	notifs.Certs = testCertificateManager(t)
+
+	profile, err := NewInventory(st.Profiles, "8900012", "00101").Allocate(testEID, "operational", "")
+	require.NoError(t, err)
+	_, err = orders.Confirm(profile.ICCID, true)
+	require.NoError(t, err)
+	_, err = orders.MarkDownloaded(profile.ICCID)
+	require.NoError(t, err)
+	_, err = orders.MarkInstalled(profile.ICCID)
+	require.NoError(t, err)
+
+	provider, err := kms.NewFileProviderFromKEK(testKEK)
+	require.NoError(t, err)
+	euiccKey, err := provider.ECDSAKey(testRoot + "/eUICC/SK_EUICC_NIST.pem")
+	require.NoError(t, err)
+	euiccCert := readFile(t, testRoot+"/eUICC/CERT_EUICC_NIST.der")
+	eumCert := readFile(t, testRoot+"/EUM/CERT_EUM_NIST.der")
+
+	iccidBCD, err := personalization.ICCIDEFBytes(profile.ICCID)
+	require.NoError(t, err)
+	meta := tlv([]byte{0xbf, 0x2f}, concat(
+		tlv([]byte{0x80}, []byte{0x01}),
+		tlv([]byte{0x81}, []byte{0x00, 0x10}), // delete
+		tlv([]byte{0x0c}, []byte("x")),
+		tlv([]byte{0x5a}, iccidBCD),
+	))
+	sig, err := crypto.SignRaw(euiccKey, meta)
+	require.NoError(t, err)
+
+	// Valid notification (PendingNotification wraps the CHOICE in [0]).
+	osn := tlv([]byte{0xa0}, tlv([]byte{0x30}, concat(meta, tlv(tSig, sig), euiccCert, eumCert)))
+	require.NoError(t, notifs.HandlePendingNotification(context.Background(), osn))
+
+	got, err := st.Notifs.ListByEID(testEID)
+	require.NoError(t, err)
+	require.Len(t, got, 1)
+	require.True(t, got[0].SignatureOK)
+	require.Equal(t, "delete", got[0].Operation)
+	require.Equal(t, profile.ICCID, got[0].ICCID)
+
+	// Tampered signature is recorded but not processed.
+	bad := tlv([]byte{0xa0}, tlv([]byte{0x30}, concat(meta, tlv(tSig, make([]byte, 64)), euiccCert, eumCert)))
+	require.NoError(t, notifs.HandlePendingNotification(context.Background(), bad))
+	got, err = st.Notifs.ListByEID(testEID)
+	require.NoError(t, err)
+	require.Len(t, got, 2)
+	require.False(t, got[1].SignatureOK)
+}
+
+func TestPickUPPSelectsCompatibleVersion(t *testing.T) {
+	cmae, _ := setupCMAE(t)
+	require.Equal(t, "", cmae.pickUPP(nil))
+
+	// The TS.48 v1 templates declare SAIP 2.1 and sort first, so an eUICC
+	// advertising 2.2 gets the highest compatible template (2.1).
+	require.Equal(t, "TS48v1_A.der", cmae.pickUPP([]byte{2, 2, 0}))
+	require.Equal(t, "TS48v2_SAIP2.3_BERTLV.der", cmae.pickUPP([]byte{2, 3, 0}))
+	// Nothing qualifies below SAIP 2.1.
+	require.Empty(t, cmae.pickUPP([]byte{1, 0, 0}))
+}
+
+func TestLoadUPPUsesOrderICCID(t *testing.T) {
+	cmae, _ := setupCMAE(t)
+	// The personalization source carries a different ICCID; the order's ICCID
+	// must win so the UPP stays consistent with StoreMetadata.
+	cmae.Source = &personalization.StaticSource{Items: []*personalization.Data{{
+		ICCID: "89000199999999999999", IMSI: "001010123456063",
+	}}}
+	profile := &store.Profile{ICCID: "89000123456789012341"}
+	sess := &store.Session{UPPTemplate: "TS48v1_A.der"}
+
+	upp, err := cmae.loadUPP(profile, sess)
+	require.NoError(t, err)
+	seq, err := saip.ParseUPP(upp)
+	require.NoError(t, err)
+	h, err := saip.ParseHeader(seq.Header())
+	require.NoError(t, err)
+	require.Equal(t, mustICCIDHeader(t, profile.ICCID), h.ICCID)
+}
+
+func TestBuildStoreMetadataPPR(t *testing.T) {
+	cmae, _ := setupCMAE(t)
+	profile := &store.Profile{ICCID: "89000123456789012341"}
+
+	// No PPR -> no 0x99 element.
+	raw, err := cmae.buildStoreMetadata(profile)
+	require.NoError(t, err)
+	require.NotContains(t, hex.EncodeToString(raw), "9902")
+
+	// Config default PPR1 -> BIT STRING content 00 40 under tag 0x99.
+	cmae.Cfg.PPRIds = rsp.PPRIDBits([]int{1})
+	raw, err = cmae.buildStoreMetadata(profile)
+	require.NoError(t, err)
+	require.Contains(t, hex.EncodeToString(raw), "99020040")
+
+	// Per-profile override PPR2 wins over the config default.
+	profile.PPRIds = rsp.PPRIDBits([]int{2})
+	raw, err = cmae.buildStoreMetadata(profile)
+	require.NoError(t, err)
+	require.Contains(t, hex.EncodeToString(raw), "99020020")
+}
+
 func mustHex(t *testing.T, s string) []byte {
 	t.Helper()
 	b, err := hex.DecodeString(s)
@@ -369,6 +542,36 @@ func TestACRRetrieval(t *testing.T) {
 	// Unknown ICCID -> 8.2.1/1.2.
 	_, err = cmae.handleACR("TXN3", &clientAuth{Session: &store.Session{TransactionID: "TXN3"}, EID: testEID, MatchingID: "ACR-1-9999999999999999999"})
 	require.Error(t, err)
+}
+
+func TestACROperatorConfirmation(t *testing.T) {
+	cmae, st := setupCMAE(t)
+	profile, err := NewInventory(st.Profiles, "8900012", "00101").Allocate(testEID, "operational", "")
+	require.NoError(t, err)
+	profile.MatchingID = "MATCH-ACR-OP"
+	require.NoError(t, st.Profiles.Update(profile))
+	orders := NewOrderService(st.Profiles)
+	_, err = orders.Confirm(profile.ICCID, true)
+	require.NoError(t, err)
+	_, err = orders.MarkDownloaded(profile.ICCID)
+	require.NoError(t, err)
+	_, err = orders.MarkInstalled(profile.ICCID)
+	require.NoError(t, err)
+
+	ca := func() *clientAuth {
+		return &clientAuth{Session: &store.Session{TransactionID: "TXN"}, EID: testEID, MatchingID: "ACR-1-" + profile.ICCID}
+	}
+
+	// Operator rejects -> ACR refused (8.2.1/1.2).
+	cmae.ACRCheck = func(context.Context, string) error { return errors.New("not eligible") }
+	_, err = cmae.handleACR("TXN", ca())
+	require.Error(t, err)
+
+	// Operator confirms -> ACR proceeds.
+	cmae.ACRCheck = func(context.Context, string) error { return nil }
+	res, err := cmae.handleACR("TXN", ca())
+	require.NoError(t, err)
+	require.True(t, res.ACROnly)
 }
 
 // releasedProfile creates a profile in Released state with the given matching id.

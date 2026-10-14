@@ -82,6 +82,27 @@ func (r *ConfigureISDPRequest) Encode() []byte {
 
 // StoreMetadataRequest ------------------------------------------------------
 
+// PPRIDBits encodes PPR ids as the PprIds BIT STRING content bytes (MSB-first;
+// PPR id 1 = ppr1, 2 = ppr2, per SGP.22 §2.4a). It returns nil for no ids.
+func PPRIDBits(ids []int) []byte {
+	if len(ids) == 0 {
+		return nil
+	}
+	maxID := 0
+	for _, id := range ids {
+		if id > maxID {
+			maxID = id
+		}
+	}
+	b := make([]byte, maxID/8+1)
+	for _, id := range ids {
+		if id >= 0 {
+			b[id/8] |= 0x80 >> (uint(id) % 8)
+		}
+	}
+	return b
+}
+
 // NotificationConfigurationInformation configures a notification address.
 type NotificationConfigurationInformation struct {
 	Operation uint8 // bit mask of NotificationEvent
@@ -236,12 +257,25 @@ func DecodeGetBoundProfilePackageRequest(raw []byte) (*GetBoundProfilePackageReq
 	if !ok {
 		return nil, fmt.Errorf("rsp: GetBoundProfilePackageRequest missing prepareDownloadResponse")
 	}
-	out.PrepareDownloadRaw = pd.Raw
-	out.PrepareDownload, out.PrepareDownloadError, err = DecodePrepareDownloadResponse(pd.Raw)
+	// prepareDownloadResponse [33] is a CHOICE, so the context tag is explicit
+	// and the PrepareDownloadResponse is nested inside it.
+	inner := unwrapExplicit(pd, []byte{0xbf, 0x21})
+	out.PrepareDownloadRaw = inner
+	out.PrepareDownload, out.PrepareDownloadError, err = DecodePrepareDownloadResponse(inner)
 	if err != nil {
 		return nil, err
 	}
 	return out, nil
+}
+
+// unwrapExplicit returns the inner TLV of an explicitly tagged CHOICE-typed
+// field (e.g. `prepareDownloadResponse [33]`). It is tolerant of a single-tagged
+// form, returning the field itself when it already carries the inner tag.
+func unwrapExplicit(field asn1.TLV, innerTag []byte) []byte {
+	if c, ok := field.First(); ok && hexTag(c.Tag) == hexTag(innerTag) {
+		return c.Raw
+	}
+	return field.Raw
 }
 
 // AuthenticateClientRequest -------------------------------------------------
@@ -263,7 +297,9 @@ func DecodeAuthenticateClientRequest(raw []byte) (*AuthenticateClientRequest, er
 	}
 	out := &AuthenticateClientRequest{TransactionID: childBytes(t, asn1.Ctx(0, false))}
 	if v, ok := t.Find([]byte{0xbf, 0x38}); ok {
-		out.AuthenticateResponse = v.Raw
+		// authenticateServerResponse [56] is a CHOICE, so the context tag is
+		// explicit and the AuthenticateServerResponse is nested inside it.
+		out.AuthenticateResponse = unwrapExplicit(v, []byte{0xbf, 0x38})
 	}
 	return out, nil
 }

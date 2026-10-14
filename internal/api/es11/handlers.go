@@ -30,6 +30,8 @@ func New(log *slog.Logger, ds *service.DSService) *Handler { return &Handler{Log
 func Mount(r chi.Router, h *Handler) {
 	r.Post("/gsma/rsp2/es9plus/initiateAuthentication", h.initiateAuthentication)
 	r.Post("/gsma/rsp2/es9plus/authenticateClient", h.authenticateClient)
+	// ASN.1 binding (SGP.22 §6.6): all functions use the generic path.
+	r.Post("/gsma/rsp2/asn1", h.asn1Binding)
 }
 
 type initiateReq struct {

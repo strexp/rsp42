@@ -127,15 +127,18 @@ func TestEncodeResponses(t *testing.T) {
 	txn := seqBytes(16, 0)
 
 	// AuthenticateClientResponseEs9 OK.
-	class := int64(2)
 	profileMeta := (&StoreMetadataRequest{ICCID: mustHex(t, "98001032547698103214"), ServiceProviderName: "SPN", ProfileName: "Name"}).Encode()
-	_ = class
 	smdpSigned2 := (&SmdpSigned2{TransactionID: txn, CCRequiredFlag: false}).Encode()
 	sig2 := tlvBytes(asn1.App(55, false), repeat(0, 64))
 	certDER := mustRead(t, "../../testdata/sgp26/EUM/CERT_EUM_NIST.der")
-	pdr := (&PrepareDownloadRequest{SmdpSigned2Raw: smdpSigned2, SmdpSignature2Raw: sig2, SmdpCertificateDER: certDER}).Encode()
-	got := AuthenticateClientResponseEs9Ok(txn, profileMeta, pdr)
+	got := AuthenticateClientResponseEs9Ok(txn, profileMeta, smdpSigned2, sig2, certDER)
 	hexEq(t, g["AuthenticateClientResponseEs9_Ok"], got)
+
+	// AuthenticateClientResponseEs9 error branch (implicit INTEGER tag 0x81).
+	hexEq(t, g["AuthenticateClientResponseEs9_Err"], AuthenticateClientResponseEs9Error(1))
+
+	// AuthenticateClientResponseEs9 ACR branch (A5).
+	hexEq(t, g["AuthenticateClientResponseEs9_OkAcr"], AuthenticateClientResponseEs9OkAcr(txn, profileMeta))
 
 	// GetBoundProfilePackageResponse OK.
 	bpp := mustHex(t, g["BoundProfilePackage"])

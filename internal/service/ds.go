@@ -38,7 +38,7 @@ func NewDSService(cfg DSConfig, certs *cert.Manager, sessions *SessionService, e
 	}
 	return &DSService{
 		Cfg: cfg, Certs: certs, Sessions: sessions, Events: events, Log: log,
-		core: newCMAECore(cfg.FQDN, certs.DSAuth(), certs.DSAuthKey(), certs, sessions, cfg.TransactionIDLen, cfg.SessionTTL, log),
+		core: newCMAECore(cfg.FQDN, certs.DSAuth(), certs.DSAuthKey(), certs, sessions, cfg.TransactionIDLen, cfg.SessionTTL, true, log),
 	}, nil
 }
 

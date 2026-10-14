@@ -7,13 +7,17 @@ import (
 	"encoding/json"
 	"log/slog"
 	"net/http"
+	"strings"
 )
 
 // AdminProtocolV2 is the value expected in the X-Admin-Protocol header.
 const AdminProtocolV2 = "gsma/rsp/v2.2.0"
 
-// ContentTypeJSON is the value used for all request and response bodies.
+// ContentTypeJSON is the value used for the JSON binding (SGP.22 §6.5).
 const ContentTypeJSON = "application/json"
+
+// ContentTypeASN1 is the value used for the ASN.1 binding (SGP.22 §6.6).
+const ContentTypeASN1 = "application/x-gsma-rsp-asn1"
 
 // RequestHeader is the <JSON requestHeader> present on ES2+/ES12/ES15 requests.
 type RequestHeader struct {
@@ -84,6 +88,22 @@ func WriteJSON(w http.ResponseWriter, v any) {
 // functions such as ES9+.HandleNotification and ES2+.HandleDownloadProgressInfo.
 func WriteNoContent(w http.ResponseWriter) {
 	w.WriteHeader(http.StatusNoContent)
+}
+
+// WriteASN1 writes a DER-encoded ASN.1 binding response (SGP.22 §6.6).
+func WriteASN1(w http.ResponseWriter, body []byte) {
+	w.Header().Set("Content-Type", ContentTypeASN1)
+	w.WriteHeader(http.StatusOK)
+	_, _ = w.Write(body)
+}
+
+// MediaType returns the media type of a Content-Type header value, dropping any
+// parameters (e.g. "; charset=utf-8").
+func MediaType(v string) string {
+	if i := strings.IndexByte(v, ';'); i >= 0 {
+		v = v[:i]
+	}
+	return strings.TrimSpace(v)
 }
 
 // RequestIDFrom returns the request id stored in ctx, if any.

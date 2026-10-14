@@ -69,7 +69,12 @@ rsp42 admin mock-operator            # test-only operator stub
 ## Known limitations
 
 Online CRL/OCSP is out of scope (expiry is validated, revocation is not). The
-JSON binding is implemented; the ASN.1 binding is not. Some SGP.22 extensibility
-features (full SAIP template table / GFSTE recomputation, PPR population,
-`otherCertsInChain`, ACR caller-side `HandleAcrRequest`) are partial; see
-`docs/coverage.md`.
+JSON binding is implemented; the ASN.1 binding is not. Only NIST P-256 is
+supported (`certs.curve: brainpool` is not implemented). See `docs/coverage.md`
+for the full list.
+
+Multiple SGP.26 certificate variants can be served by one deployment by listing
+additional certificate sets under `certs.identities`; the identity whose CI the
+eUICC proposes is selected automatically. `profiles.ppr_ids` and the order-level
+`pprIds` populate the Profile Policy Rules, and the UPP template is selected from
+the eUICC's advertised profile version unless the order pins one.

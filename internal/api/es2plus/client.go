@@ -7,6 +7,8 @@ import (
 	"fmt"
 	"net/http"
 	"time"
+
+	"rsp42/internal/api/common"
 )
 
 // ProgressInfo is the payload of ES2+.HandleDownloadProgressInfo (SGP.22 §5.3.5).
@@ -32,7 +34,9 @@ const (
 
 // CallbackClient delivers SM-DP+ -> Operator notifications.
 type CallbackClient struct {
-	URL         string
+	URL string
+	// ACRURL, when set, is the Operator's ES2+.HandleAcrRequest endpoint.
+	ACRURL      string
 	RequesterID string
 	HTTP        *http.Client
 	MaxAttempts int
@@ -65,6 +69,50 @@ func (c *CallbackClient) Post(ctx context.Context, url string, payload []byte) e
 		return nil
 	}
 	return fmt.Errorf("es2plus: callback status %d", resp.StatusCode)
+}
+
+// HandleAcrRequest calls the Operator's ES2+.HandleAcrRequest (SGP.22 §5.3.8) to
+// confirm the Activation Code Retrieval of a profile. It returns an error when
+// the Operator rejects the request or the call fails.
+func (c *CallbackClient) HandleAcrRequest(ctx context.Context, iccid string) error {
+	if c.ACRURL == "" {
+		return fmt.Errorf("es2plus: no ACR URL configured")
+	}
+	req := struct {
+		Header common.RequestHeader `json:"header"`
+		ICCID  string               `json:"iccid"`
+	}{
+		Header: common.RequestHeader{
+			FunctionRequesterIdentifier: c.RequesterID,
+			FunctionCallIdentifier:      fmt.Sprintf("ACR-%d", time.Now().UnixNano()),
+		},
+		ICCID: iccid,
+	}
+	raw, err := json.Marshal(req)
+	if err != nil {
+		return err
+	}
+	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, c.ACRURL, bytes.NewReader(raw))
+	if err != nil {
+		return err
+	}
+	httpReq.Header.Set("Content-Type", "application/json")
+	resp, err := c.HTTP.Do(httpReq)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = resp.Body.Close() }()
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("es2plus: handleAcrRequest status %d", resp.StatusCode)
+	}
+	var out common.HeaderResponse
+	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
+		return err
+	}
+	if out.Header.FunctionExecutionStatus.Status != common.StatusExecutedSuccess {
+		return fmt.Errorf("es2plus: handleAcrRequest not allowed")
+	}
+	return nil
 }
 
 // HandleDownloadProgressInfo posts a notification, retrying with backoff.

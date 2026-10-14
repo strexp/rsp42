@@ -47,6 +47,31 @@ func mustManager(t *testing.T) *Manager {
 	return m
 }
 
+func TestLoadSetsMultipleIdentities(t *testing.T) {
+	provider, err := kms.NewFileProviderFromKEK(testKEK)
+	require.NoError(t, err)
+	opts := testOptions()
+	m, err := LoadSets([]Options{opts, opts}, provider)
+	require.NoError(t, err)
+	require.Equal(t, 2, m.Count())
+
+	// The eUICC-proposed CI key id (its SubjectKeyIdentifier) selects the first
+	// identity.
+	id, err := m.SelectIdentity([][]byte{m.CI().SubjectKeyId})
+	require.NoError(t, err)
+	require.Equal(t, m.CI().SubjectKeyId, id.CI.SubjectKeyId)
+
+	// Unknown key ids are rejected.
+	_, err = m.SelectIdentity([][]byte{{0xaa, 0xbb}})
+	require.Error(t, err)
+
+	// Lookup helpers.
+	require.NotNil(t, m.IdentityByCIKeyID(m.CI().SubjectKeyId))
+	require.Nil(t, m.IdentityByCIKeyID([]byte("nope")))
+	require.NotNil(t, m.CIByAKI(m.CI().SubjectKeyId))
+	require.Nil(t, m.CIByAKI([]byte("nope")))
+}
+
 func TestLoadValidChain(t *testing.T) {
 	m := mustManager(t)
 	require.Empty(t, m.Warnings())

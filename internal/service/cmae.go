@@ -2,7 +2,9 @@ package service
 
 import (
 	"context"
+	stdcrypto "crypto"
 	"crypto/rand"
+	"crypto/x509"
 	"encoding/hex"
 	"fmt"
 	"log/slog"
@@ -27,6 +29,9 @@ type CMAEConfig struct {
 	MaxCCAttempts       int
 	SessionTTL          time.Duration
 	DownloadTTL         time.Duration
+	// PPRIds is the default PprIds BIT STRING content applied to downloaded
+	// profiles when the order does not override it (SGP.22 §2.4a).
+	PPRIds []byte
 }
 
 // CMAE implements the SM-DP+ ES9+ authentication and download flow (SGP.22
@@ -43,6 +48,9 @@ type CMAE struct {
 	Log        *slog.Logger
 	// Notify, when set, delivers ES2+ progress notifications (SGP.22 §5.3.5).
 	Notify OperatorCallback
+	// ACRCheck, when set, calls the Operator's ES2+.HandleAcrRequest to confirm
+	// an Activation Code Retrieval (SGP.22 §5.3.8).
+	ACRCheck func(ctx context.Context, iccid string) error
 
 	core *cmaeCore
 }
@@ -56,8 +64,25 @@ func NewCMAE(cfg CMAEConfig, certs *cert.Manager, sessions *SessionService, prof
 		Cfg: cfg, Certs: certs, Sessions: sessions, Profiles: profiles,
 		Source: src, UPPDir: uppDir, DefaultUPP: defaultUPP, Engine: engine, Log: log,
 	}
-	c.core = newCMAECore(cfg.FQDN, certs.DPAuth(), certs.DPAuthKey(), certs, sessions, cfg.TransactionIDLen, cfg.SessionTTL, log)
+	c.core = newCMAECore(cfg.FQDN, certs.DPAuth(), certs.DPAuthKey(), certs, sessions, cfg.TransactionIDLen, cfg.SessionTTL, false, log)
 	return c, nil
+}
+
+// identityFor returns the certificate identity selected for a session, or nil
+// when the primary identity applies.
+func (c *CMAE) identityFor(sess *store.Session) *cert.Identity {
+	if sess == nil || len(sess.CICertID) == 0 {
+		return nil
+	}
+	return c.Certs.IdentityByCIKeyID(sess.CICertID)
+}
+
+// pbFor returns the profile-binding certificate/key for a session's identity.
+func (c *CMAE) pbFor(sess *store.Session) (*x509.Certificate, stdcrypto.Signer) {
+	if id := c.identityFor(sess); id != nil && id.DPPbCert != nil {
+		return id.DPPbCert, id.DPPbKey
+	}
+	return c.Certs.DPPb(), c.Certs.DPPbKey()
 }
 
 // notify delivers an operator progress notification if configured.
@@ -111,7 +136,8 @@ func (c *CMAE) AuthenticateClient(transactionID string, authenticateServerRespon
 	}
 
 	smdpSigned2 := (&rsp.SmdpSigned2{TransactionID: ca.Signed1.TransactionID, CCRequiredFlag: profile.CCRequired}).Encode()
-	dpPbKey, err := ecdsaKey(c.Certs.DPPbKey())
+	pbCert, pbSigner := c.pbFor(ca.Session)
+	dpPbKey, err := ecdsaKey(pbSigner)
 	if err != nil {
 		return nil, err
 	}
@@ -134,6 +160,13 @@ func (c *CMAE) AuthenticateClient(transactionID string, authenticateServerRespon
 	sess.EumCert = ca.Response.EumCertificate
 	sess.ProfileID = profile.ID
 	sess.SmdpSignature2 = smdpSignature2
+	// Select a UPP template compatible with the eUICC's advertised profile
+	// version when the order does not pin one explicitly.
+	if profile.UPPTemplate == "" && ca.Signed1.EuiccInfo2 != nil {
+		if tpl := c.pickUPP(ca.Signed1.EuiccInfo2.ProfileVersion); tpl != "" {
+			sess.UPPTemplate = tpl
+		}
+	}
 	if err := c.Sessions.Put(sess); err != nil {
 		return nil, err
 	}
@@ -143,7 +176,7 @@ func (c *CMAE) AuthenticateClient(transactionID string, authenticateServerRespon
 		ProfileMetadata: meta,
 		SmdpSigned2:     smdpSigned2,
 		SmdpSignature2:  smdpSignature2,
-		SmdpCertificate: c.Certs.DPPb().Raw,
+		SmdpCertificate: pbCert.Raw,
 	}, nil
 }
 

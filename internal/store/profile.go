@@ -11,7 +11,7 @@ import (
 type ProfileRepo struct{ db *sql.DB }
 
 const profileCols = `id, iccid, imsi, profile_type, eid, state, matching_id, cc_hash, cc_required,
-	smds_address, release_flag, download_attempts, cc_attempts, upp_template, personalization,
+	smds_address, release_flag, download_attempts, cc_attempts, upp_template, ppr_ids, personalization,
 	created_at, updated_at, installed_at, error_reason`
 
 func scanProfile(sc interface {
@@ -19,12 +19,12 @@ func scanProfile(sc interface {
 }) (*Profile, error) {
 	var p Profile
 	var imsi, ptype, eid, matching, smds, upp, pers, errReason sql.NullString
-	var ccHash []byte
+	var ccHash, pprIds []byte
 	var ccReq, relFlag int
 	var created, updated int64
 	var installed sql.NullInt64
 	if err := sc.Scan(&p.ID, &p.ICCID, &imsi, &ptype, &eid, &p.State, &matching, &ccHash, &ccReq,
-		&smds, &relFlag, &p.DownloadAttempts, &p.CCAttempts, &upp, &pers, &created, &updated, &installed, &errReason); err != nil {
+		&smds, &relFlag, &p.DownloadAttempts, &p.CCAttempts, &upp, &pprIds, &pers, &created, &updated, &installed, &errReason); err != nil {
 		return nil, err
 	}
 	p.IMSI = imsi.String
@@ -33,6 +33,7 @@ func scanProfile(sc interface {
 	p.MatchingID = matching.String
 	p.SMDSAddress = smds.String
 	p.UPPTemplate = upp.String
+	p.PPRIds = pprIds
 	p.Personalization = pers.String
 	p.ErrorReason = errReason.String
 	p.CCHash = ccHash
@@ -56,12 +57,12 @@ func (r *ProfileRepo) Create(p *Profile) (int64, error) {
 	now := p.CreatedAt.Unix()
 	res, err := r.db.Exec(`INSERT INTO profiles
 		(iccid, imsi, profile_type, eid, state, matching_id, cc_hash, cc_required, smds_address,
-		 release_flag, download_attempts, cc_attempts, upp_template, personalization,
+		 release_flag, download_attempts, cc_attempts, upp_template, ppr_ids, personalization,
 		 created_at, updated_at, error_reason)
-		VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+		VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
 		p.ICCID, nullStr(p.IMSI), nullStr(p.ProfileType), nullStr(p.EID), string(p.State), nullStr(p.MatchingID),
 		p.CCHash, boolInt(p.CCRequired), nullStr(p.SMDSAddress), boolInt(p.ReleaseFlag),
-		p.DownloadAttempts, p.CCAttempts, nullStr(p.UPPTemplate), nullStr(p.Personalization), now, now, nullStr(p.ErrorReason))
+		p.DownloadAttempts, p.CCAttempts, nullStr(p.UPPTemplate), p.PPRIds, nullStr(p.Personalization), now, now, nullStr(p.ErrorReason))
 	if err != nil {
 		return 0, fmt.Errorf("store: create profile: %w", err)
 	}
@@ -120,11 +121,11 @@ func (r *ProfileRepo) Update(p *Profile) error {
 	p.UpdatedAt = time.Now().UTC()
 	_, err := r.db.Exec(`UPDATE profiles SET
 		imsi=?, profile_type=?, eid=?, state=?, matching_id=?, cc_hash=?, cc_required=?, smds_address=?,
-		release_flag=?, download_attempts=?, cc_attempts=?, upp_template=?, personalization=?,
+		release_flag=?, download_attempts=?, cc_attempts=?, upp_template=?, ppr_ids=?, personalization=?,
 		updated_at=?, installed_at=?, error_reason=? WHERE id=?`,
 		nullStr(p.IMSI), nullStr(p.ProfileType), nullStr(p.EID), string(p.State), nullStr(p.MatchingID),
 		p.CCHash, boolInt(p.CCRequired), nullStr(p.SMDSAddress), boolInt(p.ReleaseFlag),
-		p.DownloadAttempts, p.CCAttempts, nullStr(p.UPPTemplate), nullStr(p.Personalization),
+		p.DownloadAttempts, p.CCAttempts, nullStr(p.UPPTemplate), p.PPRIds, nullStr(p.Personalization),
 		p.UpdatedAt.Unix(), nullTime(p.InstalledAt), nullStr(p.ErrorReason), p.ID)
 	if err != nil {
 		return fmt.Errorf("store: update profile: %w", err)

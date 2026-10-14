@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	stdcrypto "crypto"
 	"crypto/ecdsa"
 	"crypto/rand"
 	"crypto/x509"
@@ -69,7 +70,7 @@ func (c *CMAE) GetBoundProfilePackage(transactionID string, prepareDownloadRespo
 		}
 	}
 
-	upp, err := c.loadUPP(profile)
+	upp, err := c.loadUPP(profile, sess)
 	if err != nil {
 		return nil, rsp.CodeProfileLoadFailed.Status(err.Error())
 	}
@@ -83,7 +84,8 @@ func (c *CMAE) GetBoundProfilePackage(transactionID string, prepareDownloadRespo
 		return nil, err
 	}
 
-	bpp, err := c.buildBPP(sess.EID, mustHexLower(transactionID), otPK, otSK, ok.EuiccSigned2.EuiccOtpk, upp, profile)
+	_, pbSigner := c.pbFor(sess)
+	bpp, err := c.buildBPP(sess.EID, mustHexLower(transactionID), otPK, otSK, ok.EuiccSigned2.EuiccOtpk, upp, profile, pbSigner)
 	if err != nil {
 		return nil, err
 	}
@@ -116,7 +118,7 @@ func (c *CMAE) recordConfirmationFailure(p *store.Profile) {
 	_ = c.Profiles.Update(p)
 }
 
-func (c *CMAE) buildBPP(eid string, transactionID, smdpOtpk, smdpOtSK, euiccOtpk, upp []byte, profile *store.Profile) ([]byte, error) {
+func (c *CMAE) buildBPP(eid string, transactionID, smdpOtpk, smdpOtSK, euiccOtpk, upp []byte, profile *store.Profile, pbSigner stdcrypto.Signer) ([]byte, error) {
 	eidBytes, err := rsp.EIDBytes(eid)
 	if err != nil {
 		return nil, err
@@ -134,7 +136,7 @@ func (c *CMAE) buildBPP(eid string, transactionID, smdpOtpk, smdpOtSK, euiccOtpk
 		},
 		SmdpOtpk: smdpOtpk,
 	}
-	dpPbKey, err := ecdsaKey(c.Certs.DPPbKey())
+	dpPbKey, err := ecdsaKey(pbSigner)
 	if err != nil {
 		return nil, err
 	}
@@ -185,11 +187,16 @@ func (c *CMAE) buildStoreMetadataWithSSD(profile *store.Profile, ssd []byte) ([]
 		return nil, err
 	}
 	class := int64(2) // operational
+	ppr := profile.PPRIds
+	if len(ppr) == 0 {
+		ppr = c.Cfg.PPRIds
+	}
 	req := &rsp.StoreMetadataRequest{
 		ICCID:               iccidEF,
 		ServiceProviderName: "RSP42",
 		ProfileName:         profile.ProfileName(),
 		ProfileClass:        &class,
+		PPRIds:              ppr,
 		ServiceSpecificData: ssd,
 	}
 	if len(ssd) == 0 {
@@ -202,9 +209,64 @@ func (c *CMAE) buildStoreMetadataWithSSD(profile *store.Profile, ssd []byte) ([]
 	return req.Encode(), nil
 }
 
-// loadUPP loads, personalizes and encodes the UPP template for a profile.
-func (c *CMAE) loadUPP(profile *store.Profile) ([]byte, error) {
+// pickUPP returns the best UPP template for the eUICC's advertised profile
+// version: the greatest major.minor not exceeding it. It returns "" when the
+// version is unknown or no template qualifies.
+func (c *CMAE) pickUPP(supported []byte) string {
+	if len(supported) < 2 {
+		return ""
+	}
+	major, minor := int(supported[0]), int(supported[1])
+	entries, err := os.ReadDir(c.UPPDir)
+	if err != nil {
+		return ""
+	}
+	best := ""
+	bestMaj, bestMin := -1, -1
+	for _, e := range entries {
+		fname := e.Name()
+		if e.IsDir() || !strings.HasSuffix(fname, ".der") || strings.Contains(fname, "UNIQUE") {
+			continue
+		}
+		mj, mn, ok := uppVersion(filepath.Join(c.UPPDir, fname))
+		if !ok {
+			continue
+		}
+		if mj > major || (mj == major && mn > minor) {
+			continue // eUICC does not support this SAIP version
+		}
+		if mj > bestMaj || (mj == bestMaj && mn > bestMin) {
+			best, bestMaj, bestMin = fname, mj, mn
+		}
+	}
+	return best
+}
+
+// uppVersion reads the SAIP version from a UPP template's ProfileHeader.
+func uppVersion(path string) (int, int, bool) {
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		return 0, 0, false
+	}
+	seq, err := saip.ParseUPP(raw)
+	if err != nil {
+		return 0, 0, false
+	}
+	h, err := saip.ParseHeader(seq.Header())
+	if err != nil {
+		return 0, 0, false
+	}
+	return int(h.Major), int(h.Minor), true
+}
+
+// loadUPP loads, personalizes and encodes the UPP template for a profile. The
+// operator may pin a template on the order; otherwise the template selected for
+// the session (from the eUICC's profile version) is used.
+func (c *CMAE) loadUPP(profile *store.Profile, sess *store.Session) ([]byte, error) {
 	name := profile.UPPTemplate
+	if name == "" && sess != nil {
+		name = sess.UPPTemplate
+	}
 	if name == "" {
 		name = c.DefaultUPP
 	}
@@ -237,9 +299,10 @@ func (c *CMAE) loadUPP(profile *store.Profile) ([]byte, error) {
 			return nil, err
 		}
 		if data != nil {
-			if data.ICCID == "" {
-				data.ICCID = profile.ICCID
-			}
+			// The download order owns the ICCID: it is what StoreMetadata
+			// carries, so the personalized profile must use the same value even
+			// if the personalization source supplies a different one.
+			data.ICCID = profile.ICCID
 			eng := c.Engine
 			if eng == nil {
 				eng = &personalization.Engine{}

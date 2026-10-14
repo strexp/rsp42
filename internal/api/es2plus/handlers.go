@@ -61,6 +61,9 @@ type downloadOrderReq struct {
 	EID         string               `json:"eid"`
 	ICCID       string               `json:"iccid"`
 	ProfileType string               `json:"profileType"`
+	// PPRIds optionally sets the Profile Policy Rules for this profile
+	// (SGP.22 §2.4a: 1 = PPR1, 2 = PPR2).
+	PPRIds []int `json:"pprIds"`
 }
 
 type confirmOrderReq struct {
@@ -109,6 +112,13 @@ func (h *Handler) downloadOrder(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		writeFailure(w, rsp.CodeAllocateFailed, err.Error())
 		return
+	}
+	if len(req.PPRIds) > 0 {
+		p.PPRIds = rsp.PPRIDBits(req.PPRIds)
+		if err := h.Profiles.Update(p); err != nil {
+			writeFailure(w, rsp.CodeProfileUpdateFailed, err.Error())
+			return
+		}
 	}
 	if err := h.record("downloadOrder", req.ICCID, req.EID, "", req); err != nil {
 		h.Log.Warn("order record", "err", err)

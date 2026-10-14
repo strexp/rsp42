@@ -27,6 +27,7 @@ type Session struct {
 	ProfileID       int64
 	CCHash          []byte
 	CCRequired      bool
+	UPPTemplate     string
 	CreatedAt       time.Time
 	ExpiresAt       time.Time
 }
@@ -35,17 +36,17 @@ type Session struct {
 func (r *SessionRepo) Put(s *Session) error {
 	_, err := r.db.Exec(`INSERT INTO sessions
 		(transaction_id, state, server_challenge, server_signed1, smdp_signature2, ci_cert_id, eid, euicc_cert, eum_cert,
-		 euicc_otpk, smdp_ot_sk, host_id, shared_secret, profile_id, cc_hash, cc_required, created_at, expires_at)
-		VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+		 euicc_otpk, smdp_ot_sk, host_id, shared_secret, profile_id, cc_hash, cc_required, upp_template, created_at, expires_at)
+		VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
 		ON CONFLICT(transaction_id) DO UPDATE SET
 		 state=excluded.state, server_challenge=excluded.server_challenge, server_signed1=excluded.server_signed1,
 		 smdp_signature2=excluded.smdp_signature2,
 		 ci_cert_id=excluded.ci_cert_id, eid=excluded.eid, euicc_cert=excluded.euicc_cert, eum_cert=excluded.eum_cert,
 		 euicc_otpk=excluded.euicc_otpk, smdp_ot_sk=excluded.smdp_ot_sk, host_id=excluded.host_id,
 		 shared_secret=excluded.shared_secret, profile_id=excluded.profile_id, cc_hash=excluded.cc_hash,
-		 cc_required=excluded.cc_required, expires_at=excluded.expires_at`,
+		 cc_required=excluded.cc_required, upp_template=excluded.upp_template, expires_at=excluded.expires_at`,
 		s.TransactionID, s.State, s.ServerChallenge, s.ServerSigned1, s.SmdpSignature2, s.CICertID, nullStr(s.EID), s.EuiccCert, s.EumCert,
-		s.EuiccOtpk, s.SmdpOtSK, s.HostID, s.SharedSecret, s.ProfileID, s.CCHash, boolInt(s.CCRequired),
+		s.EuiccOtpk, s.SmdpOtSK, s.HostID, s.SharedSecret, s.ProfileID, s.CCHash, boolInt(s.CCRequired), nullStr(s.UPPTemplate),
 		s.CreatedAt.Unix(), s.ExpiresAt.Unix())
 	return err
 }
@@ -53,15 +54,15 @@ func (r *SessionRepo) Put(s *Session) error {
 // Get loads a session by transaction id.
 func (r *SessionRepo) Get(txn string) (*Session, error) {
 	row := r.db.QueryRow(`SELECT transaction_id, state, server_challenge, server_signed1, smdp_signature2, ci_cert_id, eid,
-		euicc_cert, eum_cert, euicc_otpk, smdp_ot_sk, host_id, shared_secret, profile_id, cc_hash, cc_required,
+		euicc_cert, eum_cert, euicc_otpk, smdp_ot_sk, host_id, shared_secret, profile_id, cc_hash, cc_required, upp_template,
 		created_at, expires_at FROM sessions WHERE transaction_id = ?`, txn)
 	var s Session
-	var eid sql.NullString
+	var eid, uppTpl sql.NullString
 	var ccReq int
 	var created, expires int64
 	err := row.Scan(&s.TransactionID, &s.State, &s.ServerChallenge, &s.ServerSigned1, &s.SmdpSignature2, &s.CICertID, &eid,
 		&s.EuiccCert, &s.EumCert, &s.EuiccOtpk, &s.SmdpOtSK, &s.HostID, &s.SharedSecret, &s.ProfileID, &s.CCHash,
-		&ccReq, &created, &expires)
+		&ccReq, &uppTpl, &created, &expires)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, ErrNotFound
 	}
@@ -69,6 +70,7 @@ func (r *SessionRepo) Get(txn string) (*Session, error) {
 		return nil, err
 	}
 	s.EID = eid.String
+	s.UPPTemplate = uppTpl.String
 	s.CCRequired = ccReq != 0
 	s.CreatedAt = toTime(created)
 	s.ExpiresAt = toTime(expires)

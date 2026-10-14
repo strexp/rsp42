@@ -25,19 +25,35 @@ func (r *PrepareDownloadRequest) Encode() []byte {
 
 // ES9+ responses -----------------------------------------------------------
 
-// AuthenticateClientResponseEs9Ok builds a BF3B AuthenticateClientResponseEs9
-// OK branch from the raw profile metadata and prepare-download request.
-func AuthenticateClientResponseEs9Ok(transactionID, profileMetaData, prepareDownloadRequest []byte) []byte {
+// AuthenticateClientResponseEs9Ok builds the BF3B
+// AuthenticateClientResponseEs9 OK branch (SGP.22 §6.6.2.2):
+//
+//	BF3B { A0 { transactionId, profileMetaData, smdpSigned2, smdpSignature2,
+//	            smdpCertificate } }
+func AuthenticateClientResponseEs9Ok(transactionID, profileMetaData, smdpSigned2, smdpSignature2, smdpCertificate []byte) []byte {
 	var fields []byte
 	fields = append(fields, tlvBytes(asn1.Ctx(0, false), transactionID)...)
 	fields = append(fields, profileMetaData...)
-	fields = append(fields, prepareDownloadRequest...)
-	return tlvBytes(asn1.Ctx(59, true), tlvBytes(asn1.Ctx(0, true), fields))
+	fields = append(fields, smdpSigned2...)
+	fields = append(fields, smdpSignature2...)
+	fields = append(fields, smdpCertificate...)
+	return tlvBytes(asn1.Ctx(tagAuthenticateClient, true), tlvBytes(asn1.Ctx(0, true), fields))
 }
 
-// AuthenticateClientResponseEs9Error builds the error branch.
+// AuthenticateClientResponseEs9OkAcr builds the ACR OK branch
+// (`authenticateClientOkAcr [5]`), which carries only the transaction id and the
+// profile metadata (SGP.22 §3.1.7.2).
+func AuthenticateClientResponseEs9OkAcr(transactionID, profileMetaData []byte) []byte {
+	var fields []byte
+	fields = append(fields, tlvBytes(asn1.Ctx(0, false), transactionID)...)
+	fields = append(fields, profileMetaData...)
+	return tlvBytes(asn1.Ctx(tagAuthenticateClient, true), tlvBytes(asn1.Ctx(5, true), fields))
+}
+
+// AuthenticateClientResponseEs9Error builds the error branch
+// (`authenticateClientError [1] INTEGER`).
 func AuthenticateClientResponseEs9Error(code int64) []byte {
-	return tlvBytes(asn1.Ctx(59, true), tlvBytes(asn1.Ctx(1, true), tlvBytes(asn1.TagInteger, asn1.IntBytes(code))))
+	return tlvBytes(asn1.Ctx(tagAuthenticateClient, true), tlvBytes(asn1.Ctx(1, false), asn1.IntBytes(code)))
 }
 
 // GetBoundProfilePackageResponseOk builds a BF3A GetBoundProfilePackageResponse
@@ -46,22 +62,24 @@ func GetBoundProfilePackageResponseOk(transactionID, boundProfilePackage []byte)
 	var fields []byte
 	fields = append(fields, tlvBytes(asn1.Ctx(0, false), transactionID)...)
 	fields = append(fields, boundProfilePackage...)
-	return tlvBytes(asn1.Ctx(58, true), tlvBytes(asn1.Ctx(0, true), fields))
+	return tlvBytes(asn1.Ctx(tagGetBoundProfile, true), tlvBytes(asn1.Ctx(0, true), fields))
 }
 
-// GetBoundProfilePackageResponseError builds the error branch.
+// GetBoundProfilePackageResponseError builds the error branch
+// (`getBoundProfilePackageError INTEGER`).
 func GetBoundProfilePackageResponseError(code int64) []byte {
-	return tlvBytes(asn1.Ctx(58, true), tlvBytes(asn1.Ctx(1, true), tlvBytes(asn1.TagInteger, asn1.IntBytes(code))))
+	return tlvBytes(asn1.Ctx(tagGetBoundProfile, true), tlvBytes(asn1.Ctx(1, false), asn1.IntBytes(code)))
 }
 
 // CancelSessionResponseEs9Ok builds the BF41 CancelSessionResponseEs9 OK branch.
 func CancelSessionResponseEs9Ok() []byte {
-	return tlvBytes(asn1.Ctx(65, true), tlvBytes(asn1.Ctx(0, true), nil))
+	return tlvBytes(asn1.Ctx(tagCancelSessionEs9, true), tlvBytes(asn1.Ctx(0, true), nil))
 }
 
-// CancelSessionResponseEs9Error builds the error branch.
+// CancelSessionResponseEs9Error builds the error branch
+// (`cancelSessionError INTEGER`).
 func CancelSessionResponseEs9Error(code int64) []byte {
-	return tlvBytes(asn1.Ctx(65, true), tlvBytes(asn1.Ctx(1, true), asn1.IntBytes(code)))
+	return tlvBytes(asn1.Ctx(tagCancelSessionEs9, true), tlvBytes(asn1.Ctx(1, false), asn1.IntBytes(code)))
 }
 
 // AuthenticateClientResponseEs11Ok builds a BF40 AuthenticateClientResponseEs11
@@ -77,5 +95,11 @@ func AuthenticateClientResponseEs11Ok(transactionID []byte, eventEntries [][2]st
 	var fields []byte
 	fields = append(fields, tlvBytes([]byte{0x80}, transactionID)...)
 	fields = append(fields, tlvBytes(asn1.Ctx(1, true), entries)...)
-	return tlvBytes(asn1.Ctx(64, true), tlvBytes(asn1.Ctx(0, true), fields))
+	return tlvBytes(asn1.Ctx(tagAuthenticateEs11, true), tlvBytes(asn1.Ctx(0, true), fields))
+}
+
+// AuthenticateClientResponseEs11Error builds the BF40 error branch
+// (`authenticateClientError INTEGER`).
+func AuthenticateClientResponseEs11Error(code int64) []byte {
+	return tlvBytes(asn1.Ctx(tagAuthenticateEs11, true), tlvBytes(asn1.Ctx(1, false), asn1.IntBytes(code)))
 }

@@ -1,8 +1,8 @@
 # SGP.22 coverage
 
 This note records which SGP.22 v2.7 functions and requirements the SM-DP+ and
-SM-DS sides implement. Only the JSON binding is implemented (the ASN.1 binding
-is out of scope by design).
+SM-DS sides implement. Both the JSON binding (§6.5) and the ASN.1 binding (§6.6)
+are implemented; an LPA selects one per request via the `Content-Type` header.
 
 ## Server-side functions
 
@@ -20,7 +20,7 @@ The specification defines no other mandatory SM-DP+/SM-DS functions.
 | CancelOrder | ES2+ §5.3.3 | ✅ |
 | ReleaseProfile | ES2+ §5.3.4 | ✅ |
 | HandleDownloadProgressInfo (as caller) | ES2+ §5.3.5 | ✅ |
-| HandleAcrRequest (as caller) | ES2+ §5.3.8 | ◐ metadata/point-17 done; active caller call pending |
+| HandleAcrRequest (as caller) | ES2+ §5.3.8 | ✅ (calls the Operator when `notifications.es2p_callback.acr_url` is set) |
 | InitiateAuthentication / AuthenticateClient | ES11 §5.8 | ✅ |
 | RegisterEvent / DeleteEvent | ES12 §5.9 | ✅ |
 | RegisterEvent / DeleteEvent (cascade) | ES15 §5.10 | ✅ |
@@ -37,19 +37,23 @@ scope. §5.3.6/§5.3.7 are VOID in v2.7.
 | Profile lifecycle state machine | §3.1.6 Table 6b | ✅ |
 | BPP generation (SCP03t / BSP) incl. PPK | §2.5.4 / §5.5 / Annex G | ✅ |
 | Confirmation code (`hashCc`) | §2.2 | ✅ |
-| Notification handling (install/enable/disable/delete) | §3.5 | ✅ |
+| ASN.1 binding (`RemoteProfileProvisioningRequest/Response`, `/gsma/rsp2/asn1`) | §6.6 | ✅ (hand-written; ES9+ and ES11) |
+| Notification handling (install/enable/disable/delete) | §3.5 | ✅ (euiccSignPIR / euiccNotificationSignature verified; unauthenticated notifications are recorded but not acted on) |
 | Certificate chain, role OIDs, EUM nameConstraints/EIN | §4.5.2 | ✅ (expiry checked; CRL out of scope) |
-| SAIP personalization (ICCID/IMSI/K/OPc/PIN/PUK/ADM/SPN/…) | §5.5.3 / SAIP | ◐ common params; full template table + GFSTE recompute pending |
-| Activation Code Retrieval (ACR) | §4.9 | ◐ response metadata; ES2+ caller-side pending |
-| Profile Policy Rules (pprIds) | §5.3 | ◐ field present, not populated from orders |
-| `otherCertsInChain` | §6.5.2 | ✗ (optional) |
+| Multiple CI identities (SGP.26 variants) | §4.5.2 | ✅ (`certs.identities`; selected by `euiccCiPKIdToBeUsed`) |
+| SAIP personalization (ICCID/IMSI/K/OPc/PIN/PUK/ADM/SPN/…) | §5.5.3 / SAIP | ✅ common params; mandatory-services + GFSTE list recomputed |
+| UPP template selection by eUICC profile version | §5.5.3 | ✅ (`euiccInfo2.profileVersion`; order override wins) |
+| Activation Code Retrieval (ACR) | §4.9 | ✅ response metadata + ES2+ caller-side `HandleAcrRequest` |
+| Profile Policy Rules (pprIds) | §5.3 | ✅ populated from order `pprIds` / `profiles.ppr_ids` |
+| `otherCertsInChain` | §6.5.2 | ✅ parsed and chained between EUM and CI |
 | CRL download / strong CRL checks | §3.5.5 | ✗ (registered risk; interface reserved) |
 
 Legend: ✅ implemented, ◐ partial, ✗ not implemented.
 
 ## Notable spec deviations (documented risks)
 
-- **JSON binding only**; `application/x-gsma-rsp-asn1` is not implemented.
+- **NIST P-256 only**; the Brainpool P256r1 `certs.curve: brainpool` path is not
+  implemented (Go's `crypto/x509` cannot parse Brainpool certificates).
 - **No online CRL/OCSP**; expiry is validated, revocation is not.
 - **AUTOMATIC TAGS** encoding of a few untagged fields (`SmdpSigned2.ccRequiredFlag`,
   `NotificationMetadata.notificationAddress`) follows the common toolchain

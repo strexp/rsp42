@@ -103,6 +103,23 @@ func (c *Config) validateDP() error {
 			return fmt.Errorf("certs: %s not found at %s", p.name, p.path)
 		}
 	}
+	for i, extra := range r.Identities {
+		if !dirExists(extra.RootDir) {
+			return fmt.Errorf("certs.identities[%d].root_dir %q does not exist", i, extra.RootDir)
+		}
+		if extra.CI == "" {
+			return fmt.Errorf("certs.identities[%d].ci is required", i)
+		}
+		ci := filepath.Join(extra.RootDir, extra.CI, "CERT_CI_"+curveTag+".der")
+		if !fileExists(ci) {
+			return fmt.Errorf("certs.identities[%d]: CI cert not found at %s", i, ci)
+		}
+	}
+	for _, id := range c.Profiles.PPRIds {
+		if id < 0 || id > 2 {
+			return fmt.Errorf("profiles.ppr_ids entry %d out of range [0,2]", id)
+		}
+	}
 	if !dirExists(c.Profiles.UPPDir) {
 		return fmt.Errorf("profiles.upp_dir %q does not exist", c.Profiles.UPPDir)
 	}

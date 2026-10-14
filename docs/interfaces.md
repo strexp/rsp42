@@ -1,9 +1,19 @@
 # Interfaces
 
-All interfaces use the SGP.22 JSON binding (`Content-Type: application/json`).
-Binary fields are base64-encoded ASN.1 structures; `transactionId` is an
-uppercase hex string. Synchronous functions always return HTTP 200 with a
-`header.functionExecutionStatus`; notification functions return HTTP 204.
+The LPA-facing interfaces (ES9+, ES11) support both SGP.22 bindings, selected per
+request via `Content-Type`:
+
+- **JSON binding** (`application/json`, §6.5): per-function paths, binary fields
+  are base64-encoded ASN.1 structures, `transactionId` is an uppercase hex
+  string. Synchronous functions return HTTP 200 with a
+  `header.functionExecutionStatus`; notification functions return HTTP 204.
+- **ASN.1 binding** (`application/x-gsma-rsp-asn1`, §6.6): a single generic path
+  `POST /gsma/rsp2/asn1` carrying a DER-encoded
+  `RemoteProfileProvisioningRequest`/`Response` (an explicit `A2` envelope around
+  the function TLV). HandleNotification returns HTTP 204.
+
+Both are served on the same ES9+/ES11 listeners. The ES2+/ES12/ES15 interfaces
+use the JSON binding only (as the specification mandates).
 
 ## ES9+ (SM-DP+, LPA-facing)
 

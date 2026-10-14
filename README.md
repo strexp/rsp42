@@ -14,7 +14,8 @@ The project targets the SGP.26 v3 test certificate ecosystem and implements:
 - Real-time Bound Profile Package generation (SCP03t) and full SAIP
   personalization.
 
-The implementation deliberately covers **only the JSON binding** (SGP.22 §6.5).
+Both HTTP bindings are implemented: the **JSON binding** (SGP.22 §6.5) and the
+**ASN.1 binding** (SGP.22 §6.6, `/gsma/rsp2/asn1`).
 
 ## Status
 

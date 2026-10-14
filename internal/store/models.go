@@ -34,6 +34,7 @@ type Profile struct {
 	DownloadAttempts int
 	CCAttempts       int
 	UPPTemplate      string
+	PPRIds           []byte // PprIds BIT STRING content bytes
 	Personalization  string
 	CreatedAt        time.Time
 	UpdatedAt        time.Time

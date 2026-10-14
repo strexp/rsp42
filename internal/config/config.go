@@ -89,6 +89,9 @@ type CertsConfig struct {
 	DSAuth                string `mapstructure:"ds_auth"`
 	DSTLS                 string `mapstructure:"ds_tls"`
 	AllowExpiredTestCerts bool   `mapstructure:"allow_expired_test_certs"`
+	// Identities holds additional certificate sets, letting one deployment
+	// serve eUICCs that propose different CI key identifiers (SGP.26 variants).
+	Identities []CertsConfig `mapstructure:"identities"`
 }
 
 // ProfilesConfig configures the UPP template store and personalization.
@@ -97,6 +100,10 @@ type ProfilesConfig struct {
 	Repository      string                `mapstructure:"repository"`
 	Store           StoreConfig           `mapstructure:"store"`
 	Personalization PersonalizationConfig `mapstructure:"personalization"`
+	// PPRIds lists the Profile Policy Rules to attach to downloaded profiles
+	// (SGP.22 §2.4a: 1 = PPR1 disabling not allowed, 2 = PPR2 deletion not
+	// allowed).
+	PPRIds []int `mapstructure:"ppr_ids"`
 }
 
 // StoreConfig is a SQLite DSN.
@@ -127,8 +134,10 @@ type NotificationsConfig struct {
 
 // CallbackConfig is an HTTP callback target.
 type CallbackConfig struct {
-	Enabled        bool     `mapstructure:"enabled"`
-	URL            string   `mapstructure:"url"`
+	Enabled bool   `mapstructure:"enabled"`
+	URL     string `mapstructure:"url"`
+	// ACRURL is the optional Operator ES2+.HandleAcrRequest endpoint.
+	ACRURL         string   `mapstructure:"acr_url"`
 	ClientCertFile string   `mapstructure:"client_cert_file"`
 	ClientKeyFile  string   `mapstructure:"client_key_file"`
 	CAFile         string   `mapstructure:"ca_file"`

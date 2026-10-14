@@ -155,7 +155,7 @@ func loadCertificates(cfg *config.Config, log *slog.Logger) (*cert.Manager, *kms
 	if err != nil {
 		return nil, nil, err
 	}
-	m, err := cert.Load(cert.OptionsFromConfig(cfg), provider)
+	m, err := cert.LoadSets(cert.OptionsListFromConfig(cfg), provider)
 	if err != nil {
 		return nil, nil, err
 	}

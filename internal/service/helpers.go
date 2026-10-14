@@ -23,6 +23,20 @@ func ecdsaKey(s crypto.Signer) (*ecdsa.PrivateKey, error) {
 
 func equalBytes(a, b []byte) bool { return bytes.Equal(a, b) }
 
+// parseCertificates parses a list of DER certificates, returning an error if any
+// entry is not a valid certificate.
+func parseCertificates(ders [][]byte) ([]*x509.Certificate, error) {
+	out := make([]*x509.Certificate, 0, len(ders))
+	for _, der := range ders {
+		c, err := x509.ParseCertificate(der)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, c)
+	}
+	return out, nil
+}
+
 func mustHexLower(s string) []byte {
 	b, err := hex.DecodeString(s)
 	if err != nil {
@@ -53,16 +67,21 @@ func eidFromCert(c *x509.Certificate) string {
 	return ""
 }
 
-// validateEUICCChain verifies CERT.EUICC against CERT.EUM and the selected CI,
-// and that the EUM chains to the session's CI key id.
-func validateEUICCChain(euicc, eum, ci *x509.Certificate, ciCertID []byte) error {
+// validateEUICCChain verifies CERT.EUICC against CERT.EUM, any intermediate
+// certificates (otherCertsInChain) and the selected CI. When intermediates are
+// absent the EUM must be directly signed by the session's CI key id.
+func validateEUICCChain(euicc, eum *x509.Certificate, intermediates []*x509.Certificate, ci *x509.Certificate, ciCertID []byte) error {
 	if ci == nil {
 		return fmt.Errorf("no CI loaded")
 	}
-	if len(ciCertID) > 0 && !bytes.Equal(eum.AuthorityKeyId, ciCertID) {
+	if len(intermediates) == 0 && len(ciCertID) > 0 && !bytes.Equal(eum.AuthorityKeyId, ciCertID) {
 		return fmt.Errorf("EUM AKI does not match selected CI key id")
 	}
-	if err := cert.VerifySignatureChain(euicc, []*x509.Certificate{eum, ci}); err != nil {
+	chain := make([]*x509.Certificate, 0, 2+len(intermediates))
+	chain = append(chain, eum)
+	chain = append(chain, intermediates...)
+	chain = append(chain, ci)
+	if err := cert.VerifySignatureChain(euicc, chain); err != nil {
 		return err
 	}
 	return nil

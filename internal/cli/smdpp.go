@@ -16,6 +16,7 @@ import (
 	"rsp42/internal/audit"
 	"rsp42/internal/config"
 	"rsp42/internal/logging"
+	"rsp42/internal/rsp"
 	"rsp42/internal/saip/personalization"
 	"rsp42/internal/service"
 	"rsp42/internal/store"
@@ -75,6 +76,7 @@ func cmdSMDpp(prog string, args []string) int {
 		MaxCCAttempts:       cfg.SMDpp.MaxCCAttempts,
 		SessionTTL:          cfg.SMDpp.SessionTTL.Duration(),
 		DownloadTTL:         cfg.SMDpp.DownloadTTL.Duration(),
+		PPRIds:              rsp.PPRIDBits(cfg.Profiles.PPRIds),
 	}, certs, sessions, st.Profiles, src, cfg.Profiles.UPPDir, "", &personalization.Engine{Algorithm: cfg.Profiles.Personalization.DefaultAlgorithm}, log)
 	if err != nil {
 		log.Error("cmae", "err", err)
@@ -99,6 +101,10 @@ func cmdSMDpp(prog string, args []string) int {
 			}
 		}
 		cb := es2plus.NewCallbackClient(cfg.Notifications.ES2PCallback.URL, cfg.SMDpp.OID, hc)
+		cb.ACRURL = cfg.Notifications.ES2PCallback.ACRURL
+		if cb.ACRURL != "" {
+			cmae.ACRCheck = cb.HandleAcrRequest
+		}
 		queue := es2plus.NewCallbackQueue(st.Callbacks, cb, log)
 		if n := cfg.Notifications.ES2PCallback.MaxAttempts; n > 0 {
 			queue.MaxAttempts = n
