@@ -544,9 +544,13 @@
 | 提交 | 内容 |
 |---|---|
 | `e35ca88` | 删除 doc-only 的 `internal/api/es15`，doc 并入 `service.CascadeClient` |
-| `b6d708c` | 测试专用的 mock operator 从 `internal/api/mock` 移到 `internal/testutil/mockoperator`，角色在每个 import 处显式 |
+| `b6d708c` | 测试专用的 mock operator 从 `internal/api/mock` 移到 `internal/testutil/mockoperator` |
+| `1e758db` | 新增 `internal/api/adminhttp`（JSON/错误体/`ErrCode`/分页/`ParseID`/`ParseTime`/`TenantFilter` 等），admin 全部改用；`normalizeICCID` 三处副本删除改用 `iccid.Normalize` |
+| `bf0960c` | `admin/ds.go` → `internal/api/dsadmin`（消费方定义 `EventStore`/`AuditSink`）；`openapi.json` 移入 `internal/api/admin/openapi`，新增 `Doc()`/`FilteredDoc()`；**SM-DS admin 不再对外提供 DP+ OpenAPI 文档**（改为按 `/events` 过滤、标题为 SM-DS 的文档） |
+| `d1fd0f6` | `cli/server.go` 按职责拆为 `listener.go`/`run.go`/`kmsload.go`；`serveAll` 的信号处理改为循环，第二次信号强制退出（原先第二次信号被忽略、卡住的进程只能 SIGKILL） |
+| `316a1dc` | 删除 admin 中因 DS 拆出而失效的 `Events` 依赖 |
 
-待办：`admin/ds.go` → `internal/api/dsadmin`（前置：把 admin 的 JSON 响应 helper 抽到共享包 `internal/api/adminhttp`，并让 `openapi.json` 成为共享包）、`cli` 组合根拆分（`server.go` 5 职责、`cmdSMDpp` 207 行、表驱动命令注册表）、`es2plus` 客户端代码 → `internal/client/es2p`、`store`/`service`/`saip`/`rsp`/`cert` 的文件级拆分。
+待办：`cli` 的 `cmdSMDpp` 组合根拆分与表驱动命令注册表；`es2plus` 客户端代码 → `internal/client/es2p`；`store`/`service`/`saip`/`rsp`/`cert` 的文件级拆分；`admin.Handler` 的 12 个具体 repo 字段收口（现已有 `adminhttp`/`dsadmin` 前置，宜与按资源域拆分一起做）。
 
 ### 阶段 5：测试与工程化收尾（进行中）
 
@@ -559,7 +563,7 @@
 | `f5eae0b` | 重复测试 helper（`MustHex`×3、`Concat`×3、`TLV`/`HexTag`×2、`itoa`）统一到 `internal/testutil`；该包只被 `_test.go` 引用，不进二进制 |
 | `b6d708c` | mock operator 迁入 `internal/testutil`（见阶段 4） |
 
-待办：`docs/architecture.md` 的包清单与依赖方向需按当前 `go list` 更新（新增 `internal/asn1bind`、`internal/iccid`、`internal/saipver`、`internal/testutil`，并写明 `store`/`config` 不再依赖 `rsp`）；`jsonschema/v6` 与 `yaml.v3` 的去留（需用户决策）；`es2plus` 与 `service/smdsc.go` 的重试循环合并；`admin_ops.go` 拆分。
+待办：`docs/architecture.md` 的包清单与依赖方向需按当前 `go list` 更新（新增 `internal/api/adminhttp`、`internal/api/asn1bind`、`internal/api/admin/openapi`、`internal/api/dsadmin`、`internal/iccid`、`internal/saipver`、`internal/testutil`，并写明 `store`/`config` 不再依赖 `rsp`）；`jsonschema/v6` 与 `yaml.v3` 的去留（**需用户决策**）；`es2plus` 与 `service/smdsc.go` 的重试循环合并；`admin_ops.go` 拆分。
 
 ### 执行期间确认的额外结论
 
