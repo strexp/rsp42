@@ -350,7 +350,7 @@ func DecodePrepareDownloadResponse(raw []byte) (*PrepareDownloadResponseOk, *Pre
 	if hex.EncodeToString(t.Tag) != "bf21" {
 		return nil, nil, fmt.Errorf("rsp: PrepareDownloadResponse unexpected tag %X", t.Tag)
 	}
-	if ok, found := t.Find(asn1.Ctx(0, true)); found {
+	if ok, hasOK, e, hasErr := splitChoice(t); hasOK {
 		kids, err := ok.Children()
 		if err != nil {
 			return nil, nil, err
@@ -358,23 +358,20 @@ func DecodePrepareDownloadResponse(raw []byte) (*PrepareDownloadResponseOk, *Pre
 		out := &PrepareDownloadResponseOk{}
 		for _, k := range kids {
 			switch {
-			case len(k.Tag) == 1 && k.Tag[0] == 0x30 && out.EuiccSigned2 == nil:
+			case isSequence(k) && out.EuiccSigned2 == nil:
 				out.EuiccSigned2Raw = k.Raw
 				out.EuiccSigned2, err = DecodeEUICCSigned2(k)
 				if err != nil {
 					return nil, nil, err
 				}
-			case len(k.Tag) == 2 && k.Tag[0] == 0x5f && k.Tag[1] == 0x37:
+			case isSignature(k):
 				out.EuiccSignature2 = k.Value
 			}
 		}
 		return out, nil, nil
-	}
-	if e, found := t.Find(asn1.Ctx(1, true)); found {
+	} else if hasErr {
 		errResp := &PrepareDownloadResponseError{TransactionID: childBytes(e, asn1.Ctx(0, false))}
-		if v, ok := e.Find(asn1.TagInteger); ok {
-			errResp.DownloadErrorCode, _ = v.Int()
-		}
+		errResp.DownloadErrorCode, _ = choiceErrorCode(e)
 		return nil, errResp, nil
 	}
 	return nil, nil, fmt.Errorf("rsp: PrepareDownloadResponse has no recognised alternative")
@@ -408,7 +405,7 @@ func DecodeAuthenticateServerResponse(raw []byte) (*AuthenticateResponseOk, *Aut
 	if hex.EncodeToString(t.Tag) != "bf38" {
 		return nil, nil, fmt.Errorf("rsp: AuthenticateServerResponse unexpected tag %X", t.Tag)
 	}
-	if ok, found := t.Find(asn1.Ctx(0, true)); found {
+	if ok, hasOK, e, hasErr := splitChoice(t); hasOK {
 		kids, err := ok.Children()
 		if err != nil {
 			return nil, nil, err
@@ -417,14 +414,14 @@ func DecodeAuthenticateServerResponse(raw []byte) (*AuthenticateResponseOk, *Aut
 		var certs [][]byte
 		for _, k := range kids {
 			switch {
-			case len(k.Tag) == 1 && k.Tag[0] == 0x30 && out.EuiccSigned1 == nil:
+			case isSequence(k) && out.EuiccSigned1 == nil:
 				out.EuiccSigned1, err = DecodeEuiccSigned1(k)
 				if err != nil {
 					return nil, nil, err
 				}
-			case len(k.Tag) == 2 && k.Tag[0] == 0x5f && k.Tag[1] == 0x37:
+			case isSignature(k):
 				out.EuiccSignature1 = k.Value
-			case len(k.Tag) == 1 && k.Tag[0] == 0x30:
+			case isSequence(k):
 				certs = append(certs, k.Raw)
 			}
 		}
@@ -438,12 +435,9 @@ func DecodeAuthenticateServerResponse(raw []byte) (*AuthenticateResponseOk, *Aut
 			out.OtherCertsInChain = certs[2:]
 		}
 		return out, nil, nil
-	}
-	if e, found := t.Find(asn1.Ctx(1, true)); found {
+	} else if hasErr {
 		errResp := &AuthenticateResponseError{TransactionID: childBytes(e, asn1.Ctx(0, false))}
-		if v, ok := e.Find(asn1.TagInteger); ok {
-			errResp.AuthenticateErrorCode, _ = v.Int()
-		}
+		errResp.AuthenticateErrorCode, _ = choiceErrorCode(e)
 		return nil, errResp, nil
 	}
 	return nil, nil, fmt.Errorf("rsp: AuthenticateServerResponse has no recognised alternative")

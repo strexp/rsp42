@@ -41,6 +41,13 @@ func segmentGroupBytes(groupTag, segTag uint64, segments [][]byte) []byte {
 }
 
 // tlvBytes emits a tag + definite-length + content.
+//
+// It exists because the bertlv builder cannot express two shapes this package
+// needs: a constructed tag whose content is already encoded (the BF36 envelope,
+// the [n] segment groups) and a content length above 65535 bytes (a real UPP can
+// exceed it). asn1.Marshal, which delegates to bertlv, panics on both —
+// TestTLVBytesSupportsConstructedContent and TestTLVBytesSupportsLargeLengths
+// pin that, so this helper must not be "simplified" onto asn1.Marshal.
 func tlvBytes(tag, content []byte) []byte {
 	out := make([]byte, 0, len(tag)+len(content)+4)
 	out = append(out, tag...)

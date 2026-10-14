@@ -109,7 +109,11 @@ func BitString(unused uint8, bits []byte) *Builder {
 	return bertlv.NewValue(TagBitString, value)
 }
 
-// Sequence wraps children in a UNIVERSAL SEQUENCE and returns the encoded bytes.
+// Marshal encodes a Builder and returns the bytes. It panics when the value
+// cannot be encoded, which includes two limits inherited from bertlv: a content
+// length above 65535 bytes, and a constructed tag carrying a raw value. Callers
+// that need large content or a constructed element with pre-encoded content must
+// write the tag/length themselves (see rsp.tlvBytes, which does exactly that).
 func Marshal(t *Builder) []byte {
 	b, err := t.MarshalBinary()
 	if err != nil {

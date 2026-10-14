@@ -24,8 +24,8 @@ func ExtractEuiccSigned1(authenticateServerResponse []byte) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	a0, ok2 := t.Find(asn1.Ctx(0, true))
-	if !ok2 {
+	a0, hasOK, _, _ := splitChoice(t)
+	if !hasOK {
 		return nil, fmt.Errorf("rsp: no authenticateResponseOk")
 	}
 	kids, err := a0.Children()
@@ -33,7 +33,7 @@ func ExtractEuiccSigned1(authenticateServerResponse []byte) ([]byte, error) {
 		return nil, err
 	}
 	for _, k := range kids {
-		if len(k.Tag) == 1 && k.Tag[0] == 0x30 {
+		if isSequence(k) {
 			return k.Raw, nil
 		}
 	}

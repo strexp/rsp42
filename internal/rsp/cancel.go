@@ -32,7 +32,7 @@ func DecodeCancelSessionResponse(raw []byte) (*CancelSessionResponseOk, int64, e
 	if hex.EncodeToString(t.Tag) != "bf41" {
 		return nil, 0, fmt.Errorf("rsp: CancelSessionResponse unexpected tag %X", t.Tag)
 	}
-	if ok, found := t.Find(asn1.Ctx(0, true)); found {
+	if ok, hasOK, e, hasErr := splitChoice(t); hasOK {
 		kids, err := ok.Children()
 		if err != nil {
 			return nil, 0, err
@@ -40,25 +40,19 @@ func DecodeCancelSessionResponse(raw []byte) (*CancelSessionResponseOk, int64, e
 		out := &CancelSessionResponseOk{}
 		for _, k := range kids {
 			switch {
-			case len(k.Tag) == 1 && k.Tag[0] == 0x30 && out.Signed == nil:
+			case isSequence(k) && out.Signed == nil:
 				out.SignedRaw = k.Raw
 				out.Signed, err = DecodeEuiccCancelSessionSigned(k)
 				if err != nil {
 					return nil, 0, err
 				}
-			case len(k.Tag) == 2 && k.Tag[0] == 0x5f && k.Tag[1] == 0x37:
+			case isSignature(k):
 				out.Signature = k.Value
 			}
 		}
 		return out, 0, nil
-	}
-	if e, found := t.Find(asn1.Ctx(1, true)); found {
-		if v, ok := e.Find(asn1.Ctx(1, false)); ok {
-			n, _ := v.Int()
-			return nil, n, nil
-		}
-		if v, ok := e.Find(asn1.TagInteger); ok {
-			n, _ := v.Int()
+	} else if hasErr {
+		if n, ok := choiceErrorCode(e); ok {
 			return nil, n, nil
 		}
 	}
