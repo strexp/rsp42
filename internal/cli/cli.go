@@ -1,5 +1,5 @@
-// Package cli implements the rsp42 command line interface shared by the
-// rsp42 and smds binaries.
+// Package cli implements the rsp42 command line interface. The single rsp42
+// binary provides both roles as peers: `rsp42 smdpp` and `rsp42 smds`.
 package cli
 
 import (

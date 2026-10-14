@@ -173,7 +173,7 @@ func (h *Handler) openapi(w http.ResponseWriter, _ *http.Request) {
 var openAPIDoc = map[string]any{
 	"openapi": "3.0.3",
 	"info": map[string]any{
-		"title":   "rsp42 management API",
+		"title":   "rsp42 SM-DP+ management API",
 		"version": "0.1.0",
 		"description": "BSS/OSS-facing management API for the SM-DP+. Profiles, UPP " +
 			"template registry and per-ICCID personalization. No authentication " +

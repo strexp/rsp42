@@ -35,6 +35,10 @@ func cmdSMDpp(prog string, args []string) int {
 		fmt.Fprintf(os.Stderr, "%s smdpp: %v\n", prog, err)
 		return 1
 	}
+	if !cfg.SMDpp.Enabled {
+		fmt.Fprintf(os.Stderr, "%s smdpp: smdpp.enabled is false\n", prog)
+		return 1
+	}
 	log := logging.New(cfg.Log.Level, cfg.Log.Format)
 	slog.SetDefault(log)
 
@@ -154,15 +158,15 @@ func cmdSMDpp(prog string, args []string) int {
 	}
 
 	mk := func(h http.Handler, l config.ListenerCfg) (namedServer, error) {
-		return buildServer(log, "es9p", cfg.Server.Bind, l, h)
+		return buildServer(log, "es9p", cfg.SMDpp.Server.Bind, l, h)
 	}
-	apiOpts := api.Options{CORS: cfg.Server.CORS.AllowedOrigins}
-	es9p, err := mk(wrap(api.NewES9PRouter(log, es9pHandler, apiOpts), "es9p"), cfg.Server.ES9P)
+	apiOpts := api.Options{CORS: cfg.SMDpp.Server.CORS.AllowedOrigins}
+	es9p, err := mk(wrap(api.NewES9PRouter(log, es9pHandler, apiOpts), "es9p"), cfg.SMDpp.Server.ES9P)
 	if err != nil {
 		log.Error("es9p listener", "err", err)
 		return 1
 	}
-	es2p, err := buildServer(log, "es2p", cfg.Server.Bind, cfg.Server.ES2P, wrap(api.NewES2PRouter(log, es2pHandler, apiOpts), "es2p"))
+	es2p, err := buildServer(log, "es2p", cfg.SMDpp.Server.Bind, cfg.SMDpp.Server.ES2P, wrap(api.NewES2PRouter(log, es2pHandler, apiOpts), "es2p"))
 	if err != nil {
 		log.Error("es2p listener", "err", err)
 		return 1
@@ -172,12 +176,12 @@ func cmdSMDpp(prog string, args []string) int {
 		UPP: st.UPP, Perso: perso, Audit: st.Audit, Batch: st.Batch,
 		OrderRepo: st.Orders, Notifs: st.Notifs, Pool: st.Pool, FQDN: cfg.SMDpp.FQDN, OID: cfg.SMDpp.OID,
 	}
-	admin, err := buildServer(log, "admin", cfg.Server.Bind, cfg.Server.Admin, api.NewAdminRouter(log, func() bool { return true }, func(r chi.Router) { adminapi.Mount(r, adminH) }, apiOpts))
+	admin, err := buildServer(log, "admin", cfg.SMDpp.Server.Bind, cfg.SMDpp.Server.Admin, api.NewAdminRouter(log, func() bool { return true }, func(r chi.Router) { adminapi.Mount(r, adminH) }, apiOpts))
 	if err != nil {
 		log.Error("admin listener", "err", err)
 		return 1
 	}
 
-	log.Info("starting SM-DP+", "fqdn", cfg.SMDpp.FQDN, "es9p_port", cfg.Server.ES9P.Port, "es2p_port", cfg.Server.ES2P.Port)
+	log.Info("starting SM-DP+", "fqdn", cfg.SMDpp.FQDN, "es9p_port", cfg.SMDpp.Server.ES9P.Port, "es2p_port", cfg.SMDpp.Server.ES2P.Port)
 	return serveAll(log, es9p, es2p, admin)
 }

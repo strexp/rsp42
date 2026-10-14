@@ -39,8 +39,8 @@ run-smdpp: build ## run the SM-DP+ role
 run-smds: build ## run the SM-DS role
 	$(RSP42) smds --config $(CONFIG)
 
-migrate: build ## apply database migrations
-	$(RSP42) admin migrate --config $(CONFIG)
+migrate: build ## apply database migrations (both roles; DB=dp|ds|all)
+	$(RSP42) admin migrate --config $(CONFIG) --db $(or $(DB),all)
 
 testdata: ## extract SGP.26 certificates and TS.48 UPP templates
 	@test -n "$(UPP_SRC)" || { echo "error: set UPP_SRC=<TS.48 UPP tree, .zip or .tar.gz>"; exit 1; }

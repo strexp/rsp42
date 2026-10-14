@@ -2,37 +2,43 @@
 #
 # Copy to config/config.yaml and adjust. Every value can be overridden with an
 # environment variable prefixed RSP42_, using underscores for nesting, e.g.
-# RSP42_SMDPP_FQDN or RSP42_SERVER_ES9P_PORT.
+# RSP42_SMDPP_FQDN or RSP42_SMDPP_SERVER_ES9P_PORT.
+#
+# The SM-DP+ (`smdpp`) and SM-DS (`smds`) are peers with equal standing; neither
+# is the default. Run the one you want:
+#   rsp42 smdpp --config config/config.yaml
+#   rsp42 smds  --config config/config.yaml
 #
 # Defaults use the SGP.26 v3.0.2 (2026) Variant O test certificates. Run
 # scripts/extract-testdata.sh once to populate testdata/ before starting.
 
-server:
-  bind: "0.0.0.0"
-  # Cross-origin access for browser clients (e.g. deploy/demo.html). An empty
-  # list disables CORS; "*" allows any origin (test/dev only — restrict it in
-  # production).
-  cors:
-    allowed_origins: ["*"]
-  es9p:
-    port: 8443
-    tls:
-      enabled: true
-      cert_file: "testdata/sgp26/SM-DP+/DPtls/CERT_DPtls_NIST.pem"
-      key_file: "testdata/sgp26/SM-DP+/DPtls/SK_DPtls_NIST.pem"
-      min_version: "1.2"
-  es2p:
-    port: 8444
-    tls:
-      enabled: true
-      cert_file: "testdata/sgp26/SM-DP+/DPtls/CERT_DPtls_NIST.pem"
-      key_file: "testdata/sgp26/SM-DP+/DPtls/SK_DPtls_NIST.pem"
-      client_ca_file: "testdata/sgp26/CertificateIssuer/CERT_CI_NIST.pem"
-      min_version: "1.2"
-  admin:
-    port: 9000
-
+# ------------------------------------------------------------------ SM-DP+ ---
 smdpp:
+  enabled: true
+  server:
+    bind: "0.0.0.0"
+    # Cross-origin access for browser clients (e.g. deploy/demo.html). An empty
+    # list disables CORS; "*" allows any origin (test/dev only — restrict it in
+    # production).
+    cors:
+      allowed_origins: ["*"]
+    es9p:
+      port: 8443
+      tls:
+        enabled: true
+        cert_file: "testdata/sgp26/SM-DP+/DPtls/CERT_DPtls_NIST.pem"
+        key_file: "testdata/sgp26/SM-DP+/DPtls/SK_DPtls_NIST.pem"
+        min_version: "1.2"
+    es2p:
+      port: 8444
+      tls:
+        enabled: true
+        cert_file: "testdata/sgp26/SM-DP+/DPtls/CERT_DPtls_NIST.pem"
+        key_file: "testdata/sgp26/SM-DP+/DPtls/SK_DPtls_NIST.pem"
+        client_ca_file: "testdata/sgp26/CertificateIssuer/CERT_CI_NIST.pem"
+        min_version: "1.2"
+    admin:
+      port: 9000
   fqdn: "testsmdpplus1.example.com"
   oid: "2.999.10"
   host_id: "0000000000000000"
@@ -53,6 +59,52 @@ smdpp:
       client_key_file: "testdata/sgp26/SM-DP+/DPtls/SK_DPtls_NIST.pem"
       ca_file: "testdata/sgp26/CertificateIssuer/CERT_CI_NIST.pem"
 
+# ------------------------------------------------------------------- SM-DS ---
+smds:
+  enabled: true
+  server:
+    bind: "0.0.0.0"
+    cors:
+      allowed_origins: ["*"]
+    es11:
+      port: 9443
+      tls:
+        enabled: true
+        cert_file: "testdata/sgp26/SM-DS/DStls/CERT_DStls_NIST.pem"
+        key_file: "testdata/sgp26/SM-DS/DStls/SK_DStls_NIST.pem"
+        min_version: "1.2"
+    es12:
+      port: 9444
+      tls:
+        enabled: true
+        cert_file: "testdata/sgp26/SM-DS/DStls/CERT_DStls_NIST.pem"
+        key_file: "testdata/sgp26/SM-DS/DStls/SK_DStls_NIST.pem"
+        client_ca_file: "testdata/sgp26/CertificateIssuer/CERT_CI_NIST.pem"
+        min_version: "1.2"
+    admin:
+      port: 9100
+  role: "root"
+  fqdn: "testrootsmds.example.com"
+  oid: "2.999.15"
+  curve: "nist"
+  event_ttl: "720h"
+  dsauth:
+    cert_file: "testdata/sgp26/SM-DS/DSauth/CERT_DSauth_NIST.der"
+    key_file: "testdata/sgp26/SM-DS/DSauth/SK_DSauth_NIST.pem"
+  dstls:
+    cert_file: "testdata/sgp26/SM-DS/DStls/CERT_DStls_NIST.pem"
+    key_file: "testdata/sgp26/SM-DS/DStls/SK_DStls_NIST.pem"
+  cascade:
+    enabled: false
+    root_address: ""
+    tls:
+      client_cert_file: ""
+      client_key_file: ""
+      ca_file: ""
+  store:
+    dsn: "file:db/rsp42-smds.db?_pragma=journal_mode(WAL)&_pragma=busy_timeout(5000)"
+
+# ----------------------------------------------------------- shared config ---
 certs:
   root_dir: "testdata/sgp26"
   ci: "CertificateIssuer"
@@ -104,50 +156,6 @@ notifications:
     ca_file: ""
     max_attempts: 5          # delivery attempts before a notification is dead-lettered
     retry_interval: "30s"    # how often pending notifications are retried
-
-smds:
-  enabled: true
-  role: "root"
-  fqdn: "testrootsmds.example.com"
-  oid: "2.999.15"
-  curve: "nist"
-  event_ttl: "720h"
-  dsauth:
-    cert_file: "testdata/sgp26/SM-DS/DSauth/CERT_DSauth_NIST.der"
-    key_file: "testdata/sgp26/SM-DS/DSauth/SK_DSauth_NIST.pem"
-  dstls:
-    cert_file: "testdata/sgp26/SM-DS/DStls/CERT_DStls_NIST.pem"
-    key_file: "testdata/sgp26/SM-DS/DStls/SK_DStls_NIST.pem"
-  cascade:
-    enabled: false
-    root_address: ""
-    tls:
-      client_cert_file: ""
-      client_key_file: ""
-      ca_file: ""
-  server:
-    bind: "0.0.0.0"
-    cors:
-      allowed_origins: ["*"]
-    es11:
-      port: 9443
-      tls:
-        enabled: true
-        cert_file: "testdata/sgp26/SM-DS/DStls/CERT_DStls_NIST.pem"
-        key_file: "testdata/sgp26/SM-DS/DStls/SK_DStls_NIST.pem"
-        min_version: "1.2"
-    es12:
-      port: 9444
-      tls:
-        enabled: true
-        cert_file: "testdata/sgp26/SM-DS/DStls/CERT_DStls_NIST.pem"
-        key_file: "testdata/sgp26/SM-DS/DStls/SK_DStls_NIST.pem"
-        client_ca_file: "testdata/sgp26/CertificateIssuer/CERT_CI_NIST.pem"
-        min_version: "1.2"
-    admin:
-      port: 9100
-  store:
-    dsn: "file:db/rsp42-smds.db?_pragma=journal_mode(WAL)&_pragma=busy_timeout(5000)"
 
 kms:
   provider: "file"

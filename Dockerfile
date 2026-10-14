@@ -18,5 +18,10 @@ COPY --from=build /out/rsp42 /usr/local/bin/rsp42
 COPY config/config.example.yaml /etc/rsp42/config.example.yaml
 
 EXPOSE 8443 8444 9000 9443 9444 9100
+
+# The role is selected at run time; there is no default role. Set
+#   -e RSP42_ROLE=smdpp   (SM-DP+)
+#   -e RSP42_ROLE=smds    (SM-DS)
+ENV RSP42_CONFIG=/etc/rsp42/config.yaml
 ENTRYPOINT ["/usr/local/bin/rsp42"]
-CMD ["smdpp", "--config", "/etc/rsp42/config.yaml"]
+CMD ["sh", "-c", "exec rsp42 \"${RSP42_ROLE:?set RSP42_ROLE=smdpp or smds}\" --config \"$RSP42_CONFIG\""]

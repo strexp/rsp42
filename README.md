@@ -87,7 +87,9 @@ Configuration is a single YAML file; every value can be overridden through
 
 ```sh
 docker build -t rsp42 .
-docker run -v $PWD/config/config.yaml:/etc/rsp42/config.yaml rsp42 smdpp
+# the role is selected by RSP42_ROLE (there is no default role)
+docker run -e RSP42_ROLE=smdpp -v $PWD/config/config.yaml:/etc/rsp42/config.yaml rsp42
+docker run -e RSP42_ROLE=smds  -v $PWD/config/config.yaml:/etc/rsp42/config.yaml rsp42
 ```
 
 The image preinstalls the dn42 root CA (see `docs/operations.md`).

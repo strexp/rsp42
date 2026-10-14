@@ -11,6 +11,11 @@ databases.
 - `rsp42 smds` — SM-DS (ES11 `:9443`, ES12 `:9444`, admin `:9100`).
 - `rsp42 admin …` — operational tooling.
 
+Their configuration sections are peers: `smdpp.enabled` / `smdpp.server` (ES9+/ES2+
+/admin listeners, `smdpp.fqdn`, …) and `smds.enabled` / `smds.server` (ES11/ES12/
+admin listeners, `smds.role`, `smds.fqdn`, …). Neither role has a default; the
+container selects one via `RSP42_ROLE`.
+
 ## Packages
 
 ```

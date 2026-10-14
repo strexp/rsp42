@@ -14,9 +14,9 @@ import (
 	"github.com/spf13/viper"
 )
 
-// Config is the root configuration object.
+// Config is the root configuration object. The SM-DP+ (`smdpp`) and SM-DS
+// (`smds`) sections are peers; neither is the default.
 type Config struct {
-	Server        ServerConfig        `mapstructure:"server"`
 	SMDpp         SMDppConfig         `mapstructure:"smdpp"`
 	Certs         CertsConfig         `mapstructure:"certs"`
 	Profiles      ProfilesConfig      `mapstructure:"profiles"`
@@ -60,18 +60,21 @@ type TLSCfg struct {
 	MinVersion     string `mapstructure:"min_version"`
 }
 
-// SMDppConfig is the SM-DP+ specific configuration.
+// SMDppConfig is the SM-DP+ specific configuration. It mirrors SMDSConfig:
+// `enabled` gates the role and `server` holds the role's listeners.
 type SMDppConfig struct {
-	FQDN                string     `mapstructure:"fqdn"`
-	OID                 string     `mapstructure:"oid"`
-	HostID              string     `mapstructure:"host_id"`
-	Curve               string     `mapstructure:"curve"`
-	TransactionIDLen    int        `mapstructure:"transaction_id_len"`
-	SessionTTL          Duration   `mapstructure:"session_ttl"`
-	DownloadTTL         Duration   `mapstructure:"download_ttl"`
-	MaxDownloadAttempts int        `mapstructure:"max_download_attempts"`
-	MaxCCAttempts       int        `mapstructure:"max_cc_attempts"`
-	ES12                ES12Config `mapstructure:"es12"`
+	Enabled             bool         `mapstructure:"enabled"`
+	Server              ServerConfig `mapstructure:"server"`
+	FQDN                string       `mapstructure:"fqdn"`
+	OID                 string       `mapstructure:"oid"`
+	HostID              string       `mapstructure:"host_id"`
+	Curve               string       `mapstructure:"curve"`
+	TransactionIDLen    int          `mapstructure:"transaction_id_len"`
+	SessionTTL          Duration     `mapstructure:"session_ttl"`
+	DownloadTTL         Duration     `mapstructure:"download_ttl"`
+	MaxDownloadAttempts int          `mapstructure:"max_download_attempts"`
+	MaxCCAttempts       int          `mapstructure:"max_cc_attempts"`
+	ES12                ES12Config   `mapstructure:"es12"`
 }
 
 // ES12Config configures the SM-DP+ ES12 client used to register events with an SM-DS.
@@ -273,10 +276,11 @@ func Load(path string, roles ...Role) (*Config, error) {
 }
 
 func setDefaults(v *viper.Viper) {
-	v.SetDefault("server.bind", "0.0.0.0")
-	v.SetDefault("server.es9p.port", 8443)
-	v.SetDefault("server.es2p.port", 8444)
-	v.SetDefault("server.admin.port", 9000)
+	v.SetDefault("smdpp.enabled", true)
+	v.SetDefault("smdpp.server.bind", "0.0.0.0")
+	v.SetDefault("smdpp.server.es9p.port", 8443)
+	v.SetDefault("smdpp.server.es2p.port", 8444)
+	v.SetDefault("smdpp.server.admin.port", 9000)
 	v.SetDefault("smdpp.curve", "nist")
 	v.SetDefault("smdpp.host_id", "0000000000000000")
 	v.SetDefault("smdpp.transaction_id_len", 16)
@@ -299,6 +303,7 @@ func setDefaults(v *viper.Viper) {
 	v.SetDefault("profiles.repository", "sqlite")
 	v.SetDefault("profiles.store.dsn", "file:rsp42.db?_pragma=journal_mode(WAL)&_pragma=busy_timeout(5000)")
 	v.SetDefault("profiles.personalization.default_algorithm", "milenage")
+	v.SetDefault("smds.enabled", true)
 	v.SetDefault("smds.role", "root")
 	v.SetDefault("smds.curve", "nist")
 	v.SetDefault("smds.event_ttl", "720h")

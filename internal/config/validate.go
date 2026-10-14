@@ -48,8 +48,8 @@ func (c *Config) validateCommon() error {
 	default:
 		return fmt.Errorf("kms.provider %q invalid (want file)", c.KMS.Provider)
 	}
-	if err := validateCORS(c.Server.CORS); err != nil {
-		return fmt.Errorf("server.cors: %w", err)
+	if err := validateCORS(c.SMDpp.Server.CORS); err != nil {
+		return fmt.Errorf("smdpp.server.cors: %w", err)
 	}
 	if err := validateCORS(c.SMDS.Server.CORS); err != nil {
 		return fmt.Errorf("smds.server.cors: %w", err)
@@ -69,6 +69,9 @@ func validateCORS(c CORSConfig) error {
 
 func (c *Config) validateDP() error {
 	s := &c.SMDpp
+	if !s.Enabled {
+		return nil
+	}
 	if s.FQDN == "" {
 		return fmt.Errorf("smdpp.fqdn is required")
 	}

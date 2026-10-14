@@ -15,7 +15,8 @@ SQLite (pure Go driver), migrated automatically at startup via goose. The
 schema is versioned migrations under `internal/store/migrations/`. Separate DSNs
 for the SM-DP+ (`profiles.store.dsn` → `db/rsp42-smdpp.db`) and SM-DS
 (`smds.store.dsn` → `db/rsp42-smds.db`); the parent directory is created on
-startup. Apply migrations manually with `rsp42 admin migrate [--db dp|ds]`.
+startup. Apply migrations manually with `rsp42 admin migrate [--db dp|ds|all]`
+(the default, `all`, covers both roles).
 
 Sensitive columns (`cc_hash`, `server_challenge`, `smdp_ot_sk`,
 `shared_secret`) are encrypted with AES-256-GCM using the KMS key-encryption key.
@@ -47,7 +48,9 @@ the **dn42 root CA** (`deploy/dn42-root-ca.crt`, from
 
 ```sh
 docker build -t rsp42 .
-docker run -v $PWD/config/config.yaml:/etc/rsp42/config.yaml rsp42 smdpp
+# the role is selected by RSP42_ROLE (there is no default role)
+docker run -e RSP42_ROLE=smdpp -v $PWD/config/config.yaml:/etc/rsp42/config.yaml rsp42
+docker run -e RSP42_ROLE=smds  -v $PWD/config/config.yaml:/etc/rsp42/config.yaml rsp42
 ```
 
 ## Health and shutdown
@@ -62,9 +65,10 @@ The LPA-facing and admin listeners send no CORS headers by default, so a browser
 page served from another origin cannot call them. Enable it per process:
 
 ```yaml
-server: # or smds.server for the SM-DS
-  cors:
-    allowed_origins: ["https://ops.example.com"]   # or ["*"] (dev only)
+smdpp:            # or smds for the SM-DS
+  server:
+    cors:
+      allowed_origins: ["https://ops.example.com"]   # or ["*"] (dev only)
 ```
 
 An empty list disables CORS. `deploy/demo.html` is a single-file front-end for
