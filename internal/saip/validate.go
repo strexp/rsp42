@@ -2,7 +2,6 @@ package saip
 
 import (
 	"bytes"
-	"encoding/hex"
 	"fmt"
 	"strings"
 
@@ -20,17 +19,10 @@ type Validation struct {
 	Warnings []string
 }
 
-// singletonPEs may appear at most once (SAIP V2.3.1 §9; pySim
-// validation.py CheckBasicStructure.check_number_of_occurrence).
-var singletonPEs = map[string]bool{
-	"header": true, "mf": true, "end": true, "cd": true, "telecom": true,
-	"usim": true, "isim": true, "csim": true,
-	"opt-usim": true, "opt-isim": true, "opt-csim": true,
-	"df-saip": true, "df-5gs": true,
-}
-
 // optionalPEOrdering lists "optional PE must follow its mandatory base PE"
-// dependencies (pySim validation.py check_optional_ordering).
+// dependencies (pySim validation.py check_optional_ordering). This is a
+// relation between two PEs rather than an attribute of one, so it stays out of
+// peDescriptors and is keyed by canonical PE name.
 var optionalPEOrdering = [][2]string{
 	{"opt-usim", "usim"},
 	{"opt-isim", "isim"},
@@ -39,16 +31,6 @@ var optionalPEOrdering = [][2]string{
 	{"df-5gs", "usim"},
 	{"df-saip", "usim"},
 	{"opt-csim", "csim"},
-}
-
-// nonBaselinePEs are ProfileElements introduced after V2.3.1. They parse
-// transparently but must not be mandated in a V2.3.1 template (§0.4).
-var nonBaselinePEs = map[string]string{
-	"be":   "df-snpn",
-	"bf20": "iot",
-	"bf21": "opt-iot",
-	"bf1f": "df-5gprose",
-	"bf22": "ssim",
 }
 
 // ValidateV231 checks a decoded profile against the SAIP V2.3.1 structural and
@@ -84,9 +66,9 @@ func (s *Sequence) ValidateV231() *Validation {
 			errf("last profile element is %s, expected end", peLabel(names[len(names)-1]))
 		}
 	}
-	for name := range singletonPEs {
-		if counts[name] > 1 {
-			errf("profile element %s appears %d times, at most once is allowed", name, counts[name])
+	for _, d := range peDescriptors {
+		if d.singleton && counts[d.name] > 1 {
+			errf("profile element %s appears %d times, at most once is allowed", d.name, counts[d.name])
 		}
 	}
 
@@ -229,12 +211,12 @@ func (s *Sequence) ValidateV231() *Validation {
 
 	// --- non-baseline PEs --------------------------------------------------
 	for _, e := range s.Elements {
-		name, known := nonBaselinePEs[hex.EncodeToString(e.Tag)]
-		if !known {
+		d := lookupPE(e.Tag)
+		if d == nil || d.nonBaseline == "" {
 			continue
 		}
 		if h := e.Find(peHeader); h != nil && h.Find(peMandated) != nil {
-			warnf("PE-%s (%s) is outside the SAIP V2.3.1 baseline but is marked mandated", strings.ToUpper(name), name)
+			warnf("PE-%s (%s) is outside the SAIP V2.3.1 baseline but is marked mandated", strings.ToUpper(d.nonBaseline), d.nonBaseline)
 		}
 	}
 	return v

@@ -22,6 +22,11 @@ type Template struct {
 // the V2.3.1 specification assigns exactly these 14 OIDs; V2.3.1 has no
 // versioned template subarcs (those appear from V3.x, e.g. 2.23.143.1.2.13.2).
 //
+// The set of template-capable PEs is the templatePE attribute of peDescriptors
+// (element.go); this table remains separate because it is keyed by Annex B OID
+// and only covers the V2.3.1 baseline subset: the post-V2.3.1 templates
+// (df-snpn, iot, opt-iot) are template PEs without a V2.3.1 OID.
+//
 // Source: "Profile interoperability technical specification V2.3.1", Annex B
 // (refs/Profile interoperability technical specification_V2.3.1 Final.pdf).
 var V231Templates = []Template{

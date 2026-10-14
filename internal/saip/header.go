@@ -2,7 +2,6 @@ package saip
 
 import (
 	"bytes"
-	"encoding/hex"
 	"fmt"
 	"sort"
 
@@ -174,23 +173,6 @@ func (s *Sequence) RebuildMandatoryServices() error {
 	return nil
 }
 
-// templatePETags are the file-system template PEs that carry a templateID
-// (SAIP PE_Definitions; PE-GenericFileManagement is excluded).
-var templatePETags = [][]byte{
-	TagMF, TagCD, TagTelecom, TagUSIM, TagOptUSIM, TagPhonebook, TagGSMAccess,
-	TagDF5GS, TagDFSAIP, TagDFSNPN, TagISIM, TagOptISIM, TagCSIM, TagOptCSIM,
-	TagEAP, TagIoT, TagOptIoT,
-}
-
-func isTemplatePE(tag []byte) bool {
-	for _, t := range templatePETags {
-		if bytes.Equal(t, tag) {
-			return true
-		}
-	}
-	return false
-}
-
 // RebuildMandatoryGFSTEList recomputes the ProfileHeader's
 // eUICC-Mandatory-GFSTEList from the template PEs whose PEHeader carries the
 // 'mandated' attribute (SAIP PE_Definitions; cf. pySim
@@ -297,17 +279,10 @@ func (h *Header) GFSTEList() []string {
 
 // PEName returns a human-readable name for a ProfileElement tag, or "".
 func PEName(tag []byte) string {
-	return peNames[hex.EncodeToString(tag)]
-}
-
-var peNames = map[string]string{
-	"a0": "header", "a1": "genericFileManagement", "a2": "pinCodes", "a3": "pukCodes",
-	"a4": "akaParameter", "a5": "cdmaParameter", "a6": "securityDomain", "a7": "rfm",
-	"a8": "application", "a9": "nonStandard", "aa": "end",
-	"b0": "mf", "b1": "cd", "b2": "telecom", "b3": "usim", "b4": "opt-usim",
-	"b5": "isim", "b6": "opt-isim", "b7": "phonebook", "b8": "gsm-access",
-	"b9": "csim", "ba": "opt-csim", "bb": "eap", "bc": "df-5gs", "bd": "df-saip",
-	"be": "df-snpn", "bf20": "iot", "bf21": "opt-iot",
+	if d := lookupPE(tag); d != nil {
+		return d.name
+	}
+	return ""
 }
 
 // AKAAlgorithmID navigates PE-AKAParameter → algoConfiguration → algoParameter

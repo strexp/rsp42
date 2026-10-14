@@ -2,6 +2,7 @@ package saip
 
 import (
 	"bytes"
+	"encoding/hex"
 	"fmt"
 
 	"rsp42/internal/asn1"
@@ -39,11 +40,107 @@ var (
 	TagOptIoT          = []byte{0xbf, 0x21}
 )
 
-// fileBearingTags is the set of PEs that create files.
-var fileBearingTags = [][]byte{
-	TagGenericFileMgmt, TagMF, TagCD, TagTelecom, TagUSIM, TagOptUSIM, TagISIM, TagOptISIM,
-	TagPhonebook, TagGSMAccess, TagCSIM, TagOptCSIM, TagEAP, TagDF5GS, TagDFSAIP, TagDFSNPN,
-	TagIoT, TagOptIoT,
+// peDescriptor describes one SAIP ProfileElement (PE) in a single place.
+//
+// Source: "Profile interoperability technical specification V2.3.1",
+// PE_Definitions (AUTOMATIC TAGS CHOICE) and §9 (occurrence constraints);
+// pySim validation.py is used as the cross-check for the validation attributes.
+type peDescriptor struct {
+	// tag is the PE CHOICE alternative tag (multi-byte for the IoT pair and the
+	// two post-V2.3.1 PEs below).
+	tag []byte
+	// name is the canonical PE name returned by PEName. It is empty for a PE
+	// that ValidateV231 must recognise but that the tag registry deliberately
+	// does not name (see the post-V2.3.1 entries at the end of peDescriptors).
+	name string
+
+	// fileBearing marks the PEs that create files: PE-GenericFileManagement and
+	// every file-system template PE.
+	fileBearing bool
+	// templatePE marks the file-system template PEs that carry a templateID
+	// (SAIP PE_Definitions; PE-GenericFileManagement is excluded). They are the
+	// eUICC-Mandatory-GFSTEList candidates of RebuildMandatoryGFSTEList.
+	templatePE bool
+
+	// singleton marks the PEs that may appear at most once (SAIP V2.3.1 §9;
+	// pySim validation.py CheckBasicStructure.check_number_of_occurrence).
+	singleton bool
+	// nonBaseline is the specification name of a ProfileElement introduced
+	// after V2.3.1. Such PEs parse transparently but must not be mandated in a
+	// V2.3.1 template (§0.4), so ValidateV231 warns on them. It is empty for
+	// the V2.3.1 baseline.
+	nonBaseline string
+}
+
+// peDescriptors is the single ProfileElement registry: every per-PE table is
+// derived from it (PEName, isFileBearing, isTemplatePE, and the ValidateV231
+// singleton/non-baseline checks).
+//
+// The lists that are not per-PE attributes deliberately stay separate:
+//   - serviceNames and the Svc* indices describe the ServicesList BIT STRING
+//     (header.go), which is indexed by service bit, not by PE;
+//   - V231Templates is the Annex B (template OID, description) table
+//     (templates.go), keyed by OID and only covering the V2.3.1 baseline;
+//   - optionalPEOrdering is a relation between two PEs (validate.go).
+var peDescriptors = []peDescriptor{
+	{tag: TagHeader, name: "header", singleton: true},
+	{tag: TagGenericFileMgmt, name: "genericFileManagement", fileBearing: true},
+	{tag: TagPinCodes, name: "pinCodes"},
+	{tag: TagPukCodes, name: "pukCodes"},
+	{tag: TagAKAParameter, name: "akaParameter"},
+	{tag: TagCDMAParameter, name: "cdmaParameter"},
+	{tag: TagSecurityDomain, name: "securityDomain"},
+	{tag: TagRFM, name: "rfm"},
+	{tag: TagApplication, name: "application"},
+	{tag: TagNonStandard, name: "nonStandard"},
+	{tag: TagEnd, name: "end", singleton: true},
+	{tag: TagMF, name: "mf", fileBearing: true, templatePE: true, singleton: true},
+	{tag: TagCD, name: "cd", fileBearing: true, templatePE: true, singleton: true},
+	{tag: TagTelecom, name: "telecom", fileBearing: true, templatePE: true, singleton: true},
+	{tag: TagUSIM, name: "usim", fileBearing: true, templatePE: true, singleton: true},
+	{tag: TagOptUSIM, name: "opt-usim", fileBearing: true, templatePE: true, singleton: true},
+	{tag: TagISIM, name: "isim", fileBearing: true, templatePE: true, singleton: true},
+	{tag: TagOptISIM, name: "opt-isim", fileBearing: true, templatePE: true, singleton: true},
+	{tag: TagPhonebook, name: "phonebook", fileBearing: true, templatePE: true},
+	{tag: TagGSMAccess, name: "gsm-access", fileBearing: true, templatePE: true},
+	{tag: TagCSIM, name: "csim", fileBearing: true, templatePE: true, singleton: true},
+	{tag: TagOptCSIM, name: "opt-csim", fileBearing: true, templatePE: true, singleton: true},
+	{tag: TagEAP, name: "eap", fileBearing: true, templatePE: true},
+	{tag: TagDF5GS, name: "df-5gs", fileBearing: true, templatePE: true, singleton: true},
+	{tag: TagDFSAIP, name: "df-saip", fileBearing: true, templatePE: true, singleton: true},
+	{tag: TagDFSNPN, name: "df-snpn", fileBearing: true, templatePE: true, nonBaseline: "df-snpn"},
+	{tag: TagIoT, name: "iot", fileBearing: true, templatePE: true, nonBaseline: "iot"},
+	{tag: TagOptIoT, name: "opt-iot", fileBearing: true, templatePE: true, nonBaseline: "opt-iot"},
+	// Post-V2.3.1 PEs with no tag constant: the parser and ValidateV231 know
+	// them, but PEName has never named them, so name stays empty.
+	{tag: []byte{0xbf, 0x1f}, nonBaseline: "df-5gprose"},
+	{tag: []byte{0xbf, 0x22}, nonBaseline: "ssim"},
+}
+
+// peByTag indexes peDescriptors by hex-encoded tag.
+var peByTag = func() map[string]*peDescriptor {
+	m := make(map[string]*peDescriptor, len(peDescriptors))
+	for i := range peDescriptors {
+		m[hex.EncodeToString(peDescriptors[i].tag)] = &peDescriptors[i]
+	}
+	return m
+}()
+
+// lookupPE returns the descriptor of a PE tag, or nil when the tag is unknown.
+func lookupPE(tag []byte) *peDescriptor {
+	return peByTag[hex.EncodeToString(tag)]
+}
+
+// isFileBearing reports whether the PE with the given tag creates files.
+func isFileBearing(tag []byte) bool {
+	d := lookupPE(tag)
+	return d != nil && d.fileBearing
+}
+
+// isTemplatePE reports whether the PE with the given tag carries a templateID.
+func isTemplatePE(tag []byte) bool {
+	d := lookupPE(tag)
+	return d != nil && d.templatePE
 }
 
 // Sequence is an ordered list of SAIP ProfileElements. Unknown PEs are kept as
@@ -93,12 +190,3 @@ func (s *Sequence) FindAll(tag []byte) []*asn1.Node {
 
 // Header returns the ProfileHeader PE.
 func (s *Sequence) Header() *asn1.Node { return s.Find(TagHeader) }
-
-func isFileBearing(tag []byte) bool {
-	for _, t := range fileBearingTags {
-		if bytes.Equal(t, tag) {
-			return true
-		}
-	}
-	return false
-}
