@@ -7,7 +7,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"rsp42/internal/rsp"
+	"rsp42/internal/saipver"
 	"rsp42/internal/store"
 )
 
@@ -221,7 +221,7 @@ func TestVersionHelpersViaFakes(t *testing.T) {
 	var _ ICCIDPool = (*fakeICCIDPool)(nil)
 	var _ ICCIDRecycler = (*fakeICCIDPool)(nil)
 
-	require.Equal(t, -1, rsp.Version{Major: 2, Minor: 1}.Compare(rsp.Version{Major: 2, Minor: 2}))
+	require.Equal(t, -1, saipver.Version{Major: 2, Minor: 1}.Compare(saipver.Version{Major: 2, Minor: 2}))
 }
 
 // TestEventServiceStorageErrorsAreNotNotFound pins the sentinel handling in the

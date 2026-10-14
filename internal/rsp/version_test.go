@@ -14,9 +14,9 @@ func TestVersionParseAndCompare(t *testing.T) {
 	require.Equal(t, Version{Major: 2, Minor: 3}, v, "a document revision is ignored")
 	require.Equal(t, "2.3", v.String())
 
-	require.Equal(t, -1, Version{2, 1}.Compare(Version{2, 3}))
-	require.Equal(t, 1, Version{3, 0}.Compare(Version{2, 9}))
-	require.Equal(t, 0, Version{2, 3}.Compare(Version{2, 3}))
+	require.Equal(t, -1, Version{Major: 2, Minor: 1}.Compare(Version{Major: 2, Minor: 3}))
+	require.Equal(t, 1, Version{Major: 3, Minor: 0}.Compare(Version{Major: 2, Minor: 9}))
+	require.Equal(t, 0, Version{Major: 2, Minor: 3}.Compare(Version{Major: 2, Minor: 3}))
 
 	for _, bad := range []string{"", "2", "x.1", "2.y", "2.3.1.4"} {
 		_, err := ParseVersion(bad)

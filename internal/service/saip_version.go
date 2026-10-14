@@ -5,7 +5,7 @@ import (
 	"sort"
 	"strings"
 
-	"rsp42/internal/rsp"
+	"rsp42/internal/saipver"
 )
 
 // SAIPVersionPolicy is the set of SAIP versions the template registry accepts
@@ -18,7 +18,7 @@ import (
 // an upper bound, but admitting a second major family later needs no
 // configuration-shape change and no migration.
 type SAIPVersionPolicy struct {
-	allowed []rsp.Version
+	allowed []saipver.Version
 }
 
 // NewSAIPVersionPolicy parses the configured "<major>.<minor>" entries. An
@@ -26,7 +26,7 @@ type SAIPVersionPolicy struct {
 func NewSAIPVersionPolicy(allowed []string) (*SAIPVersionPolicy, error) {
 	p := &SAIPVersionPolicy{}
 	for i, raw := range allowed {
-		v, err := rsp.ParseVersion(raw)
+		v, err := saipver.Parse(raw)
 		if err != nil {
 			return nil, fmt.Errorf("profiles.allowed_saip_versions[%d]: %w", i, err)
 		}
@@ -37,9 +37,9 @@ func NewSAIPVersionPolicy(allowed []string) (*SAIPVersionPolicy, error) {
 }
 
 // Max returns the highest configured version; ok is false when no limit is set.
-func (p *SAIPVersionPolicy) Max() (rsp.Version, bool) {
+func (p *SAIPVersionPolicy) Max() (saipver.Version, bool) {
 	if p == nil || len(p.allowed) == 0 {
-		return rsp.Version{}, false
+		return saipver.Version{}, false
 	}
 	return p.allowed[len(p.allowed)-1], true
 }
@@ -52,13 +52,7 @@ func (p *SAIPVersionPolicy) Allows(major, minor int) bool {
 	if p == nil || len(p.allowed) == 0 {
 		return true
 	}
-	v := rsp.Version{Major: major, Minor: minor}
-	for _, a := range p.allowed {
-		if v.Compare(a) <= 0 {
-			return true
-		}
-	}
-	return false
+	return saipver.CompatibleWith(saipver.Version{Major: major, Minor: minor}, p.allowed)
 }
 
 // AllowedString renders the configured versions for error messages.
@@ -95,7 +89,7 @@ func (p *SAIPVersionPolicy) CheckSAIPVersion(major, minor int) *SAIPVersionRejec
 	}
 	max, _ := p.Max()
 	return &SAIPVersionRejection{
-		TemplateVersion: rsp.Version{Major: major, Minor: minor}.String(),
+		TemplateVersion: saipver.Version{Major: major, Minor: minor}.String(),
 		MaxSupported:    max.String(),
 	}
 }

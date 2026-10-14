@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"time"
 
-	"rsp42/internal/rsp"
+	"rsp42/internal/saipver"
 )
 
 // UPPTemplate is a row of the SAIP profile-package template registry.
@@ -128,8 +128,8 @@ func (r *UPPRepo) list(query string, args ...any) ([]*UPPTemplate, error) {
 // (profileVersion plus additionalEuiccProfilePackageVersions, N11); an empty
 // set yields ErrNotFound rather than an arbitrary template, because
 // "unknown version" must never silently select a template.
-func (r *UPPRepo) SelectBestFor(tenant string, versions []rsp.Version) (*UPPTemplate, error) {
-	best, ok := maxVersion(versions)
+func (r *UPPRepo) SelectBestFor(tenant string, versions []saipver.Version) (*UPPTemplate, error) {
+	best, ok := saipver.Max(versions)
 	if !ok {
 		return nil, ErrNotFound
 	}
@@ -145,22 +145,8 @@ func (r *UPPRepo) SelectBestFor(tenant string, versions []rsp.Version) (*UPPTemp
 	return t, err
 }
 
-// maxVersion returns the highest version in a set.
-func maxVersion(versions []rsp.Version) (rsp.Version, bool) {
-	if len(versions) == 0 {
-		return rsp.Version{}, false
-	}
-	best := versions[0]
-	for _, v := range versions[1:] {
-		if v.Compare(best) > 0 {
-			best = v
-		}
-	}
-	return best, true
-}
-
 // SelectBest is the platform-global variant of SelectBestFor.
-func (r *UPPRepo) SelectBest(versions []rsp.Version) (*UPPTemplate, error) {
+func (r *UPPRepo) SelectBest(versions []saipver.Version) (*UPPTemplate, error) {
 	return r.SelectBestFor("", versions)
 }
 

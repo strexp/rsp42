@@ -4,10 +4,9 @@ import (
 	"crypto/rand"
 	"errors"
 	"fmt"
-	"strings"
 	"time"
 
-	"rsp42/internal/rsp"
+	"rsp42/internal/iccid"
 	"rsp42/internal/store"
 )
 
@@ -241,23 +240,11 @@ func (inv *Inventory) claimReservation(p *store.Profile) error {
 	return nil
 }
 
-// canonicalICCID normalizes and validates an operator-supplied ICCID: a single
-// trailing 'F' padding nibble is removed; what remains must be 19 or 20 decimal
-// digits with a valid Luhn check digit.
+// canonicalICCID normalizes and validates an operator-supplied ICCID. The rules
+// (trailing 'F' padding, 19/20 digits, Luhn check digit) live in internal/iccid
+// so the services and the persistence layer agree on them.
 func canonicalICCID(s string) (string, error) {
-	s = strings.TrimRight(s, "fF")
-	if len(s) != 19 && len(s) != 20 {
-		return "", fmt.Errorf("service: ICCID %q must be 19 or 20 digits", s)
-	}
-	for i := 0; i < len(s); i++ {
-		if s[i] < '0' || s[i] > '9' {
-			return "", fmt.Errorf("service: ICCID %q contains a non-digit", s)
-		}
-	}
-	if !rsp.LuhnValid(s) {
-		return "", fmt.Errorf("service: ICCID %q has an invalid check digit", s)
-	}
-	return s, nil
+	return iccid.Canonical(s)
 }
 
 // generateICCID builds a 19-digit ICCID: the configured prefix followed by
@@ -279,7 +266,7 @@ func (inv *Inventory) generateICCID() (string, error) {
 	for i := 0; len(body) < bodyLen; i++ {
 		body += fmt.Sprintf("%d", int(rnd[i%len(rnd)])%10)
 	}
-	check, err := rsp.LuhnCheckDigit(body)
+	check, err := iccid.LuhnCheckDigit(body)
 	if err != nil {
 		return "", err
 	}

@@ -7,7 +7,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"rsp42/internal/rsp"
+	"rsp42/internal/saipver"
 )
 
 func openTestStore(t *testing.T) *Store {
@@ -101,7 +101,7 @@ func TestUPPTemplateNamesAreUniquePerTenant(t *testing.T) {
 
 	// SelectBestFor honours the tenant scope and version ceiling.
 	require.NoError(t, st.UPP.Upsert(&UPPTemplate{Name: "v21", TenantID: "carrier-a", SAIPMajor: 2, SAIPMinor: 1, SHA256: "x", Bytes: []byte{1}, Active: true}))
-	best, err := st.UPP.SelectBestFor("carrier-a", []rsp.Version{{Major: 2, Minor: 1}})
+	best, err := st.UPP.SelectBestFor("carrier-a", []saipver.Version{{Major: 2, Minor: 1}})
 	require.NoError(t, err)
 	require.Equal(t, "v21", best.Name)
 

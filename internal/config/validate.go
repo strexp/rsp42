@@ -9,7 +9,7 @@ import (
 	"strings"
 
 	"rsp42/internal/asn1"
-	"rsp42/internal/rsp"
+	"rsp42/internal/saipver"
 )
 
 // Validate checks the configuration for the given role and returns an
@@ -153,7 +153,7 @@ func (c *Config) validateDP() error {
 		}
 	}
 	for i, raw := range c.Profiles.AllowedSAIPVersions {
-		if _, err := rsp.ParseVersion(raw); err != nil {
+		if _, err := saipver.Parse(raw); err != nil {
 			return fmt.Errorf("profiles.allowed_saip_versions[%d]: %w", i, err)
 		}
 	}

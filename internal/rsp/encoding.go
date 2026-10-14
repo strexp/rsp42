@@ -3,6 +3,8 @@ package rsp
 import (
 	"encoding/hex"
 	"fmt"
+
+	"rsp42/internal/iccid"
 )
 
 // EIDBytes converts a 32-digit EID string into its 16-byte binary form (the
@@ -20,35 +22,10 @@ func EIDBytes(eid string) ([]byte, error) {
 }
 
 // LuhnCheckDigit returns the Luhn check digit for the given numeric prefix.
-func LuhnCheckDigit(prefix string) (byte, error) {
-	sum := 0
-	double := true
-	for i := len(prefix) - 1; i >= 0; i-- {
-		c := prefix[i]
-		if c < '0' || c > '9' {
-			return 0, fmt.Errorf("rsp: non-digit %q in %q", c, prefix)
-		}
-		d := int(c - '0')
-		if double {
-			d *= 2
-			if d > 9 {
-				d -= 9
-			}
-		}
-		sum += d
-		double = !double
-	}
-	return byte((10 - sum%10) % 10), nil
-}
+// The implementation lives in internal/iccid; this is a deprecated alias kept
+// for callers that still import the codec package (they migrate to iccid.
+func LuhnCheckDigit(prefix string) (byte, error) { return iccid.LuhnCheckDigit(prefix) }
 
-// LuhnValid reports whether s (including its trailing check digit) is Luhn-valid.
-func LuhnValid(s string) bool {
-	if len(s) < 2 {
-		return false
-	}
-	digit, err := LuhnCheckDigit(s[:len(s)-1])
-	if err != nil {
-		return false
-	}
-	return s[len(s)-1] == '0'+digit
-}
+// LuhnValid reports whether s (including its trailing check digit) is
+// Luhn-valid. Deprecated alias for iccid.LuhnValid.
+func LuhnValid(s string) bool { return iccid.LuhnValid(s) }

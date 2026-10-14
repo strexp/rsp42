@@ -14,6 +14,7 @@ import (
 	"rsp42/internal/rsp"
 	"rsp42/internal/saip"
 	"rsp42/internal/saip/personalization"
+	"rsp42/internal/saipver"
 	"rsp42/internal/store"
 )
 
@@ -255,37 +256,17 @@ func (e *ErrProfileVersionNotSupported) Error() string {
 
 // sessionVersions decodes the SAIP version set persisted on a session at
 // AuthenticateClient (N11).
-func sessionVersions(sess *store.Session) []rsp.Version {
+func sessionVersions(sess *store.Session) []saipver.Version {
 	if sess == nil {
 		return nil
 	}
-	var out []rsp.Version
+	var out []saipver.Version
 	for _, s := range sess.EuiccSupportedVersions {
-		if v, err := rsp.ParseVersion(s); err == nil {
+		if v, err := saipver.Parse(s); err == nil {
 			out = append(out, v)
 		}
 	}
 	return out
-}
-
-// versionStrings renders a version set for audit/timeline details.
-func versionStrings(versions []rsp.Version) []string {
-	out := make([]string, 0, len(versions))
-	for _, v := range versions {
-		out = append(out, v.String())
-	}
-	return out
-}
-
-// versionSupported reports whether a template version is covered by the eUICC's
-// advertised version set (compared by major/minor only).
-func versionSupported(v rsp.Version, supported []rsp.Version) bool {
-	for _, s := range supported {
-		if v.Compare(s) <= 0 {
-			return true
-		}
-	}
-	return false
 }
 
 // resolveUPPTemplate returns the template loadUPP must use, enforcing N12's
@@ -340,12 +321,12 @@ func (c *CMAE) resolveUPPTemplate(profile *store.Profile, sess *store.Session) (
 	}
 
 	rej := &ErrProfileVersionNotSupported{
-		SupportedVersions: versionStrings(supported),
+		SupportedVersions: saipver.Strings(supported),
 	}
 	if sess != nil {
 		rej.EuiccProfileVersion = sess.EuiccProfileVersion
 	}
-	var lowest *rsp.Version
+	var lowest *saipver.Version
 	var missing error
 	var loaded bool
 	for _, cand := range cands {
@@ -364,12 +345,12 @@ func (c *CMAE) resolveUPPTemplate(profile *store.Profile, sess *store.Session) (
 			}
 		}
 		loaded = true
-		v := rsp.Version{Major: tpl.SAIPMajor, Minor: tpl.SAIPMinor}
+		v := saipver.Version{Major: tpl.SAIPMajor, Minor: tpl.SAIPMinor}
 		if lowest == nil || v.Compare(*lowest) < 0 {
 			vv := v
 			lowest = &vv
 		}
-		if !versionSupported(v, supported) {
+		if !saipver.CompatibleWith(v, supported) {
 			if cand.explicit {
 				rej.LowestTemplateVersion = v.String()
 				return nil, rej

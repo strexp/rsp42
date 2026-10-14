@@ -6,7 +6,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"rsp42/internal/rsp"
+	"rsp42/internal/saipver"
 )
 
 func TestUPPRepoSelectAndActivate(t *testing.T) {
@@ -26,12 +26,12 @@ func TestUPPRepoSelectAndActivate(t *testing.T) {
 
 	// Greatest active version not exceeding the requested version set
 	// (tie broken by name).
-	best, err := st.UPP.SelectBest([]rsp.Version{{Major: 2, Minor: 2}})
+	best, err := st.UPP.SelectBest([]saipver.Version{{Major: 2, Minor: 2}})
 	require.NoError(t, err)
 	require.Equal(t, "v21a", best.Name)
 
 	// Nothing qualifies below the lowest template.
-	_, err = st.UPP.SelectBest([]rsp.Version{{Major: 1, Minor: 0}})
+	_, err = st.UPP.SelectBest([]saipver.Version{{Major: 1, Minor: 0}})
 	require.ErrorIs(t, err, ErrNotFound)
 
 	// An unknown (empty) version set never selects a template: "unknown" must
@@ -43,7 +43,7 @@ func TestUPPRepoSelectAndActivate(t *testing.T) {
 	// rule; until that rule exists, compatibility follows the numeric
 	// (major,minor) order, so the greatest supported version bounds the choice
 	// (docs/esim42-integration-gaps.md §8.1 decision 9).
-	best, err = st.UPP.SelectBest([]rsp.Version{{Major: 2, Minor: 1}, {Major: 3, Minor: 2}})
+	best, err = st.UPP.SelectBest([]saipver.Version{{Major: 2, Minor: 1}, {Major: 3, Minor: 2}})
 	require.NoError(t, err)
 	require.Equal(t, "v23", best.Name)
 

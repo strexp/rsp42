@@ -8,7 +8,7 @@ import (
 	"strings"
 	"time"
 
-	"rsp42/internal/rsp"
+	"rsp42/internal/iccid"
 )
 
 // ICCIDPoolEntry is a row of the ICCID pool.
@@ -53,7 +53,7 @@ type PoolRepo struct{ db *sql.DB }
 // ICCIDs, recording the range. Invalid (non-Luhn) ICCIDs are skipped. ICCIDs
 // already present keep their existing owner.
 func (r *PoolRepo) ImportRange(tenant, start, end, note string) (rangeID int64, inserted, skipped int, err error) {
-	start, end = strings.TrimRight(start, "fF"), strings.TrimRight(end, "fF")
+	start, end = iccid.Normalize(start), iccid.Normalize(end)
 	if len(start) != len(end) || len(start) < 19 || len(start) > 20 {
 		return 0, 0, 0, fmt.Errorf("store: range bounds must be the same length (19-20 digits)")
 	}
@@ -91,13 +91,13 @@ func (r *PoolRepo) ImportRange(tenant, start, end, note string) (rangeID int64, 
 	cur := new(big.Int).Set(lo)
 	width := len(start)
 	for i := 0; i < int(count.Int64()); i++ {
-		iccid := fmt.Sprintf("%0*s", width, cur.String())
-		if !rsp.LuhnValid(iccid) {
+		num := fmt.Sprintf("%0*s", width, cur.String())
+		if !iccid.LuhnValid(num) {
 			skipped++
 			cur.Add(cur, big.NewInt(1))
 			continue
 		}
-		rr, err := stmt.Exec(iccid, rangeID, nullStr(tenant), now)
+		rr, err := stmt.Exec(num, rangeID, nullStr(tenant), now)
 		if err != nil {
 			return 0, 0, 0, err
 		}

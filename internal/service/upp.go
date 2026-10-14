@@ -8,8 +8,8 @@ import (
 	"path/filepath"
 	"strings"
 
-	"rsp42/internal/rsp"
 	"rsp42/internal/saip"
+	"rsp42/internal/saipver"
 	"rsp42/internal/store"
 )
 
@@ -22,7 +22,7 @@ type UPPStore interface {
 	// SelectBestFor returns the best active template for the eUICC's advertised
 	// SAIP version set within the tenant's visible scope (N11: the set, not a
 	// single version, so a future dual-major rule needs no signature change).
-	SelectBestFor(tenant string, versions []rsp.Version) (*store.UPPTemplate, error)
+	SelectBestFor(tenant string, versions []saipver.Version) (*store.UPPTemplate, error)
 }
 
 // ImportUPPTemplates reads UPP templates (*.der, excluding *UNIQUE*) from dir,
