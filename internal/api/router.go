@@ -12,6 +12,7 @@ import (
 	"rsp42/internal/api/es2plus"
 	"rsp42/internal/api/es9plus"
 	"rsp42/internal/api/middleware"
+	"rsp42/internal/audit"
 )
 
 // maxBodyBytes bounds request bodies to 1 MiB.
@@ -22,15 +23,23 @@ type Options struct {
 	// CORS lists browser origins allowed to call the interface; empty disables
 	// CORS, and a `*` entry allows any origin.
 	CORS []string
+	// Audit, when non-nil, records every request on the router. It must be
+	// installed inside base() so that it observes the request scope installed
+	// by middleware.RequestScope (an outer wrapper would only see the original
+	// request context and lose the actor/tenant attribution).
+	Audit *audit.Logger
 }
 
-func base(log *slog.Logger, opts Options) chi.Router {
+func base(log *slog.Logger, opts Options, iface string) chi.Router {
 	r := chi.NewRouter()
 	if len(opts.CORS) > 0 {
 		r.Use(middleware.CORS(opts.CORS))
 	}
 	r.Use(middleware.RequestID)
 	r.Use(middleware.RequestScope)
+	if opts.Audit != nil {
+		r.Use(middleware.Audit(opts.Audit, iface))
+	}
 	r.Use(middleware.Recover(log))
 	r.Use(middleware.Logger(log))
 	r.Use(middleware.AdminProtocol)
@@ -40,7 +49,7 @@ func base(log *slog.Logger, opts Options) chi.Router {
 
 // NewES9PRouter builds the SM-DP+ ES9+ (LPA-facing) router.
 func NewES9PRouter(log *slog.Logger, h *es9plus.Handler, opts Options) chi.Router {
-	r := base(log, opts)
+	r := base(log, opts, "es9p")
 	r.Use(middleware.ContentType)
 	es9plus.Mount(r, h)
 	return r
@@ -48,7 +57,7 @@ func NewES9PRouter(log *slog.Logger, h *es9plus.Handler, opts Options) chi.Route
 
 // NewES2PRouter builds the SM-DP+ ES2+ (Operator-facing) router.
 func NewES2PRouter(log *slog.Logger, h *es2plus.Handler, opts Options) chi.Router {
-	r := base(log, opts)
+	r := base(log, opts, "es2p")
 	r.Use(middleware.ContentType)
 	es2plus.Mount(r, h)
 	return r
@@ -56,7 +65,7 @@ func NewES2PRouter(log *slog.Logger, h *es2plus.Handler, opts Options) chi.Route
 
 // NewES11Router builds the SM-DS ES11 (LPA-facing) router.
 func NewES11Router(log *slog.Logger, h *es11.Handler, opts Options) chi.Router {
-	r := base(log, opts)
+	r := base(log, opts, "es11")
 	r.Use(middleware.ContentType)
 	es11.Mount(r, h)
 	return r
@@ -64,7 +73,7 @@ func NewES11Router(log *slog.Logger, h *es11.Handler, opts Options) chi.Router {
 
 // NewES12Router builds the SM-DS ES12 (SM-DP+/SM-DS-facing) router.
 func NewES12Router(log *slog.Logger, h *es12.Handler, opts Options) chi.Router {
-	r := base(log, opts)
+	r := base(log, opts, "es12")
 	r.Use(middleware.ContentType)
 	es12.Mount(r, h)
 	return r
@@ -72,8 +81,13 @@ func NewES12Router(log *slog.Logger, h *es12.Handler, opts Options) chi.Router {
 
 // NewAdminRouter builds the shared admin router exposing health endpoints and,
 // when register is non-nil, the management API.
+//
+// The management API audits its own write actions with full request context;
+// the generic per-request middleware audit is deliberately not applied here, so
+// health and metrics scrapes do not flood the audit log.
 func NewAdminRouter(log *slog.Logger, ready func() bool, register func(chi.Router), opts Options) chi.Router {
-	r := base(log, opts)
+	opts.Audit = nil
+	r := base(log, opts, "admin")
 	r.Get("/healthz", func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "text/plain")
 		w.WriteHeader(http.StatusOK)

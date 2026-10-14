@@ -17,7 +17,6 @@ import (
 	adminapi "rsp42/internal/api/admin"
 	"rsp42/internal/api/es2plus"
 	"rsp42/internal/api/es9plus"
-	"rsp42/internal/api/middleware"
 	"rsp42/internal/audit"
 	"rsp42/internal/config"
 	"rsp42/internal/logging"
@@ -182,23 +181,20 @@ func cmdSMDpp(prog string, args []string) int {
 		}
 		defer func() { _ = auditLog.Close() }()
 	}
-	wrap := func(h http.Handler, iface string) http.Handler {
-		if auditLog == nil {
-			return h
-		}
-		return middleware.Chain(h, middleware.Audit(auditLog, iface))
-	}
 
 	mk := func(h http.Handler, l config.ListenerCfg) (namedServer, error) {
 		return buildServer(log, "es9p", cfg.SMDpp.Server.Bind, l, h)
 	}
-	apiOpts := api.Options{CORS: cfg.SMDpp.Server.CORS.AllowedOrigins}
-	es9p, err := mk(wrap(api.NewES9PRouter(log, es9pHandler, apiOpts), "es9p"), cfg.SMDpp.Server.ES9P)
+	// Audit is applied inside the router (api.Options.Audit) so that it runs
+	// after middleware.RequestScope and can attribute every row to the request
+	// scope. The admin router ignores it and audits its own writes.
+	apiOpts := api.Options{CORS: cfg.SMDpp.Server.CORS.AllowedOrigins, Audit: auditLog}
+	es9p, err := mk(api.NewES9PRouter(log, es9pHandler, apiOpts), cfg.SMDpp.Server.ES9P)
 	if err != nil {
 		log.Error("es9p listener", "err", err)
 		return 1
 	}
-	es2p, err := buildServer(log, "es2p", cfg.SMDpp.Server.Bind, cfg.SMDpp.Server.ES2P, wrap(api.NewES2PRouter(log, es2pHandler, apiOpts), "es2p"))
+	es2p, err := buildServer(log, "es2p", cfg.SMDpp.Server.Bind, cfg.SMDpp.Server.ES2P, api.NewES2PRouter(log, es2pHandler, apiOpts))
 	if err != nil {
 		log.Error("es2p listener", "err", err)
 		return 1

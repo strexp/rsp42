@@ -3,7 +3,6 @@ package cli
 import (
 	"fmt"
 	"log/slog"
-	"net/http"
 	"os"
 	"time"
 
@@ -13,7 +12,6 @@ import (
 	adminapi "rsp42/internal/api/admin"
 	"rsp42/internal/api/es11"
 	"rsp42/internal/api/es12"
-	"rsp42/internal/api/middleware"
 	"rsp42/internal/audit"
 	"rsp42/internal/config"
 	"rsp42/internal/logging"
@@ -93,20 +91,16 @@ func cmdSMDS(prog string, args []string) int {
 		}
 		defer func() { _ = auditLog.Close() }()
 	}
-	wrap := func(h http.Handler, iface string) http.Handler {
-		if auditLog == nil {
-			return h
-		}
-		return middleware.Chain(h, middleware.Audit(auditLog, iface))
-	}
-
-	apiOpts := api.Options{CORS: cfg.SMDS.Server.CORS.AllowedOrigins}
-	es11, err := buildServer(log, "es11", cfg.SMDS.Server.Bind, cfg.SMDS.Server.ES11, wrap(api.NewES11Router(log, es11Handler, apiOpts), "es11"))
+	// Audit is applied inside the router (api.Options.Audit) so that it runs
+	// after middleware.RequestScope and can attribute every row to the request
+	// scope. The admin router ignores it and audits its own writes.
+	apiOpts := api.Options{CORS: cfg.SMDS.Server.CORS.AllowedOrigins, Audit: auditLog}
+	es11, err := buildServer(log, "es11", cfg.SMDS.Server.Bind, cfg.SMDS.Server.ES11, api.NewES11Router(log, es11Handler, apiOpts))
 	if err != nil {
 		log.Error("es11 listener", "err", err)
 		return 1
 	}
-	es12, err := buildServer(log, "es12", cfg.SMDS.Server.Bind, cfg.SMDS.Server.ES12, wrap(api.NewES12Router(log, es12Handler, apiOpts), "es12"))
+	es12, err := buildServer(log, "es12", cfg.SMDS.Server.Bind, cfg.SMDS.Server.ES12, api.NewES12Router(log, es12Handler, apiOpts))
 	if err != nil {
 		log.Error("es12 listener", "err", err)
 		return 1
