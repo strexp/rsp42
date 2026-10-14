@@ -2,14 +2,10 @@ package cli
 
 import (
 	"context"
-	"encoding/hex"
-	"encoding/json"
-	"errors"
 	"fmt"
 	"log/slog"
 	"net/http"
 	"os"
-	"time"
 
 	"github.com/go-chi/chi/v5"
 
@@ -21,8 +17,6 @@ import (
 	"rsp42/internal/config"
 	"rsp42/internal/logging"
 	"rsp42/internal/metrics"
-	"rsp42/internal/rsp"
-	"rsp42/internal/saip/personalization"
 	"rsp42/internal/service"
 	"rsp42/internal/store"
 )
@@ -44,99 +38,20 @@ func cmdSMDpp(prog string, args []string) int {
 	log := logging.New(cfg.Log.Level, cfg.Log.Format)
 	slog.SetDefault(log)
 
-	certs, provider, err := loadCertificates(cfg, log)
+	dp, err := bootstrapDP(cfg, log)
 	if err != nil {
-		log.Error("certificate validation", "err", err)
+		log.Error("smdpp bootstrap", "err", err)
 		return 1
 	}
+	defer dp.close()
+	st, cmae, notifs := dp.st, dp.cmae, dp.notifs
+	orders, inventory, perso, reg := dp.orders, dp.inventory, dp.perso, dp.metrics
 
-	st, err := store.Open(cfg.Profiles.Store.DSN)
-	if err != nil {
-		log.Error("open store", "err", err)
-		return 1
-	}
-	defer func() { _ = st.Close() }()
-	orders := service.NewOrderService(st.Profiles)
-	orders.Pool = st.Pool
-	inventory := service.NewInventory(st.Profiles, cfg.Profiles.Personalization.ICCIDPoolPrefix, cfg.Profiles.Personalization.IMSIPoolPrefix)
-	inventory.Pool = st.Pool
-	inventory.ReserveTTL = cfg.Profiles.Personalization.ReserveTTL.Duration()
-	inventory.ProfileQuota = func(tenant string) (*int, error) {
-		t, err := st.Tenants.Get(tenant)
-		if errors.Is(err, store.ErrNotFound) {
-			return nil, nil
-		}
-		if err != nil {
-			return nil, err
-		}
-		return t.ProfileQuota, nil
-	}
-	inventory.CountProfiles = func(tenant string) (int, error) {
-		_, total, err := st.Profiles.ListFiltered(store.ProfileFilter{Tenant: &tenant}, 1, 0, "")
-		return total, err
-	}
 	es2pHandler := es2plus.New(log, st.Profiles, orders, inventory)
 	es2pHandler.UPP = st.UPP
 	es2pHandler.Idem = st.Idem
 	es2pHandler.AuditRepo = st.Audit
 	es2pHandler.RequesterTenants = requesterResolver(cfg.SMDpp.ES2P.RequesterTenants, log)
-
-	reg := newMetricsRegistry()
-	sessions := service.NewSessionService(st.Sessions, provider, cfg.SMDpp.SessionTTL.Duration())
-	startGC(log, func() {
-		if n, err := sessions.GC(time.Now().UTC()); err == nil {
-			if n > 0 {
-				log.Info("session gc", "removed", n)
-			}
-			reg.Add("rsp42_session_gc_total", nil, float64(n))
-		}
-		if n, err := st.Pool.ReleaseExpired(time.Now().UTC()); err == nil {
-			if n > 0 {
-				log.Info("iccid reservation gc", "released", n)
-				// G6: an expired reservation must be traceable in the audit
-				// trail, not only in the process log.
-				detail, _ := json.Marshal(map[string]any{"released": n})
-				_ = st.Audit.Insert(&store.AuditEntry{
-					Interface: "gc", Function: "releaseExpiredReservations", Subject: "iccid_pool",
-					Outcome: "Executed-Success", DetailJSON: string(detail),
-				})
-			}
-			reg.Add("rsp42_iccid_reservation_gc_total", nil, float64(n))
-		}
-		if ttl := cfg.Profiles.Personalization.IdempotencyTTL.Duration(); ttl > 0 {
-			if n, err := st.Idem.DeleteBefore(time.Now().UTC().Add(-ttl).Unix()); err == nil && n > 0 {
-				log.Info("idempotency gc", "removed", n)
-			}
-		}
-	})
-	hostID, err := hex.DecodeString(cfg.SMDpp.HostID)
-	if err != nil {
-		log.Error("bad smdpp.host_id", "err", err)
-		return 1
-	}
-	perso := service.NewPersonalizationService(st.Perso, provider)
-	cmae, err := service.NewCMAE(service.CMAEConfig{
-		FQDN:                cfg.SMDpp.FQDN,
-		OID:                 cfg.SMDpp.OID,
-		HostID:              hostID,
-		TransactionIDLen:    cfg.SMDpp.TransactionIDLen,
-		MaxDownloadAttempts: cfg.SMDpp.MaxDownloadAttempts,
-		MaxCCAttempts:       cfg.SMDpp.MaxCCAttempts,
-		SessionTTL:          cfg.SMDpp.SessionTTL.Duration(),
-		DownloadTTL:         cfg.SMDpp.DownloadTTL.Duration(),
-		PPRIds:              rsp.PPRIDBits(cfg.Profiles.PPRIds),
-	}, certs, sessions, st.Profiles, perso, st.UPP, cfg.Profiles.DefaultUPP, &personalization.Engine{Algorithm: cfg.Profiles.Personalization.DefaultAlgorithm}, log)
-	if err != nil {
-		log.Error("cmae", "err", err)
-		return 1
-	}
-	cmae.Tenants = st.Tenants
-	cmae.Audit = st.Audit
-	cmae.Metrics = reg
-	notifs := service.NewNotificationService(log, st.Notifs, st.Profiles, orders)
-	notifs.Sessions = sessions
-	notifs.Certs = certs
-	es2pHandler.OrderAudit = st.Orders
 
 	// The Operator-facing ES2+ client is shared by the progress callbacks and
 	// the ACR confirmation, but the two are independently configured.
@@ -152,6 +67,7 @@ func cmdSMDpp(prog string, args []string) int {
 			}
 		})
 	}
+	es2pHandler.OrderAudit = st.Orders
 
 	if cfg.SMDpp.ES12.Enabled && cfg.SMDpp.ES12.SMDSAddress != "" {
 		hc, err := mtlsClient(cfg.SMDpp.ES12.TLS)
