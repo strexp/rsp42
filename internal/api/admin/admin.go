@@ -43,6 +43,8 @@ type Handler struct {
 	Sessions  *store.SessionRepo
 	Pool      *store.PoolRepo
 	Events    *store.EventRepo
+	// Callbacks exposes the outbound ES2+ notification queue (N2).
+	Callbacks *store.CallbackRepo
 	// Idem enables Idempotency-Key replay on the management writes.
 	Idem *store.IdempotencyRepo
 	// AllowedSAIP enforces profiles.allowed_saip_versions on every template
@@ -118,6 +120,12 @@ func Mount(r chi.Router, h *Handler) {
 		})
 
 		r.Get("/eids", h.listEIDs)
+
+		r.Route("/callbacks", func(r chi.Router) {
+			r.Get("/", h.listCallbacks)
+			r.Post("/retry-dead", h.retryDeadCallbacks)
+			r.Post("/{id}/retry", h.retryCallback)
+		})
 
 		r.Get("/audit", h.listAudit)
 		r.Get("/audit/stats", h.auditStats)

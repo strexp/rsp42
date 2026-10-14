@@ -3,12 +3,14 @@ package admin
 import (
 	"encoding/json"
 	"net/http"
+	"strconv"
 	"time"
 
 	"rsp42/internal/store"
 )
 
 type auditView struct {
+	ID         int64     `json:"id"`
 	Time       time.Time `json:"time"`
 	Tenant     string    `json:"tenant,omitempty"`
 	Actor      string    `json:"actor,omitempty"`
@@ -23,6 +25,7 @@ type auditView struct {
 
 func toAuditView(e *store.AuditEntry) auditView {
 	v := auditView{
+		ID:   e.ID,
 		Time: e.TS, Tenant: e.TenantID, Actor: e.Actor, Interface: e.Interface, Function: e.Function,
 		Subject: e.Subject, Outcome: e.Outcome, StatusCode: e.StatusCode, RemoteAddr: e.RemoteAddr,
 	}
@@ -44,8 +47,6 @@ func (h *Handler) listAudit(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	q := r.URL.Query()
-	size := clampSize(atoiDefault(q.Get("size"), defaultPageSize))
-	page := clampPage(atoiDefault(q.Get("page"), 1))
 	filter := store.AuditFilter{
 		Interface: q.Get("interface"), Function: q.Get("function"),
 		Subject: q.Get("subject"), Actor: q.Get("actor"), Outcome: q.Get("outcome"),
@@ -58,6 +59,50 @@ func (h *Handler) listAudit(w http.ResponseWriter, r *http.Request) {
 	if t := parseTime(firstNonEmpty(q.Get("to"), q.Get("until"))); t != nil {
 		filter.Until = t
 	}
+
+	// N1: afterId switches to the monotonic incremental cursor. It is mutually
+	// exclusive with the page/size paging mode, whose OFFSET drifts under
+	// concurrent writes.
+	if q.Has("afterId") {
+		if q.Has("page") || q.Has("size") {
+			writeJSON(w, http.StatusBadRequest, errorBody("invalid_request",
+				"afterId is mutually exclusive with page/size"))
+			return
+		}
+		afterID, err := strconv.ParseInt(q.Get("afterId"), 10, 64)
+		if err != nil || afterID < 0 {
+			writeJSON(w, http.StatusBadRequest, errorBody("invalid_request",
+				"afterId must be a non-negative integer"))
+			return
+		}
+		limit := atoiDefault(q.Get("limit"), 500)
+		if limit < 1 {
+			limit = 500
+		}
+		if limit > maxPageSize {
+			limit = maxPageSize
+		}
+		entries, err := h.Audit.ListAfterID(filter, afterID, limit)
+		if err != nil {
+			writeErr(w, http.StatusInternalServerError, err.Error())
+			return
+		}
+		views := make([]auditView, 0, len(entries))
+		for _, e := range entries {
+			views = append(views, toAuditView(e))
+		}
+		next := afterID
+		if len(entries) > 0 {
+			next = entries[len(entries)-1].ID
+		}
+		writeJSON(w, http.StatusOK, map[string]any{
+			"items": views, "nextAfterId": next, "hasMore": len(entries) == limit,
+		})
+		return
+	}
+
+	size := clampSize(atoiDefault(q.Get("size"), defaultPageSize))
+	page := clampPage(atoiDefault(q.Get("page"), 1))
 	entries, total, err := h.Audit.ListFiltered(filter, size, (page-1)*size)
 	if err != nil {
 		writeErr(w, http.StatusInternalServerError, err.Error())

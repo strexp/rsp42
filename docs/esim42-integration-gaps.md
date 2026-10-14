@@ -833,7 +833,7 @@ esim42 `02` §7.2 与 `06` §13.1 给出的顺序，与第一轮的 M1–M4 **�
 
 **无。** 文档 §3 的 G13–G18 已全部落地：G13（ACR 调用方侧接线）、G14（MatchingID 轮换）、G15（配额硬校验）、G16（`GET /eids` / CSV 导入）、G18（模板版本与回滚）均已完成；G17 文档已对齐。§9.2 列出的四项为**明确不做**（范围外）。
 
-> ⚠️ 本结论**只覆盖第一轮 G 清单**。第二轮的 N 清单除 **N6/N10 为范围外**（§8.4 决策 11）外全部未落地，其中 N16/N12 是 esim42 判定的 P0。§3.2 的 C1–C11 同样未处理（其中 **C1 已定方案**：删除 `pprIds`，见 §10.6）。第二轮的分步实施计划与已收敛决策见 **§10**。
+> ⚠️ 本结论**只覆盖第一轮 G 清单**。第二轮 N 清单：**批 1（N16/N11/N12）、批 2（N2/N3/N1）已落地**（见 §9.4）；**N6/N10 为范围外**（§8.4 决策 11）；**批 3（N15/N13/N17）与批 4（N4/N5/N7/N8/N9）待实施**。§3.2 的 C1–C11 仍待处理（其中 **C1 已定方案**：删除 `pprIds`，见 §10.6）。第二轮的分步实施计划与已收敛决策见 **§10**。
 
 ### 9.4 第二轮（N）：实施状态
 
@@ -844,9 +844,9 @@ esim42 `02` §7.2 与 `06` §13.1 给出的顺序，与第一轮的 M1–M4 **�
 |---|---|---|---|
 | N16 | SAIP 版本上限 | `[x]` | `profiles.allowed_saip_versions`（`internal/config/config.go`、`config/config.example.yaml`）+ 唯一 choke point `internal/service/saip_version.go`；`api/admin/upp.go`（`putUPP` 409 `saip_version_not_supported` + `details`）、`api/admin/upp_tools.go`（`validateUPP` warning、`clone`/`promote`/`restore` 同校验）、`internal/cli/admin_upp.go`（CLI import 同策略）；迁移 `00011` 无关，仅版本比对 `(major,minor)` |
 | N12 | 版本不兼容干净失败 | `[x]` | `internal/service/download.go` `resolveUPPTemplate`/`loadUPP`（四级回落均校验，显式 pin 不回落）；`ErrProfileVersionNotSupported`；`rsp.CodeProfileVersionNotSupported`（8.2.6/3.8）；`CMAE.noteVersionFailure` 写审计 `interface=es9p, function=authenticateClient, outcome=Failed` 并计数；`AuthenticateClient` 提前干净失败；迁移 `00011` |
-| N1 | 审计单调游标 | `[ ]` | `internal/store/audit.go:12-23` 无 `id` |
-| N2 | 回调队列管理 API | `[ ]` | `internal/api/admin/admin.go` 的 `Mount` 无 `/callbacks` |
-| N3 | 租户删除引用保护 | `[ ]` | `internal/store/tenant.go:112-114` “dangling by design”；`internal/api/admin/tenants.go:137-149` 直接删 |
+| N1 | 审计单调游标 | `[x]` | `store.AuditEntry.ID` + 所有 SELECT/scan 补 `id`（`internal/store/audit.go`）；`ListAfterID`（排他下界、`id ASC`）；`GET /audit?afterId=&limit=` 响应 `{items[].id, nextAfterId, hasMore}`，与 `page`/`size` 互斥。**无需迁移**：`audit_log.id` 本就是 `INTEGER PRIMARY KEY AUTOINCREMENT`（`00001_init.sql:109`），id 单调不回收 |
+| N2 | 回调队列管理 API | `[x]` | `store.CallbackFilter`/`ListFiltered`/`Requeue`/`RequeueDead`（`internal/store/callback.go`，tenant/iccid 走 `json_extract(payload_json,…)`，**无需迁移**）；`api/admin/callbacks.go` + `Mount`：`GET /callbacks`（`payload` 已解析对象）、`POST /callbacks/{id}/retry`（非 dead/failed → 409）、`POST /callbacks/retry-dead`；审计 `retryCallback` |
+| N3 | 租户删除引用保护 | `[x]` | `store.TenantUsage`/`Usage`/`DeleteWithReassign`（`internal/store/tenant.go`）；`api/admin/tenants.go`：无 `force` 且被引用 → `409 tenant_in_use` + 顶层 `usage`；`?force=true&reassignTo=<tenant\|"">`（未注册 → `400 unknown_tenant`，自指 → `400 invalid_request`）；`GET /tenants/{id}` 增 `usage`。esim42 侧 `credential_assignments` 仍需 esim42 自行计入 |
 | N6 | admin 监听面 / 密钥导出加固 | `—` | **范围外**（§8.4 决策 11、§10.3 步骤 2.4）；现状：`config/config.example.yaml:19,73` = `0.0.0.0`，无 reveal 头校验，**本轮不改** |
 | N11 | `additionalEuiccProfilePackageVersions` | `[x]` | `internal/rsp/types.go`（`EUICCInfo2` 解析 `[15]`、`SupportedVersions()`、`IsV3Capable()`）+ `internal/rsp/version.go`（`Version`）；`store.SelectBestFor` 改版本集合入参并移除 `major<=0 → AnyForTenant()` 回退；会话持久化 `euicc_profile_version`/`euicc_supported_versions`/`uicc_capability`（迁移 `00011`）；`v3-capable-euicc` 指标 |
 | N15 | `ServicesList` 24 项 | `[ ]` | `internal/saip/header.go:101-119`、`:237` 止于 18；`SvcTUAK256` 从未置位 |
@@ -911,7 +911,7 @@ esim42 `02` §7.2 与 `06` §13.1 给出的顺序，与第一轮的 M1–M4 **�
 - **可观测**：管理侧稳定码 `profile_version_not_supported` 写入 timeline 与审计；审计 `interface=es9p, function=authenticateClient, outcome=Failed, detail={euiccProfileVersion, supportedVersions, lowestTemplateVersion}`。
 - **验收**：注册表仅 `(2,3)` + `profileVersion=(2,1)` 的 eUICC → 可区分失败码、无 BPP、审计/指标可查。
 
-### 10.3 批 2（P1，防数据丢失/误操作）
+### 10.3 批 2（P1，防数据丢失/误操作）—— **已落地**（N6/N10 除外，见步骤 2.4）
 
 #### 步骤 2.1 — N2：回调队列管理 API
 
@@ -990,8 +990,8 @@ esim42 `02` §7.2 与 `06` §13.1 给出的顺序，与第一轮的 M1–M4 **�
 | 迁移 | 内容 | 来源 |
 |---|---|---|
 | `00011_session_euicc_versions.sql` | `sessions` 增 `euicc_profile_version`、`euicc_supported_versions`（JSON），可选 `uicc_capability` | N11 / N12 —— **已落地** |
-| `00012_audit_autoincrement.sql` | `audit_log` 重建为 `AUTOINCREMENT`（保证 `id` 单调不回收） | N1 |
-| `00013_callback_columns.sql`（**仅当** `json_extract` spike 不通过） | `es2p_callbacks` 增 `tenant_id`/`iccid` + 索引 | N2 |
+| `00012_audit_autoincrement.sql` | ~~`audit_log` 重建为 `AUTOINCREMENT`~~ | **不需要**：`audit_log.id` 本就是 `INTEGER PRIMARY KEY AUTOINCREMENT`（`00001_init.sql:109`），N1 只暴露既有 id |
+| `00013_callback_columns.sql`（**仅当** `json_extract` spike 不通过） | ~~`es2p_callbacks` 增 `tenant_id`/`iccid` + 索引~~ | **不需要**：`json_extract` 在 modernc.org/sqlite v1.60.1 上实测可用（`internal/store/callback_test.go`），零迁移 |
 
 > 保持追加式：不合并进 `00001_init.sql`（理由同 §9.1）。每条迁移需做“老库升级 + 新库全量”双向验证。
 
@@ -1000,8 +1000,8 @@ esim42 `02` §7.2 与 `06` §13.1 给出的顺序，与第一轮的 M1–M4 **�
 | # | 决策 | 结论 |
 |---|---|---|
 | 1 | N11/N12 是否新增会话版本列 | **是**，迁移 `00011`（否则 `loadUPP` 阶段无法校验版本） |
-| 2 | N2 的 tenant/iccid 过滤实现 | 先用 `json_extract`（零迁移）；spike 不通过再加列迁移 |
-| 3 | N1 的严格单调 | 迁移为 `AUTOINCREMENT` |
+| 2 | N2 的 tenant/iccid 过滤实现 | **已定并验证**：`json_extract(payload_json,'$.tenantId'/'$.iccid')`（modernc.org/sqlite v1.60.1 支持 JSON1），零迁移 |
+| 3 | N1 的严格单调 | **无需迁移**：`audit_log.id` 已是 `AUTOINCREMENT`；N1 只把既有 id 暴露到接口 |
 | 4 | C1 的 `pprIds` | **删除该成员**；PPR 只走管理 API / `profiles.ppr_ids` |
 | 5 | C8 的 BER 不定长 | 先核查真实样本，再定“支持”或“登记为已知边界” |
 | 6 | N16 的校验覆盖面 | 统一 choke point，覆盖 `clone`/`promote`/`restore` + CLI `upp import` |

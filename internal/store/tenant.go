@@ -122,6 +122,66 @@ func (r *TenantRepo) Delete(id string) error {
 	return nil
 }
 
+// TenantUsage counts the resources that reference a tenant (N3). It is the
+// guard that turns a tenant deletion into a two-phase, recoverable operation.
+type TenantUsage struct {
+	Profiles        int `json:"profiles"`
+	Templates       int `json:"templates"`
+	PoolEntries     int `json:"poolEntries"`
+	Batches         int `json:"batches"`
+	Personalization int `json:"personalization"`
+}
+
+// Empty reports whether nothing references the tenant.
+func (u TenantUsage) Empty() bool {
+	return u.Profiles == 0 && u.Templates == 0 && u.PoolEntries == 0 &&
+		u.Batches == 0 && u.Personalization == 0
+}
+
+// tenantScopedTables are the resource tables carrying a tenant_id.
+var tenantScopedTables = []string{
+	"profiles", "upp_templates", "iccid_pool", "download_batches", "personalization",
+}
+
+// Usage counts every resource that references the tenant.
+func (r *TenantRepo) Usage(id string) (TenantUsage, error) {
+	var u TenantUsage
+	dst := []*int{&u.Profiles, &u.Templates, &u.PoolEntries, &u.Batches, &u.Personalization}
+	for i, table := range tenantScopedTables {
+		if err := r.db.QueryRow("SELECT COUNT(*) FROM "+table+" WHERE tenant_id = ?", id).Scan(dst[i]); err != nil {
+			return TenantUsage{}, err
+		}
+	}
+	return u, nil
+}
+
+// DeleteWithReassign moves every resource of a tenant to reassignTo (an empty
+// string means the platform-global scope, i.e. tenant_id = NULL) and then
+// deletes the tenant, in one transaction. It returns ErrNotFound when the
+// tenant does not exist.
+func (r *TenantRepo) DeleteWithReassign(id, reassignTo string) error {
+	tx, err := r.db.Begin()
+	if err != nil {
+		return err
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	target := nullStr(reassignTo)
+	for _, table := range tenantScopedTables {
+		if _, err := tx.Exec("UPDATE "+table+" SET tenant_id = ? WHERE tenant_id = ?", target, id); err != nil {
+			return err
+		}
+	}
+	res, err := tx.Exec("DELETE FROM tenants WHERE id = ?", id)
+	if err != nil {
+		return err
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		return ErrNotFound
+	}
+	return tx.Commit()
+}
+
 func nullInt(v *int) any {
 	if v == nil {
 		return nil

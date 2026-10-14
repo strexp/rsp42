@@ -10,6 +10,10 @@ type AuditRepo struct{ db *sql.DB }
 
 // AuditEntry is one audit record.
 type AuditEntry struct {
+	// ID is the monotonic, never-reused audit cursor (the table declares
+	// INTEGER PRIMARY KEY AUTOINCREMENT, so a deletion never frees an id). It
+	// is the basis of the incremental sync endpoint (N1).
+	ID         int64
 	TS         time.Time
 	TenantID   string
 	Actor      string
@@ -57,7 +61,7 @@ func (r *AuditRepo) ListFiltered(f AuditFilter, limit, offset int) ([]*AuditEntr
 	if err := r.db.QueryRow("SELECT COUNT(*) FROM audit_log"+clause, args...).Scan(&total); err != nil {
 		return nil, 0, err
 	}
-	rows, err := r.db.Query(`SELECT ts, tenant_id, actor, interface, function, subject, outcome, status_code, remote_addr, detail_json
+	rows, err := r.db.Query(`SELECT id, ts, tenant_id, actor, interface, function, subject, outcome, status_code, remote_addr, detail_json
 		FROM audit_log`+clause+` ORDER BY id DESC LIMIT ? OFFSET ?`, append(args, limit, offset)...)
 	if err != nil {
 		return nil, 0, err
@@ -72,6 +76,33 @@ func (r *AuditRepo) ListFiltered(f AuditFilter, limit, offset int) ([]*AuditEntr
 		out = append(out, e)
 	}
 	return out, total, rows.Err()
+}
+
+// ListAfterID returns up to limit audit entries with id > afterID, oldest
+// first. afterID is an exclusive lower bound, which makes the incremental sync
+// "at least once" without repeats (N1); the caller resumes from nextAfterId.
+func (r *AuditRepo) ListAfterID(f AuditFilter, afterID int64, limit int) ([]*AuditEntry, error) {
+	if limit <= 0 {
+		limit = 500
+	}
+	where, args := auditWhere(f)
+	where = append(where, "id > ?")
+	args = append(args, afterID)
+	rows, err := r.db.Query(`SELECT id, ts, tenant_id, actor, interface, function, subject, outcome, status_code, remote_addr, detail_json
+		FROM audit_log`+buildWhere(where)+` ORDER BY id ASC LIMIT ?`, append(args, limit)...)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = rows.Close() }()
+	var out []*AuditEntry
+	for rows.Next() {
+		e, err := scanAuditRow(rows)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, e)
+	}
+	return out, rows.Err()
 }
 
 // auditWhere builds the WHERE conditions for an audit filter.
@@ -115,7 +146,7 @@ func scanAuditRow(sc rowScanner) (*AuditEntry, error) {
 	var e AuditEntry
 	var tenant, actor, iface, fn, subj, outcome, code, addr, detail sql.NullString
 	var ts int64
-	if err := sc.Scan(&ts, &tenant, &actor, &iface, &fn, &subj, &outcome, &code, &addr, &detail); err != nil {
+	if err := sc.Scan(&e.ID, &ts, &tenant, &actor, &iface, &fn, &subj, &outcome, &code, &addr, &detail); err != nil {
 		return nil, err
 	}
 	e.TS = toTime(ts)
@@ -127,7 +158,7 @@ func scanAuditRow(sc rowScanner) (*AuditEntry, error) {
 
 // ListBySubject returns recent audit entries for a subject (newest first).
 func (r *AuditRepo) ListBySubject(subject string, limit int) ([]*AuditEntry, error) {
-	rows, err := r.db.Query(`SELECT ts, tenant_id, actor, interface, function, subject, outcome, status_code, remote_addr, detail_json
+	rows, err := r.db.Query(`SELECT id, ts, tenant_id, actor, interface, function, subject, outcome, status_code, remote_addr, detail_json
 		FROM audit_log WHERE subject = ? ORDER BY id DESC LIMIT ?`, subject, limit)
 	if err != nil {
 		return nil, err
@@ -155,7 +186,7 @@ func (r *AuditRepo) DeleteBefore(ts int64) (int64, error) {
 
 // List returns the most recent audit entries.
 func (r *AuditRepo) List(limit int) ([]*AuditEntry, error) {
-	rows, err := r.db.Query(`SELECT ts, tenant_id, actor, interface, function, subject, outcome, status_code, remote_addr, detail_json
+	rows, err := r.db.Query(`SELECT id, ts, tenant_id, actor, interface, function, subject, outcome, status_code, remote_addr, detail_json
 		FROM audit_log ORDER BY id DESC LIMIT ?`, limit)
 	if err != nil {
 		return nil, err

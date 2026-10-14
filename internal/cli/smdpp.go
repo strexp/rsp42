@@ -212,9 +212,10 @@ func cmdSMDpp(prog string, args []string) int {
 		Log: log, Tenants: st.Tenants, Profiles: st.Profiles, Orders: orders, Inventory: inventory,
 		UPP: st.UPP, Perso: perso, Audit: st.Audit, Batch: st.Batch,
 		OrderRepo: st.Orders, Notifs: st.Notifs, Sessions: st.Sessions, Pool: st.Pool, Events: st.Events,
-		Idem: st.Idem, AllowedSAIP: saipPolicy,
+		Callbacks: st.Callbacks,
+		Idem:      st.Idem, AllowedSAIP: saipPolicy,
 		DefaultReserveTTL: cfg.Profiles.Personalization.ReserveTTL.Duration(),
-		FQDN: cfg.SMDpp.FQDN, OID: cfg.SMDpp.OID,
+		FQDN:              cfg.SMDpp.FQDN, OID: cfg.SMDpp.OID,
 	}
 	admin, err := buildServer(log, "admin", cfg.SMDpp.Server.Bind, cfg.SMDpp.Server.Admin,
 		api.NewAdminRouter(log, func() bool { return true }, func(r chi.Router) {

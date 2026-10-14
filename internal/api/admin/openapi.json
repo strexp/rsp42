@@ -33,6 +33,9 @@
       "name": "audit"
     },
     {
+      "name": "callbacks"
+    },
+    {
       "name": "notifications"
     }
   ],
@@ -660,7 +663,7 @@
         "tags": [
           "tenants"
         ],
-        "summary": "Get a tenant",
+        "summary": "Get a tenant (including its resource `usage` counts, N3)",
         "responses": {
           "200": {
             "description": "OK"
@@ -698,12 +701,40 @@
         "tags": [
           "tenants"
         ],
-        "summary": "Delete a tenant",
+        "summary": "Delete a tenant; refused with 409 tenant_in_use while it owns resources unless ?force=true&reassignTo=<tenant|\"\"> migrates them first (N3)",
+        "parameters": [
+          {
+            "name": "force",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "boolean"
+            },
+            "description": "Migrate the tenant's resources to reassignTo and then delete."
+          },
+          {
+            "name": "reassignTo",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Destination tenant for the migrated resources; an empty value means the platform-global scope. Must be a registered tenant."
+          }
+        ],
         "responses": {
           "204": {
             "description": "Deleted"
           },
+          "400": {
+            "description": "unknown_tenant (unregistered reassignTo) or invalid_request (reassignTo equals the deleted tenant).",
+            "$ref": "#/components/responses/Error"
+          },
           "404": {
+            "$ref": "#/components/responses/Error"
+          },
+          "409": {
+            "description": "tenant_in_use: the response carries a top-level `usage` object.",
             "$ref": "#/components/responses/Error"
           }
         }
@@ -1425,7 +1456,7 @@
         "tags": [
           "audit"
         ],
-        "summary": "Query the audit log",
+        "summary": "Query the audit log; with `afterId` it switches to the monotonic incremental cursor (N1: response carries items[].id, nextAfterId and hasMore, ordered by id ascending, mutually exclusive with page/size)",
         "parameters": [
           {
             "$ref": "#/components/parameters/tenant"
@@ -1470,6 +1501,25 @@
           },
           {
             "$ref": "#/components/parameters/to"
+          },
+          {
+            "name": "afterId",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "format": "int64",
+              "minimum": 0
+            },
+            "description": "Exclusive lower bound on audit id; resume from the previous response's nextAfterId."
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "maximum": 1000
+            },
+            "description": "Cursor batch size (default 500). Only used with afterId."
           },
           {
             "$ref": "#/components/parameters/page"
@@ -2015,6 +2065,126 @@
         "responses": {
           "200": {
             "description": "OK"
+          }
+        }
+      }
+    },
+    "/admin/api/v1/callbacks": {
+      "get": {
+        "tags": [
+          "callbacks"
+        ],
+        "summary": "List the outbound ES2+ notification queue (dead letters included); `payload` is a parsed JSON object",
+        "parameters": [
+          {
+            "name": "state",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "pending",
+                "sent",
+                "failed",
+                "dead"
+              ]
+            },
+            "description": "`dead` is an alias for `failed` (the dead-letter state)."
+          },
+          {
+            "$ref": "#/components/parameters/tenant"
+          },
+          {
+            "name": "iccid",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "$ref": "#/components/parameters/from"
+          },
+          {
+            "$ref": "#/components/parameters/to"
+          },
+          {
+            "$ref": "#/components/parameters/page"
+          },
+          {
+            "$ref": "#/components/parameters/size"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/admin/api/v1/callbacks/{id}/retry": {
+      "parameters": [
+        {
+          "name": "id",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "integer",
+            "format": "int64"
+          }
+        }
+      ],
+      "post": {
+        "tags": [
+          "callbacks"
+        ],
+        "summary": "Re-queue one dead-lettered callback (resets attempts and delivers immediately)",
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "404": {
+            "$ref": "#/components/responses/Error"
+          },
+          "409": {
+            "description": "The callback is not in a dead-letter state.",
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/admin/api/v1/callbacks/retry-dead": {
+      "post": {
+        "tags": [
+          "callbacks"
+        ],
+        "summary": "Batch re-queue dead-lettered callbacks (`{tenant,before,limit}`)",
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "tenant": {
+                    "type": "string"
+                  },
+                  "before": {
+                    "type": "string",
+                    "format": "date-time"
+                  },
+                  "limit": {
+                    "type": "integer"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
           }
         }
       }

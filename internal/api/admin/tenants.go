@@ -1,6 +1,7 @@
 package admin
 
 import (
+	"errors"
 	"net/http"
 	"time"
 
@@ -10,16 +11,17 @@ import (
 )
 
 type tenantView struct {
-	ID              string    `json:"id"`
-	Name            string    `json:"name"`
-	Status          string    `json:"status"`
-	TemplateQuota   *int      `json:"templateQuota,omitempty"`
-	ProfileQuota    *int      `json:"profileQuota,omitempty"`
-	HasProfileQuota bool      `json:"hasProfileQuota"`
-	DefaultUPP      string    `json:"defaultUpp,omitempty"`
-	CallbackURL     string    `json:"callbackUrl,omitempty"`
-	CreatedAt       time.Time `json:"createdAt"`
-	UpdatedAt       time.Time `json:"updatedAt"`
+	ID              string             `json:"id"`
+	Name            string             `json:"name"`
+	Status          string             `json:"status"`
+	TemplateQuota   *int               `json:"templateQuota,omitempty"`
+	ProfileQuota    *int               `json:"profileQuota,omitempty"`
+	HasProfileQuota bool               `json:"hasProfileQuota"`
+	DefaultUPP      string             `json:"defaultUpp,omitempty"`
+	CallbackURL     string             `json:"callbackUrl,omitempty"`
+	Usage           *store.TenantUsage `json:"usage,omitempty"`
+	CreatedAt       time.Time          `json:"createdAt"`
+	UpdatedAt       time.Time          `json:"updatedAt"`
 }
 
 func toTenantView(t *store.Tenant) tenantView {
@@ -59,7 +61,11 @@ func (h *Handler) getTenant(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusNotFound, "unknown tenant")
 		return
 	}
-	writeJSON(w, http.StatusOK, toTenantView(t))
+	v := toTenantView(t)
+	if usage, err := h.Tenants.Usage(t.ID); err == nil {
+		v.Usage = &usage
+	}
+	writeJSON(w, http.StatusOK, v)
 }
 
 type tenantReq struct {
@@ -140,10 +146,60 @@ func (h *Handler) deleteTenant(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	id := chi.URLParam(r, "id")
-	if err := h.Tenants.Delete(id); err != nil {
-		writeErr(w, http.StatusNotFound, "unknown tenant")
+	q := r.URL.Query()
+	force := q.Get("force") == "true" || q.Get("force") == "1"
+
+	// N3: deleting a tenant is two-phase. Without force, any referencing
+	// resource blocks the deletion and the caller receives the usage counts so
+	// the frontend can warn before the operator retries.
+	if !force {
+		usage, err := h.Tenants.Usage(id)
+		if err != nil {
+			writeErr(w, http.StatusInternalServerError, err.Error())
+			return
+		}
+		if !usage.Empty() {
+			// The usage object sits at the top level (N3): the caller reads it
+			// to warn before retrying with force.
+			writeJSON(w, http.StatusConflict, map[string]any{
+				"code":    "tenant_in_use",
+				"message": `tenant still owns resources; pass ?force=true&reassignTo=<tenant|""> to migrate them first`,
+				"usage":   usage,
+			})
+			return
+		}
+		if err := h.Tenants.Delete(id); err != nil {
+			writeErr(w, http.StatusNotFound, "unknown tenant")
+			return
+		}
+		h.audit(r, "deleteTenant", id, "Executed-Success", nil)
+		w.WriteHeader(http.StatusNoContent)
 		return
 	}
-	h.audit(r, "deleteTenant", id, "Executed-Success", nil)
+
+	// force=true: migrate the resources first, then delete. reassignTo="" means
+	// the platform-global scope (tenant_id = NULL).
+	reassignTo := q.Get("reassignTo")
+	if reassignTo == id {
+		writeJSON(w, http.StatusBadRequest, errorBody("invalid_request",
+			"reassignTo must differ from the tenant being deleted"))
+		return
+	}
+	if reassignTo != "" {
+		if _, err := h.Tenants.Get(reassignTo); err != nil {
+			writeJSON(w, http.StatusBadRequest, errorBody("unknown_tenant",
+				"reassignTo tenant is not registered"))
+			return
+		}
+	}
+	if err := h.Tenants.DeleteWithReassign(id, reassignTo); err != nil {
+		if errors.Is(err, store.ErrNotFound) {
+			writeErr(w, http.StatusNotFound, "unknown tenant")
+			return
+		}
+		writeErr(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	h.audit(r, "deleteTenant", id, "Executed-Success", map[string]any{"force": true, "reassignTo": reassignTo})
 	w.WriteHeader(http.StatusNoContent)
 }

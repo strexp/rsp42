@@ -69,12 +69,42 @@ func TestAdminTenantsCRUDAndTenantFilters(t *testing.T) {
 	status, _ = do(t, "POST", base+"/profiles", map[string]any{"tenant": "nobody"})
 	require.Equal(t, 400, status)
 
-	// Deleting a tenant leaves its resources alone.
-	status, _ = do(t, "DELETE", base+"/tenants/carrier-b", nil)
+	// N3: deleting a tenant that still owns resources is refused and reports
+	// the usage counts for a pre-delete warning.
+	status, raw = do(t, "DELETE", base+"/tenants/carrier-b", nil)
+	require.Equal(t, 409, status, string(raw))
+	var inUse struct {
+		Code  string `json:"code"`
+		Usage struct {
+			Profiles int `json:"profiles"`
+		} `json:"usage"`
+	}
+	require.NoError(t, json.Unmarshal(raw, &inUse))
+	require.Equal(t, "tenant_in_use", inUse.Code)
+	require.Equal(t, 1, inUse.Usage.Profiles)
+
+	status, raw = do(t, "GET", base+"/tenants/carrier-b", nil)
+	require.Equal(t, 200, status)
+	require.Contains(t, string(raw), `"profiles":1`)
+
+	// force + reassignTo= (the platform-default scope) migrates then deletes.
+	status, _ = do(t, "DELETE", base+"/tenants/carrier-b?force=true&reassignTo=", nil)
 	require.Equal(t, 204, status)
 	status, raw = do(t, "GET", base+"/profiles?tenant=carrier-b", nil)
 	require.Equal(t, 200, status)
+	require.Contains(t, string(raw), `"total":0`)
+
+	// The profile survived under the platform-default scope.
+	status, raw = do(t, "GET", base+"/profiles?tenant=", nil)
+	require.Equal(t, 200, status)
 	require.Contains(t, string(raw), `"total":1`)
+
+	// force with an unregistered reassignTo target is refused.
+	status, _ = do(t, "DELETE", base+"/tenants/carrier-a?force=true&reassignTo=nobody", nil)
+	require.Equal(t, 400, status)
+	// A tenant cannot be reassigned to itself.
+	status, _ = do(t, "DELETE", base+"/tenants/carrier-a?force=true&reassignTo=carrier-a", nil)
+	require.Equal(t, 400, status)
 }
 
 func TestAdminPoolTenantIsolation(t *testing.T) {

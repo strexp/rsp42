@@ -186,7 +186,7 @@ at `internal/api/admin/openapi.json`.
 
 | Area | Endpoints |
 |---|---|
-| Tenants | `GET/POST /tenants`, `GET/PATCH/DELETE /tenants/{id}` (quotas, `defaultUpp`, `callbackUrl`) |
+| Tenants | `GET/POST /tenants`, `GET/PATCH/DELETE /tenants/{id}` (quotas, `defaultUpp`, `callbackUrl`; `GET` returns `usage`, `DELETE` refuses with `409 tenant_in_use` unless `?force=true&reassignTo=<tenant\|"">` migrates the resources first — N3) |
 | Profiles | `GET/POST /profiles`, `GET/PATCH/DELETE /profiles/{iccid}`, `POST /profiles/{iccid}/confirm\|cancel\|release`, `POST /profiles/{iccid}/activation-code` (`?rotate=1`), `GET /profiles/{iccid}/timeline` (orders + notifications + sessions + audit), `POST /profiles/bulk`, `GET /profiles/stats` |
 | Download batches | `GET/POST /batches`, `GET/DELETE /batches/{id}`, `GET /batches/{id}/items`, `POST /batches/{id}/confirm\|cancel` |
 | UPP registry | `GET/POST /upp`, `POST /upp/validate`, `POST /upp/render`, `GET/DELETE /upp/{name}`, `GET /upp/{name}/bytes`, `GET /upp/{name}/decoded`, `GET /upp/{name}/schema`, `POST /upp/{name}/activate\|deactivate\|clone\|promote`, `GET /upp/{name}/versions`, `POST /upp/{name}/versions/{id}/restore` |
@@ -194,8 +194,9 @@ at `internal/api/admin/openapi.json`.
 | ICCID pool | `GET /iccid-pool`, `GET /iccid-pool/stats`, `POST /iccid-pool/reserve\|release\|block`, `GET/POST /iccid-ranges`, `DELETE /iccid-ranges/{id}` |
 | Export/import | `GET /profiles/export?format=csv\|json`, `POST /profiles/import` (`application/json` or `text/csv`) |
 | Devices | `GET /eids` (profiles aggregated per eUICC) |
-| Audit log | `GET /audit`, `GET /audit/stats` (`interface`, `function`, `subject`, `actor`, `outcome`, `tenant`, `from`/`since`, `to`/`until`, `groupBy`) |
+| Audit log | `GET /audit`, `GET /audit/stats` (`interface`, `function`, `subject`, `actor`, `outcome`, `tenant`, `from`/`since`, `to`/`until`, `groupBy`; `afterId`+`limit` switches to the monotonic incremental cursor `{items[].id, nextAfterId, hasMore}` — N1) |
 | Notifications | `GET /notifications` (`iccid`, `eid`, `from`, `to`, `page`, `size`) |
+| Callback queue | `GET /callbacks` (`state=pending\|sent\|failed\|dead`, `tenant`, `iccid`, `from`/`to`, `page`, `size`; `payload` is a parsed JSON object), `POST /callbacks/{id}/retry`, `POST /callbacks/retry-dead` (`{tenant,before,limit}`) — N2 |
 
 The SM-DS admin listener exposes a read-only `GET /admin/api/v1/events` with
 `eid`, `eventId`, `iccid`, `matchingId`, `tenant`, `status`

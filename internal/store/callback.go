@@ -132,3 +132,130 @@ func (r *CallbackRepo) Stats() (map[string]int, error) {
 	}
 	return out, rows.Err()
 }
+
+// Callback statuses as stored. "dead" is the API-level alias for "failed"
+// (the dead letter state).
+const (
+	CallbackPending = "pending"
+	CallbackSent    = "sent"
+	CallbackFailed  = "failed"
+)
+
+// NormalizeCallbackState maps the API-level state names onto the stored ones.
+func NormalizeCallbackState(s string) string {
+	if s == "dead" {
+		return CallbackFailed
+	}
+	return s
+}
+
+// CallbackFilter constrains a callback listing (all fields optional).
+type CallbackFilter struct {
+	// Status matches the stored status. "dead" is accepted as an alias for
+	// "failed".
+	Status string
+	// Tenant matches the payload's tenantId. A non-nil pointer to "" selects
+	// the platform-default rows (no tenantId); nil means "any tenant".
+	Tenant *string
+	ICCID  string
+	Since  *time.Time
+	Until  *time.Time
+}
+
+// callbackWhere builds the WHERE conditions for a callback filter. The tenant
+// and ICCID filters read the payload JSON (the columns predate tenancy).
+func callbackWhere(f CallbackFilter) ([]string, []any) {
+	var where []string
+	var args []any
+	add := func(cond string, v any) { where, args = append(where, cond), append(args, v) }
+	if f.Status != "" {
+		add("status = ?", NormalizeCallbackState(f.Status))
+	}
+	if f.Tenant != nil {
+		if *f.Tenant == "" {
+			where = append(where, "(json_extract(payload_json,'$.tenantId') IS NULL OR json_extract(payload_json,'$.tenantId') = '')")
+		} else {
+			add("json_extract(payload_json,'$.tenantId') = ?", *f.Tenant)
+		}
+	}
+	if f.ICCID != "" {
+		add("json_extract(payload_json,'$.iccid') = ?", f.ICCID)
+	}
+	if f.Since != nil {
+		add("created_at >= ?", f.Since.Unix())
+	}
+	if f.Until != nil {
+		add("created_at <= ?", f.Until.Unix())
+	}
+	return where, args
+}
+
+// ListFiltered returns a page of callbacks (newest first) plus the total.
+func (r *CallbackRepo) ListFiltered(f CallbackFilter, limit, offset int) ([]*Callback, int, error) {
+	where, args := callbackWhere(f)
+	clause := buildWhere(where)
+	var total int
+	if err := r.db.QueryRow("SELECT COUNT(*) FROM es2p_callbacks"+clause, args...).Scan(&total); err != nil {
+		return nil, 0, err
+	}
+	rows, err := r.db.Query("SELECT "+callbackCols+" FROM es2p_callbacks"+clause+
+		" ORDER BY id DESC LIMIT ? OFFSET ?", append(args, limit, offset)...)
+	if err != nil {
+		return nil, 0, err
+	}
+	defer func() { _ = rows.Close() }()
+	var out []*Callback
+	for rows.Next() {
+		c, err := scanCallback(rows)
+		if err != nil {
+			return nil, 0, err
+		}
+		out = append(out, c)
+	}
+	return out, total, rows.Err()
+}
+
+// Requeue puts one dead-lettered callback back on the queue, resetting its
+// attempt counter. It returns ErrNotFound for an unknown id and ErrConflict
+// when the callback is not in the dead-letter (failed) state.
+func (r *CallbackRepo) Requeue(id int64) error {
+	cur, err := r.Get(id)
+	if err != nil {
+		return err
+	}
+	if cur.Status != CallbackFailed {
+		return ErrConflict
+	}
+	_, err = r.db.Exec(`UPDATE es2p_callbacks
+		SET status = 'pending', attempts = 0, next_retry_at = ?, response = NULL WHERE id = ?`, unixNow(), id)
+	return err
+}
+
+// RequeueDead re-queues up to limit dead-lettered callbacks created at or
+// before before, optionally restricted to one tenant, and returns how many were
+// re-queued.
+func (r *CallbackRepo) RequeueDead(tenant *string, before time.Time, limit int) (int64, error) {
+	if limit <= 0 {
+		limit = 100
+	}
+	var where []string
+	var args []any
+	where = append(where, "status = 'failed'", "created_at <= ?")
+	args = append(args, before.Unix())
+	if tenant != nil {
+		if *tenant == "" {
+			where = append(where, "(json_extract(payload_json,'$.tenantId') IS NULL OR json_extract(payload_json,'$.tenantId') = '')")
+		} else {
+			where = append(where, "json_extract(payload_json,'$.tenantId') = ?")
+			args = append(args, *tenant)
+		}
+	}
+	res, err := r.db.Exec(`UPDATE es2p_callbacks
+		SET status = 'pending', attempts = 0, next_retry_at = ?, response = NULL
+		WHERE id IN (SELECT id FROM es2p_callbacks`+buildWhere(where)+` ORDER BY id LIMIT ?)`,
+		append([]any{unixNow()}, append(args, limit)...)...)
+	if err != nil {
+		return 0, err
+	}
+	return res.RowsAffected()
+}
