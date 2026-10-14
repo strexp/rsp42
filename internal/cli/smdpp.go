@@ -210,7 +210,7 @@ func cmdSMDpp(prog string, args []string) int {
 	adminH := &adminapi.Handler{
 		Log: log, Tenants: st.Tenants, Profiles: st.Profiles, Orders: orders, Inventory: inventory,
 		UPP: st.UPP, Perso: perso, Audit: st.Audit, Batch: st.Batch,
-		OrderRepo: st.Orders, Notifs: st.Notifs, Sessions: st.Sessions, Pool: st.Pool, Events: st.Events,
+		OrderRepo: st.Orders, Notifs: st.Notifs, Sessions: st.Sessions, Pool: st.Pool,
 		Callbacks: st.Callbacks,
 		Idem:      st.Idem, AllowedSAIP: saipPolicy,
 		DefaultReserveTTL: cfg.Profiles.Personalization.ReserveTTL.Duration(),

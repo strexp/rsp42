@@ -52,7 +52,7 @@ func newTestServer(t *testing.T, opts ...func(*Handler)) (*httptest.Server, *sto
 		Log: slog.Default(), Tenants: st.Tenants, Profiles: st.Profiles,
 		Orders: orders, Inventory: inv,
 		UPP: st.UPP, Perso: service.NewPersonalizationService(st.Perso, provider), Audit: st.Audit, Batch: st.Batch,
-		OrderRepo: st.Orders, Notifs: st.Notifs, Sessions: st.Sessions, Pool: st.Pool, Events: st.Events,
+		OrderRepo: st.Orders, Notifs: st.Notifs, Sessions: st.Sessions, Pool: st.Pool,
 		Callbacks: st.Callbacks,
 		Idem:      st.Idem, DefaultReserveTTL: time.Hour,
 		FQDN: "testsmdpplus1.example.com", OID: "2.999.10",

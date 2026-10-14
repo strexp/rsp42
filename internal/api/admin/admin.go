@@ -36,7 +36,6 @@ type Handler struct {
 	Notifs    *store.NotificationRepo
 	Sessions  *store.SessionRepo
 	Pool      *store.PoolRepo
-	Events    *store.EventRepo
 	// Callbacks exposes the outbound ES2+ notification queue (N2).
 	Callbacks *store.CallbackRepo
 	// Idem enables Idempotency-Key replay on the management writes.
