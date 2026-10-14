@@ -9,6 +9,7 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"rsp42/internal/uppio"
 	"strings"
 	"testing"
 	"time"
@@ -99,7 +100,7 @@ func setupCMAE(t *testing.T) (*CMAE, *store.Store) {
 	// UPP templates live in the registry; seed it from the test fixtures.
 	policy, err := NewSAIPVersionPolicy([]string{"2.3"})
 	require.NoError(t, err)
-	_, err = ImportUPPTemplates("../../testdata/upp", st.UPP, policy)
+	_, err = uppio.Import("../../testdata/upp", st.UPP, policy.CheckVersionErr)
 	require.NoError(t, err)
 
 	perso := NewPersonalizationService(st.Perso, provider)

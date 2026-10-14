@@ -4,6 +4,7 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"rsp42/internal/uppio"
 
 	"rsp42/internal/service"
 	"rsp42/internal/store"
@@ -63,7 +64,7 @@ func cmdUPP(prog string, args []string) int {
 			fmt.Fprintln(os.Stderr, err)
 			return 1
 		}
-		n, err := service.ImportUPPTemplates(*dir, st.UPP, policy)
+		n, err := uppio.Import(*dir, st.UPP, policy.CheckVersionErr)
 		if err != nil {
 			fmt.Fprintln(os.Stderr, err)
 			return 1

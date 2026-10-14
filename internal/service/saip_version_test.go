@@ -2,6 +2,7 @@ package service
 
 import (
 	"path/filepath"
+	"rsp42/internal/uppio"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -72,7 +73,7 @@ func TestImportUPPTemplatesEnforcesVersionLimit(t *testing.T) {
 
 	policy, err := NewSAIPVersionPolicy([]string{"2.1"})
 	require.NoError(t, err)
-	_, err = ImportUPPTemplates(filepath.Join("..", "..", "testdata", "upp"), st.UPP, policy)
+	_, err = uppio.Import(filepath.Join("..", "..", "testdata", "upp"), st.UPP, policy.CheckVersionErr)
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "2.3")
 }

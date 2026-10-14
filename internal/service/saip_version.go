@@ -93,3 +93,12 @@ func (p *SAIPVersionPolicy) CheckSAIPVersion(major, minor int) *SAIPVersionRejec
 		MaxSupported:    max.String(),
 	}
 }
+
+// CheckVersionErr adapts the policy to uppio.CheckVersion: it returns the
+// rejection as an error, so the importer does not have to know the policy type.
+func (p *SAIPVersionPolicy) CheckVersionErr(major, minor int) error {
+	if rej := p.CheckSAIPVersion(major, minor); rej != nil {
+		return rej
+	}
+	return nil
+}

@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
+	"rsp42/internal/uppio"
 	"strings"
 	"testing"
 	"time"
@@ -47,7 +48,7 @@ func newTestHandler(t *testing.T) (*Handler, *cert.Manager) {
 
 	policy, err := service.NewSAIPVersionPolicy([]string{"2.3"})
 	require.NoError(t, err)
-	_, err = service.ImportUPPTemplates("../../../testdata/upp", st.UPP, policy)
+	_, err = uppio.Import("../../../testdata/upp", st.UPP, policy.CheckVersionErr)
 	require.NoError(t, err)
 
 	cmae, err := service.NewCMAE(service.CMAEConfig{
