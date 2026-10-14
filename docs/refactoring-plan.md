@@ -539,10 +539,27 @@
 
 ### 阶段 4：目录与组合根拆分（进行中）
 
-- 已完成：`internal/api/es15` 删除（doc-only 包）。
-- 待办：`cli` 组合根拆分（`server.go` 5 职责、`cmdSMDpp` 207 行、命令注册表）、`admin/ds.go` → `internal/api/dsadmin`（需先把 admin 的 JSON 响应 helper 抽到共享包）、`es2plus` 客户端代码 → `internal/client/es2p`、`store`/`service`/`saip`/`rsp`/`cert` 的文件级拆分、`internal/api/mock` 移出生产二进制。
+已完成：
 
-### 阶段 5：测试与工程化收尾（未开始）
+| 提交 | 内容 |
+|---|---|
+| `e35ca88` | 删除 doc-only 的 `internal/api/es15`，doc 并入 `service.CascadeClient` |
+| `b6d708c` | 测试专用的 mock operator 从 `internal/api/mock` 移到 `internal/testutil/mockoperator`，角色在每个 import 处显式 |
+
+待办：`admin/ds.go` → `internal/api/dsadmin`（前置：把 admin 的 JSON 响应 helper 抽到共享包 `internal/api/adminhttp`，并让 `openapi.json` 成为共享包）、`cli` 组合根拆分（`server.go` 5 职责、`cmdSMDpp` 207 行、表驱动命令注册表）、`es2plus` 客户端代码 → `internal/client/es2p`、`store`/`service`/`saip`/`rsp`/`cert` 的文件级拆分。
+
+### 阶段 5：测试与工程化收尾（进行中）
+
+已完成：
+
+| 提交 | 内容 |
+|---|---|
+| `29a1098` | 指标注册表拒绝未声明名称（panic 并报出名字），修好标签转义（Prometheus 只接受 `\\`、`\"`、`\n`），指标词表移入 `service.DescribeMetrics`/`es2plus.DescribeMetrics` |
+| `6d4490a` | `make build` 注入 `-X` 版本元数据（此前 `rsp42 version` 恒为 dev/none/unknown）；Makefile 与 Dockerfile 共用 `make build`，消除构建参数漂移；镜像 pin 到 `golang:1.27-bookworm`/`alpine:3.22`（已用 Docker Hub API 校验 tag 存在）；CI 的 golangci-lint pin 到 v2.14.0 |
+| `f5eae0b` | 重复测试 helper（`MustHex`×3、`Concat`×3、`TLV`/`HexTag`×2、`itoa`）统一到 `internal/testutil`；该包只被 `_test.go` 引用，不进二进制 |
+| `b6d708c` | mock operator 迁入 `internal/testutil`（见阶段 4） |
+
+待办：`docs/architecture.md` 的包清单与依赖方向需按当前 `go list` 更新（新增 `internal/asn1bind`、`internal/iccid`、`internal/saipver`、`internal/testutil`，并写明 `store`/`config` 不再依赖 `rsp`）；`jsonschema/v6` 与 `yaml.v3` 的去留（需用户决策）；`es2plus` 与 `service/smdsc.go` 的重试循环合并；`admin_ops.go` 拆分。
 
 ### 执行期间确认的额外结论
 
