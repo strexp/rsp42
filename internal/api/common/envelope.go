@@ -66,3 +66,15 @@ func ReadJSON(w http.ResponseWriter, r *http.Request, maxBytes int64, v any) err
 	}
 	return json.Unmarshal(body, v)
 }
+
+// WriteHTTPError writes an HTTP-level failure as a JSON object.
+//
+// SGP.22 §6.2 defines an RSP response only for HTTP 200, so a 4xx/5xx answer is
+// not a functionExecutionStatus envelope: it is reported as {"error": ...} so a
+// JSON client can still parse it. Protocol failures that the RSP layer can
+// classify must use WriteCode/WriteFailure instead.
+func WriteHTTPError(w http.ResponseWriter, status int, message string) {
+	w.Header().Set("Content-Type", ContentTypeJSON)
+	w.WriteHeader(status)
+	_ = json.NewEncoder(w).Encode(map[string]string{"error": message})
+}

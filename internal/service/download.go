@@ -28,6 +28,13 @@ func (c *CMAE) GetBoundProfilePackage(transactionID string, prepareDownloadRespo
 	if err != nil {
 		return nil, rsp.CodeUnknownTransaction.Status("Unknown TransactionID")
 	}
+	// The session lookup already proved that the TransactionID is a valid
+	// session key; decode it once, and treat a malformed value as an error
+	// rather than a panic.
+	txn, err := hexLower(transactionID)
+	if err != nil {
+		return nil, rsp.CodeVerificationFailed.Status(err.Error())
+	}
 	ok, errResp, err := rsp.DecodePrepareDownloadResponse(prepareDownloadResponse)
 	if err != nil {
 		return nil, rsp.CodeVerificationFailed.Status(err.Error())
@@ -60,7 +67,7 @@ func (c *CMAE) GetBoundProfilePackage(transactionID string, prepareDownloadRespo
 	}
 
 	if profile.CCRequired {
-		expected := confirmationHash(profile.CCHash, mustHexLower(transactionID))
+		expected := confirmationHash(profile.CCHash, txn)
 		if !equalBytes(expected, ok.EuiccSigned2.HashCc) {
 			c.recordConfirmationFailure(profile)
 			c.notify(context.Background(), progressFor(profile, sess.EID, 2, "Failed"))
@@ -91,7 +98,7 @@ func (c *CMAE) GetBoundProfilePackage(transactionID string, prepareDownloadRespo
 	}
 
 	_, pbSigner := c.pbFor(sess)
-	bpp, err := c.buildBPP(sess.EID, mustHexLower(transactionID), otPK, otSK, ok.EuiccSigned2.EuiccOtpk, upp, profile, pbSigner)
+	bpp, err := c.buildBPP(sess.EID, txn, otPK, otSK, ok.EuiccSigned2.EuiccOtpk, upp, profile, pbSigner)
 	if err != nil {
 		return nil, err
 	}

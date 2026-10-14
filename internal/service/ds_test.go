@@ -54,7 +54,7 @@ func euiccAuthenticate(t *testing.T, ds *DSService, matchingID string) (string, 
 	ss1, err := rsp.DecodeServerSigned1(ss1TLV)
 	require.NoError(t, err)
 
-	txn := mustHexLower(init.TransactionID)
+	txn := mustHexLower(t, init.TransactionID)
 	ctxInner := tlv([]byte{0x80}, make([]byte, 8))
 	var ctx []byte
 	if matchingID != "" {

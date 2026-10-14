@@ -3,6 +3,7 @@ package service
 import (
 	"errors"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
 
@@ -221,4 +222,29 @@ func TestVersionHelpersViaFakes(t *testing.T) {
 	var _ ICCIDRecycler = (*fakeICCIDPool)(nil)
 
 	require.Equal(t, -1, rsp.Version{Major: 2, Minor: 1}.Compare(rsp.Version{Major: 2, Minor: 2}))
+}
+
+// TestEventServiceStorageErrorsAreNotNotFound pins the sentinel handling in the
+// SM-DS event service: a storage failure must not be reported as "EventID free"
+// (Register) or as "event not found" (Delete).
+func TestEventServiceStorageErrorsAreNotNotFound(t *testing.T) {
+	var _ EventStore = (*fakeEventStore)(nil)
+
+	boom := errors.New("disk on fire")
+	repo := newFakeEventStore()
+	repo.FailGet = boom
+	svc := NewEventService(repo, "root", "ds.example.com", time.Hour)
+
+	err := svc.Register("89049032000000000000000000000001", "dp.example.com", "E1", false, "2.999.10", EventMeta{})
+	require.ErrorIs(t, err, boom, "a storage failure must not be answered as EventIDInUse")
+	require.NotErrorIs(t, err, ErrEventIDInUse)
+
+	err = svc.Delete("89049032000000000000000000000001", "E1", "2.999.10")
+	require.ErrorIs(t, err, boom, "a storage failure must not be answered as not found")
+	require.NotErrorIs(t, err, ErrEventNotFound)
+
+	// A genuinely missing event is still reported as not found.
+	repo.FailGet = nil
+	err = svc.Delete("89049032000000000000000000000001", "E1", "2.999.10")
+	require.ErrorIs(t, err, ErrEventNotFound)
 }

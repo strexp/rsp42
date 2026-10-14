@@ -37,12 +37,15 @@ func parseCertificates(ders [][]byte) ([]*x509.Certificate, error) {
 	return out, nil
 }
 
-func mustHexLower(s string) []byte {
+// hexLower decodes a hex-encoded string (either case). Transaction IDs reach
+// the service from an HTTP request body, so a malformed value is reported as an
+// error rather than a panic.
+func hexLower(s string) ([]byte, error) {
 	b, err := hex.DecodeString(s)
 	if err != nil {
-		panic(err)
+		return nil, fmt.Errorf("service: %q is not a hex string: %w", s, err)
 	}
-	return b
+	return b, nil
 }
 
 // confirmationHash computes hashCc = SHA256(SHA256(CC) || transactionId)

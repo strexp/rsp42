@@ -153,7 +153,7 @@ func TestFullDownloadFlow(t *testing.T) {
 	require.Equal(t, euiccChallenge, ss1.EuiccChallenge)
 
 	// --- eUICC builds AuthenticateServerResponse ---
-	txn := mustHexLower(init.TransactionID)
+	txn := mustHexLower(t, init.TransactionID)
 	euiccSigned1 := tlv(tSeq, concat(
 		tlv(tCtx0p, txn),
 		tlv(tCtx3p, []byte(testFQDN)),
@@ -306,7 +306,7 @@ func TestNotificationInstalled(t *testing.T) {
 	require.NoError(t, err)
 	euiccCertDER := readFile(t, testRoot+"/eUICC/CERT_EUICC_NIST.der")
 
-	txn := mustHexLower("00112233445566778899AABBCCDDEEFF")
+	txn := mustHexLower(t, "00112233445566778899AABBCCDDEEFF")
 	ss := NewSessionService(st.Sessions, provider, time.Hour)
 	require.NoError(t, ss.Put(&store.Session{
 		TransactionID: strings.ToUpper(hex.EncodeToString(txn)),
@@ -373,7 +373,7 @@ func TestNotificationInstallRejectsBadSignature(t *testing.T) {
 
 	provider, err := kms.NewFileProviderFromKEK(testKEK)
 	require.NoError(t, err)
-	txn := mustHexLower("00112233445566778899AABBCCDDEEFF")
+	txn := mustHexLower(t, "00112233445566778899AABBCCDDEEFF")
 	ss := NewSessionService(st.Sessions, provider, time.Hour)
 	require.NoError(t, ss.Put(&store.Session{
 		TransactionID: strings.ToUpper(hex.EncodeToString(txn)),
@@ -761,7 +761,7 @@ func authenticateForTest(t *testing.T, cmae *CMAE, matchingID string) error {
 	ss1, err := rsp.DecodeServerSigned1(serverSigned1)
 	require.NoError(t, err)
 
-	txn := mustHexLower(init.TransactionID)
+	txn := mustHexLower(t, init.TransactionID)
 	euiccSigned1 := tlv(tSeq, concat(
 		tlv(tCtx0p, txn),
 		tlv(tCtx3p, []byte(testFQDN)),

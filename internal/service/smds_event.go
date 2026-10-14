@@ -43,8 +43,12 @@ var ErrEventNotFound = errors.New("event not found")
 // set, it cascades to the Root SM-DS (generating EventID2) and rolls back the
 // local record on failure.
 func (s *EventService) Register(eid, rspServerAddress, eventID string, forwardingIndicator bool, callerOID string, meta EventMeta) error {
+	// A lookup error that is not "missing" is a storage failure: it must be
+	// reported, not mistaken for "the EventID is free".
 	if _, err := s.Repo.GetByKey(eid, eventID, callerOID); err == nil {
 		return ErrEventIDInUse
+	} else if !errors.Is(err, store.ErrNotFound) {
+		return err
 	}
 
 	rec := &store.EventRecord{
@@ -98,7 +102,12 @@ func (s *EventService) Register(eid, rspServerAddress, eventID string, forwardin
 func (s *EventService) Delete(eid, eventID, callerOID string) error {
 	rec, err := s.Repo.GetByKey(eid, eventID, callerOID)
 	if err != nil {
-		return ErrEventNotFound
+		// Only "no such event" maps to ErrEventNotFound; a storage failure must
+		// stay distinguishable so the caller can answer with a server error.
+		if errors.Is(err, store.ErrNotFound) {
+			return ErrEventNotFound
+		}
+		return err
 	}
 	if rec.DeletedAt != nil {
 		return ErrEventNotFound

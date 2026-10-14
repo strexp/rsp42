@@ -311,7 +311,11 @@ func (h *Handler) handleAcrRequest(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if h.ACRHandler == nil {
-		http.Error(w, "handleAcrRequest not implemented", http.StatusNotImplemented)
+		// The inbound function is a reserved stub: rsp42 itself performs ACR
+		// outgoing (service.ACRChecker), and nothing wires ACRHandler yet. Answer
+		// a JSON HTTP-level error rather than a plain-text body so a JSON client
+		// can still parse it.
+		common.WriteHTTPError(w, http.StatusNotImplemented, "handleAcrRequest is not configured")
 		return
 	}
 	var req AcrRequest

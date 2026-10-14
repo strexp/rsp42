@@ -247,3 +247,81 @@ func (f *fakeICCIDPool) State(iccid string) (string, error) {
 	}
 	return s, nil
 }
+
+// fakeEventStore implements EventStore for the SM-DS event tests, with failure
+// injection so the storage-error paths are distinguishable from "not found".
+type fakeEventStore struct {
+	byKey    map[string]*store.EventRecord
+	nextID   int64
+	FailGet  error
+	FailInse error
+}
+
+func newFakeEventStore() *fakeEventStore {
+	return &fakeEventStore{byKey: map[string]*store.EventRecord{}}
+}
+
+func eventKey(eid, eventID, callerOID string) string {
+	return eid + "\x00" + eventID + "\x00" + callerOID
+}
+
+func (f *fakeEventStore) GetByKey(eid, eventID, callerOID string) (*store.EventRecord, error) {
+	if f.FailGet != nil {
+		return nil, f.FailGet
+	}
+	rec, ok := f.byKey[eventKey(eid, eventID, callerOID)]
+	if !ok {
+		return nil, store.ErrNotFound
+	}
+	return rec, nil
+}
+
+func (f *fakeEventStore) Insert(e *store.EventRecord) (int64, error) {
+	if f.FailInse != nil {
+		return 0, f.FailInse
+	}
+	k := eventKey(e.EID, e.EventID, e.CallerOID)
+	if _, exists := f.byKey[k]; exists {
+		return 0, store.ErrEventIDInUse
+	}
+	f.nextID++
+	e.ID = f.nextID
+	f.byKey[k] = e
+	return e.ID, nil
+}
+
+func (f *fakeEventStore) SoftDelete(id int64) (bool, error) {
+	for _, rec := range f.byKey {
+		if rec.ID == id && rec.DeletedAt == nil {
+			now := time.Now().UTC()
+			rec.DeletedAt = &now
+			return true, nil
+		}
+	}
+	return false, nil
+}
+
+func (f *fakeEventStore) HardDelete(id int64) error {
+	for k, rec := range f.byKey {
+		if rec.ID == id {
+			delete(f.byKey, k)
+		}
+	}
+	return nil
+}
+
+func (f *fakeEventStore) ListByEID(string) ([]*store.EventRecord, error) { return nil, nil }
+
+func (f *fakeEventStore) ListByEIDEventID(string, string) ([]*store.EventRecord, error) {
+	return nil, nil
+}
+
+func (f *fakeEventStore) ListAll() ([]*store.EventRecord, error) {
+	out := make([]*store.EventRecord, 0, len(f.byKey))
+	for _, rec := range f.byKey {
+		out = append(out, rec)
+	}
+	return out, nil
+}
+
+func (f *fakeEventStore) GCExpired(time.Time) (int64, error) { return 0, nil }

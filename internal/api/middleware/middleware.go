@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"runtime/debug"
 	"strings"
 	"time"
 
@@ -99,14 +100,16 @@ func CORS(allowedOrigins []string) func(http.Handler) http.Handler {
 	}
 }
 
-// Recover converts panics into 500 responses and logs them.
+// Recover converts panics into JSON 500 responses and logs them with a stack
+// trace. The body is deliberately generic: the panic detail is logged, not
+// returned to the caller.
 func Recover(log *slog.Logger) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			defer func() {
 				if rec := recover(); rec != nil {
-					log.Error("panic", "value", rec, "path", r.URL.Path)
-					http.Error(w, "internal server error", http.StatusInternalServerError)
+					log.Error("panic", "value", rec, "path", r.URL.Path, "stack", string(debug.Stack()))
+					common.WriteHTTPError(w, http.StatusInternalServerError, "internal server error")
 				}
 			}()
 			next.ServeHTTP(w, r)
