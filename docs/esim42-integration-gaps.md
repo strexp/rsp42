@@ -1,9 +1,12 @@
 # rsp42 ← esim42 对接改造清单（反向差距分析）
 
-> 输入：`../esim42/PLAN.md`（eSIM 综合运营平台规划，模块 A–E）与 `../esim42/todo/02-rsp42-api-gap-analysis.md` 的预期产出。
+> 输入（**两轮**）：
+> - **第一轮（G 清单）**：`../esim42/PLAN.md`（eSIM 综合运营平台规划，模块 A–E）与 `../esim42/todo/02-rsp42-api-gap-analysis.md` 的**预期产出**（该文档当时尚未产出）。
+> - **第二轮（N 清单）**：`../esim42/todo/01`–`06` 与 `todo/research/*` 的**实际产出**（2026-10-14 18:11 定稿，晚于本文件 16:16）。第二轮把 rsp42 的改动重编为 **N1–N17**，并带来两处与本文件第一轮判断的**优先级冲突**（见 §0.3 与 §9.4）。
+>
 > 本文只回答一件事：**站在 rsp42 的角度，为了支撑 esim42，需要改什么、不需要改什么、以及接口契约长什么样**。
 > 图例：`[P0]` 阻塞（不改则 esim42 无法安全/正确上线）；`[P1]` 重要（影响功能完整性或可运维性）；`[P2]` 可选/后续。
-> 现状判定均以本仓库**当前代码**为准（附 `文件:行`）。
+> 现状判定均以本仓库**当前代码**为准（附 `文件:行`）；第二轮各项均已逐条实测并标注“现状”。
 
 ---
 
@@ -17,8 +20,9 @@
 4. **部署前提（已与 esim42 确认）：管理 API 保持无鉴权。** esim42 后端与 rsp42 管理 API **同机同网、内网直连**；esim42 前端只经 esim42 后端访问，绝不直连 rsp42。因此管理 API 不引入 Bearer/mTLS/scope，**安全边界由 esim42 承担**（esim42 必须保证该 API 不被反向代理、网关或前端暴露）。原初稿的 G1“管理 API 鉴权”据此**排除**，正式改动清单从 G2 起。
 5. **SM-DS 启用（决策 6）**：esim42 走 ES12 事件注册/删除并以 `/events` 做透视，支撑模块 B 的“无激活码推送”。rsp42 需同时部署 `smds` 角色（`RSP42_ROLE=smds`），并补齐事件的时间/租户过滤与注册失败可观测（G20）。
 6. **明确不做（决策 7–10，见 §8.4）**：**PostgreSQL/其他数据库后端**、**多副本部署**、**每运营商客户端证书**、**rsp42 侧限流/429**。这四项不在本项目范围内，也不是“以后再说”的备选项——相关配置与文档已按“仅支持当前形态”收敛。
+7. **SAIP 基线由 esim42 定为 V2.3.1（包内编码 `(2,3)`）**（esim42 `01` §6.5 D1/D2）。由此 rsp42 需要一条**版本上限**（N16）与一条**运行期兼容性干净失败**（N12），二者是第二轮唯一的 P0。注意“V2.3.1 是文档修订号，包内与 V2.3 同形”，任何比较都只能按 `(major, minor)`。SAIP V3.x 的 PE/模板/feature 覆盖与 SGP.22 Annex F 的 `PE-GenericFileManagement` 降级构造（N14）由 esim42 明确列为**范围外**，rsp42 不为其预留代码位或配置开关（见 §0.4）。
 
-### 0.2 必改项 Top 7
+### 0.2 必改项 Top 7（第一轮 G：已全部落地）
 
 | # | 改动 | 对应 esim42 需求 | 优先级 |
 |---|---|---|---|
@@ -30,7 +34,38 @@
 | G7 | SAIP 模板能力外露（`/schema`、`/validate`、`/render`、`/clone`、全局模板提升） | §3C/§3D、§4.1/§4.2 | P1 |
 | G8 | 审计 `actor` 语义修复 + 租户维度 + 统计/看板接口 | 模块 C/D/E 审计透视 | P1 |
 
-### 0.3 明确“不需要做”的部分（避免把 BSS 逻辑渗进 RSP 层）
+---
+
+### 0.3 第二轮必改项（N 清单：除 N6/N10 范围外，其余待实施）
+
+> 来源：`../esim42/todo/02` §7.2（N1–N17）、`01` §8（N11–N17）、`03` §3.3/§7/§11、`06` §13.1。
+> 第一轮的 G2–G20 已全部落地（见 §9）；下列各项在 rsp42 **均未落地**（**N6/N10 本轮明确不做**，见 §8.4 决策 11 与 §10.3 步骤 2.4），逐条实测结论见 §1bis / §2 / §3 对应的 N 小节与 §9.4。分步实施计划见 §10。
+
+| # | 改动 | 对应 esim42 需求 | 优先级 |
+|---|---|---|---|
+| N16 | `/upp`、`/upp/validate` 加 SAIP 版本上限 `≤(2,3)`；新增 `profiles.allowed_saip_versions: ["2.3"]`（**列表形态**，为双 major 预留）；超限 `409 saip_version_not_supported` | `01` §6.5 D2；`06` D2.11 | **P0** |
+| N12 | `loadUPP` 每一级回落都校验版本；无兼容模板时返回明确码且不生成 BPP；审计 `euiccProfileVersion` | `01` §6.5 D3/D5；`06` D2.12 | **P0** |
+| N1 | 审计单调游标：`AuditEntry.id` + `GET /audit?afterId=&limit=` | 模块 E 增量审计同步 | P1 |
+| N2 | 回调队列管理 API：`GET /callbacks`、`POST /callbacks/{id}/retry`、`POST /callbacks/retry-dead` | 模块 C/E 回调可靠性 | P1 |
+| N3 | 租户删除引用保护：`409 tenant_in_use` + `usage`；`?force=true&reassignTo=` | 模块 D 防误删 | P1 |
+| N6 | admin `bind` 默认 `127.0.0.1`；`X-RSP42-Reveal-Secrets: yes` 护栏（`secret_reveal_not_confirmed`） | 部署约束 | **范围外**（§8.4 决策 11、§10.3 步骤 2.4） |
+| N11 | 解析 `additionalEuiccProfilePackageVersions`；`Version`/`SupportedVersions`/`IsV3Capable`；移除 `SelectBestFor` 的 `major<=0` 回退 | SEC；`01` §8.4.1 | P1 |
+| N15 | `ServicesList` 补到 V2.3.1 的 24 项（`dfLink`/`cat-tp`/`get-identity`/`profile-a-x25519`/`profile-b-p256`） | `03` §3.1 能力位 | P1 |
+| N13 | Annex A 模板表（V2.3.1 的 13 个模板 OID）+ 约束校验 + V2.3.1 测试向量 | 模块 C 模板上架校验 | P1 |
+| N17 | `SdKey*` 与 `MncLen` 个性化 | MNO-SD 密钥集 / `EF.AD` | P1 |
+| N4 | `/upp/{name}/schema` 的 `fields[]` 增 `applicable`/`targets[]`/`requiredIn[]`/`note` | 模块 C 动态表单 | P2 |
+| N5 | `/upp/render` 接受未入库模板（`data` base64 DER） | 模块 C 上传向导 | P2 |
+| N7 | 契约补全：`profiles/stats` 的 `groupBy` 补 `profile_type`；`sort` 白名单补 `tenant`；删除 catch-all `error` | 模块 C/D 筛选器与 SDK | P2 |
+| N8 | SM-DS 事件管理写接口 `POST/DELETE /admin/api/v1/events` | 模块 B 边缘场景 | P2 |
+| N9 | HTTP 延迟直方图 `rsp42_admin_http_request_duration_seconds` 等 | SLO 看板 | P2 |
+| N10 | 密钥端点显式契约：`secret-bearing endpoint` 标注、`Cache-Control: no-store`、审计不记密钥 | 防密钥管道滥用 | **范围外**（随 N6，§10.3 步骤 2.4） |
+| N14 | SGP.22 Annex F 的 `PE-GenericFileManagement` 降级构造 | **esim42 明确范围外**，不预留代码位/开关 | — |
+
+> **与第一轮的优先级冲突（需注意）**：`TODO.md` 把“SAIP 完整模板表”与“`SdKey*`/`MncLen`”都记为 **P2**，而 esim42 把它们定为 **N13/N17 = P1**；反过来 `TODO.md` 的 `CancelSession` 验签/OID 与 Brainpool 两项 esim42 **未提出要求**。详见 §9.4。
+
+---
+
+### 0.4 明确“不需要做”的部分（避免把 BSS 逻辑渗进 RSP 层）
 
 | esim42 侧需求 | 归属 | 说明 |
 |---|---|---|
@@ -41,6 +76,10 @@
 | 用户名额扣减/回滚 | esim42 | 由 esim42 编排 `downloadOrder`/`cancelOrder`；rsp42 只保证幂等与状态机 |
 | 二维码渲染/发送（短信、邮件） | esim42 | rsp42 返回 `activationCode`/`qrContent` 字符串即可（`api/admin/profiles.go:288-305`） |
 | ICCID/IMSI/K/OPc 的**权威**数据管理与订户绑定 | esim42 | rsp42 只做**存储 + 校验 + 分配**（见 `TODO.md` §1） |
+| SAIP V3.x（V3.0–V3.4.1）的 PE、模板与 feature 覆盖（`df-snpn`、`iot`/`opt-iot` 的 IoT Minimal 语义、`df-5gprose`、`ssim`、`usatAppPairing`、5G ProSe 上报 Bit 8、带版本的模板 OID） | esim42 `01` §6.5 D1 + N16 | 基线 V2.3.1；超版本模板在 `/upp` 被拒（N16）。抬升上限需重新立项 |
+| SGP.22 Annex F 的 `PE-GenericFileManagement` 降级构造（N14） | esim42 `01` §6.5 D4 | 不服务不适配机群，在资格检查阶段干净拒绝；**不预留代码位或配置开关** |
+| 双 major 选择逻辑 | esim42 `06` §13.1 | 仅做**接口预留**（`allowed_saip_versions` 用列表、`SelectBestFor` 收版本集合），现阶段不实现双 major 选择 |
+| 管理 API 监听面收敛与密钥导出护栏（N6/N10） | 本次决策 11（§8.4） | **明确不做**：admin `bind` 保持现状，不引入 `X-RSP42-Reveal-Secrets` 护栏与 `Cache-Control: no-store`；安全边界完全由 esim42 承担（esim42 必须保证管理 API 不被反向代理/网关/前端暴露） |
 
 ---
 
@@ -190,6 +229,49 @@
 
 ---
 
+## 1bis. 第二轮阻塞级缺口 [P0]
+
+> 编号来自 esim42 的实际产出（`../esim42/todo/02` §7.2 与 `01` §8），与第一轮的 G 编号并行、不重号。
+> 本节刻意**不重排后续章节编号**：`§4`、`§8.1`、`§8.4`、`§0.1-4` 被迁移文件、`openapi.json` 描述与 `TODO.md` 外部引用，重排会使其失效。
+
+### N16. SAIP 版本上限（`/upp`、`/upp/validate`）
+
+**需求**：esim42 `01` §6.5 D1/D2 把 SAIP 基线定为 **V2.3.1（包内 `(2,3)`）**，并要求 rsp42 拒绝超基线模板。理由：在 V2.3.1 基线下 rsp42 **无法校验 V3.x 模板的 PE/服务语义**（`iotOptions` 必填、PE-IoT 必须紧跟 header、`df-5gprose`/`ssim` 的模板 OID 不在 V2.3.1 name 表语义里），而模板一旦被 `SelectBestFor` 选中就会被下发。
+
+**现状（实测）**：
+- `POST /upp` 由服务端解析 SAIP 版本后**直接入库，无任何上限**（`internal/api/admin/upp.go:113-121`）。
+- `POST /upp/validate` 只回 `{valid, inspection}`，没有超版本 warning（`internal/api/admin/upp_tools.go:73-93`）。
+- 配置中不存在 `allowed_saip_versions` / `max_saip_version`（`config/config.example.yaml`）。
+
+**建议改动**：
+- 新增配置 `profiles.allowed_saip_versions: ["2.3"]`。**必须是列表而不是标量**：现阶段语义等价于上限，但将来加 `"3.2"` 时不需要改配置形态、不需要迁移（esim42 `06` §13.1 R1 的零成本接口预留）。
+- `POST /upp`：`major > 2 || (major == 2 && minor > 3)` → `409 {"code":"saip_version_not_supported","message":"…(V2.3.1, encoded as 2.3)","details":{"templateVersion":"3.2","maxSupported":"2.3"}}`。
+- `POST /upp/validate`：保持 `valid: true`（便于“上传看看结构”），但在响应里给出明确 `warnings[]`。
+- 实现处需**显式注释**“V2.3.1 是文档修订号，与 V2.3 在包内同形”，避免后人试图精确到修订号。
+- ⚠️ **esim42 自身口径不一致**：`01` §6.5 D2 写的是标量 `profiles.max_saip_version: "2.3"`，而 `02` §7.2 N16 与 `06` §13.1 R1 写的是列表 `allowed_saip_versions: ["2.3"]`。**以列表形态实现**，并要求 esim42 修正 `01` 的表述，否则升级时会引入一次配置迁移。
+
+**验收**：上传 `(3,2)` → `409`；`(2,4)` → `409`；`(2,3)` → 通过；`/upp/validate` 对 `(3,2)` 返回 warning 且仍 `valid: true`。
+
+---
+
+### N12. 版本不匹配时必须干净失败（不得把不兼容模板交给 eUICC）
+
+**需求**：esim42 `01` §6.5 D3/D5：不服务不适配机群，且必须**在下载末期之前**干净失败，而不是让 eUICC 以 `unsupported-profile-version(31)` / `template-not-supported(9)` 拒绝（`01` §2.6.5）。在 esim42 的 D5 真机实测完成前，这是唯一的技术保障。
+
+**现状（实测）**：`internal/service/download.go:224-250` 的 `loadUPP` 解析顺序为“订单 pin → session（`pickUPP`）→ **租户默认** → **全局默认**”，其中**后两级完全不校验版本**；`pickUPP` 依赖 `internal/store/upp.go:113-127` 的 `SelectBestFor`。当注册表只有 `(2,3)` 模板、而 eUICC 声明 `profileVersion=(2,1)` 时，会拿到 `(2,3)` 模板并在下载末期被拒；用户看到的是“装卡失败”。
+
+**建议改动**：
+1. `loadUPP` 的**每一级回落**都做 `(major, minor)` 版本校验；
+2. 无兼容模板时返回明确状态码，且**不生成任何 BPP 段**；
+3. ES2+ 侧用 `8.2.6/3.8` + 可读 message（SGP.22 无直接对应码；**不要**复用 `8.8.5/4.10` 的 unsupported curve）；
+4. 管理 API 侧新增稳定错误码 `profile_version_not_supported`，写入 timeline 与审计；
+5. 审计 `interface=es9p, function=authenticateClient, outcome=Failed, detail={euiccProfileVersion, supportedVersions, lowestTemplateVersion}`；
+6. 当 eUICC 声明 `additionalEuiccProfilePackageVersions` 时记 `v3-capable-euicc` 指标/审计（与 N11 同处代码）。
+
+**验收**：注册表只有 `(2,3)` + `profileVersion=(2,1)` 的 eUICC → 返回可区分失败码、BPP 未生成、审计与指标可查；esim42 能映射为“设备不支持，请更换设备”。
+
+---
+
 ## 2. 重要缺口 [P1]
 
 ### G7. 把 SAIP 模板能力外露给 esim42（替代 Python 微服务）
@@ -205,7 +287,7 @@
 | `GET /upp/{name}/schema` | 返回可个性化字段清单：`iccid, imsi, k, opc, algorithm, spn, pin1, puk1, adm1, adm2, plmn[]`，含类型/必填/长度约束——esim42 前端据此渲染动态表单 |
 | `POST /upp/validate` | 上传 SAIP 二进制 → 返回 SAIP 版本、ProfileElement 摘要、header/GFSTE 一致性校验结果、SHA-256（模块 C “直接上传 TCA SAIP 文件”） |
 | `POST /upp/render`（或 `POST /profiles/preview`） | dry-run：给定 `uppTemplate + personalization` → 返回渲染后的 ICCID/IMSI/元素列表/字节长度/SHA-256，**不分配 ICCID、不落库**（前端预览与运营审核） |
-| `POST /upp/{name}/clone` | 从全局模板派生租户模板；
+| `POST /upp/{name}/clone` | 从全局模板派生租户模板 |
 | `POST /upp/{name}/promote` | 租户模板提升为全局（`tenant_id=NULL`），对应模块 D “提升为全局系统模板” |
 
 **同时需要补齐的个性化字段**（`internal/saip/personalization/personalization.go:13-28` 目前只有 `ICCID/IMSI/K/OPc/Algorithm/PIN1/PUK1/ADM1/ADM2/SPN` + Milenage/TUAK 常量）：
@@ -310,6 +392,118 @@
 
 ---
 
+### N1. 审计日志的单调增量游标
+
+**需求**：模块 E 的“RSP 审计透视”要求 esim42 能每 N 秒增量拉取新增审计事件。
+
+**现状（实测）**：`internal/store/audit.go:12-23` 的 `AuditEntry` **没有 `id`**；`GET /audit` 只有 `from`/`to` + `page`/`size`（`internal/api/admin/audit.go`）。按 `time > last_seen` 会漏掉同毫秒的并发写入，`>=` 会重复，而深翻页在并发写入下会漂移（`OFFSET` 语义不稳定）。
+
+**建议改动**：把 `audit_log` 现有的 rowid 显式暴露为 `id`（**单调递增且不回收**）；新增 `GET /audit?afterId=<int64>&limit=<int>`，与 `page`/`size` 互斥，按 `id ASC` 返回至多 `limit`（默认 500）条；响应 `{items[].id, nextAfterId, hasMore}`，空批时 `nextAfterId` 原样返回入参，`afterId` 是**排他**下界。
+
+**验收**：增量同步“至少一次 + 无重复”。
+
+---
+
+### N2. 出站回调队列的可见性与重投
+
+**需求**：模块 C/E 需要知道“回调死了”，并且能补投。
+
+**现状（实测）**：`callbacks` 表已有 `Enqueue/Get/Due/MarkSent/MarkFailed/MarkRetry/Stats`，`/metrics` 也暴露队列深度，但**没有任何管理 API**（`internal/api/admin/admin.go` 的 `Mount` 中不存在 `/callbacks`）。esim42 后端停机超过 `max_attempts × retry_interval`（默认 5 × 30s = 2.5min）后，回调进入死信，下载/安装状态**永久丢失**且运维没有入口查看或补投。
+
+**建议改动**：
+- `GET /callbacks?state=pending|sent|failed|dead&tenant=&iccid=&from=&to=&page=&size&sort=created_at`，`payload` 返回**已解析的 JSON 对象**（不是原始字符串）。
+- `POST /callbacks/{id}/retry` → `200 {id,state:"pending",attempts:0,nextAttemptAt}` / `404 not_found` / `409 conflict`（状态不是 dead/failed）。
+- `POST /callbacks/retry-dead`，body `{tenant,before,limit}` → `{requeued}`。
+- 重投重置 `attempts = 0` 并立即入队；写审计 `function=retryCallback`。
+
+**验收**：死信可查、可补投；补投不产生重复的状态推进。
+
+---
+
+### N3. 租户删除的引用保护
+
+**需求**：模块 D“删除运营商”必须是两阶段、有保护的操作。
+
+**现状（实测）**：`internal/store/tenant.go:112-114` 的注释明写 “Resources keep their tenant_id (dangling by design: the registry is a control-plane view, not a referential parent)”；`internal/api/admin/tenants.go:137-149` 直接删除并返回 204。删除后 `GET /profiles?tenant=<已删>` 仍返回资源，而 `/upp?tenant=<已删>` 返回空，行为不一致且不可恢复。
+
+**建议改动**：无 `force` 且存在任何引用 → `409 {"code":"tenant_in_use", "message":…, "usage":{"profiles":…,"templates":…,"poolEntries":…,"batches":…,"personalization":…}}`；`?force=true&reassignTo=<tenant|"">` 先把资源 `tenant_id` 批量迁移（空串 = 平台默认）再删，未注册的目标 → `400 unknown_tenant`；`GET /tenants/{id}` 增 `usage`，供 esim42 在删除前预警。esim42 侧 `credential_assignments` 也应计入 usage（`03` §11）。
+
+**验收**：误删被拦；`force` 路径可审计地迁移或显式接受孤儿。
+
+---
+
+### N6. 管理 API 监听面收敛与密钥导出加固（部署约束）—— **【不做】**
+
+> **决策**：本项**明确范围外**（§8.4 决策 11、§10.3 步骤 2.4），本轮不实施。以下“现状/建议改动/验收”仅保留为历史分析与将来重启时的参考，**不作为待办**。
+
+**需求**：管理 API 无鉴权是既定前提（§0.1-4），因此必须用**默认值与护栏**把风险面收敛。
+
+**现状（实测）**：`config/config.example.yaml:19,73` 的 admin `bind` 均为 `0.0.0.0`；`GET /personalization/export` 与 `?reveal=1`（`internal/api/admin/personalization.go`）没有显式确认；全仓无 `Cache-Control`。
+
+**建议改动（本轮不做）**：
+1. `config/config.example.yaml` 与 `docs/operations.md` 把 admin `bind` 默认改为 `"127.0.0.1"`，并写明“跨主机部署必须用容器网络或 mTLS 反代，不得直接暴露”。
+2. 启动时若 `admin.bind` 不是 loopback 且 `audit.enabled == false`，打 `WARN`（“unauthenticated management API exposed on non-loopback address”）。
+3. `GET /personalization/export` 与 `?reveal=1` 必须带 `X-RSP42-Reveal-Secrets: yes`，否则 `403` + `secret_reveal_not_confirmed`。若将来重启，护栏须同时覆盖 `GET /personalization?reveal=1`（该分支同样回明文 K/OPc）。
+4. `/metrics` 与 `/healthz` 保持无鉴权（可接受）。
+
+**验收（仅在重启该项时适用）**：即使 esim42 侧配置失误，误配置的反代也无法直接拖走全站 K/OPc。本轮的安全边界完全由 esim42 承担。
+
+---
+
+### N11. 解析 `additionalEuiccProfilePackageVersions`（仅用于 SEC）
+
+**需求**：`01` §6.5 D5 需要判断某台设备是否 “V3-capable”，以便在 SEC 阶段决定是否放行。
+
+**现状（实测）**：全仓 grep `additionalEuicc*` **零命中**；`internal/store/upp.go:114-116` 的 `major <= 0 → AnyForTenant()` 回退仍在。
+
+**建议改动**：`internal/rsp` 的 `EuiccInfo2` 增 `additionalEuiccProfilePackageVersions [15] SEQUENCE OF VersionType OPTIONAL`；新增 `type Version struct{ Major, Minor int }`、`SupportedVersions()` = `{profileVersion} ∪ additional…`、`IsV3Capable()`；通过 session/timeline 把 `(profileVersion, additional[], uiccCapability)` 暴露给 esim42；**移除 `major<=0` 的 `AnyForTenant()` 回退**（“未知版本”不应静默挑模板）；`SelectBestFor` 入参改为版本集合（**接口预留**，**不要**现在实现双 major 选择逻辑）。
+
+**验收**：声明 `(2,3)` + `additional=[{3,2}]` 的 eUICC 产生 `v3-capable-euicc` 标记，且 esim42 可从 timeline 读到该集合。
+
+---
+
+### N15. `ServicesList` 索引表补全到 V2.3.1 的 24 项
+
+**需求**：`03` §3.1 的 `required_capability_bits_json` 与资格检查依赖完整的服务位；SGP.22 v2.7 Annex F 建议 SM-DP+ 在配置 service n°125 / DF SAIP 前检查 `getIdentity`（`uiccCapability` 位 22），其模板侧对应物正是 index 21。
+
+**现状（实测）**：`internal/saip/header.go:101-119` 的 `Svc*` 常量止于 `SvcBERTLV`(18)，`internal/saip/header.go:237` 的循环上界同为 18；`serviceNames`（`internal/saip/header.go:225-231`）同样止于 18。索引 0–18 与 V2.3.1 的声明顺序逐项一致，因此是**纯扩展**。
+
+**建议改动**：新增 19 `dfLink`、20 `cat-tp`、21 `get-identity`、22 `profile-a-x25519`、23 `profile-b-p256`（按 V2.3.1 ASN.1 拼写），引入 `svcMax` 并把它作为 `Services()` 的循环上界；补 24 项表驱动单测；顺带修正 `bertlv` → 规范拼写 `ber-tlv`（这是 `/upp/{name}/decoded` 的**对外契约变更**，需同步 esim42 的静态映射与契约快照）。**不要**为 V3.2 才引入的 5 项（`suciCalculatorApi`/`dns-resolution`/`scp11ac`/`scp11c-authorization-mechanism`/`s16mode`）预留常量。
+
+**顺带一处真实缺陷**：`SvcTUAK256` 只声明、从未置位（`internal/saip/header.go:117`、`:230`），而 `RebuildMandatoryServices` 只按 `algo==1/2/3` 置 Milenage/TUAK128/USIM-test（`internal/saip/header.go:143-145`）→ 32 字节 K 的 TUAK-256 会得到**错误的服务位**。可对齐 pySim 的 `len(key) == 16 vs 32` 判定。
+
+**验收**：含 `get-identity` 的 V2.3.1 模板在 `/upp/{name}/decoded` 的 `services[]` 中可见。
+
+---
+
+### N13. Annex A 模板表（V2.3.1 范围）+ 约束校验 + 测试向量
+
+**需求**：模块 C 的“上传 SAIP”必须能在 rsp42 侧校验，且 rsp42 不能把不兼容/不合规的模板放进注册表。
+
+**现状（实测）**：`internal/saip/` 下没有 `templates.go`（只有 `doc.go`/`element.go`/`files.go`/`header.go` 与 `personalization/`），`TODO.md` §2 记为未实现 → rsp42 只能改模板里已声明的文件，无法按 Annex A 校验，也没有 `SIZE(...)`/`INTEGER(0..n)` 之类的值域约束校验。
+
+**建议改动**：
+1. **V2.3.1 Annex B 模板表**：13 个模板 OID，全部**无版本维度**（另加 spec-version OID `2.23.143.1.1.2`）。V2.3.1 没有版本化子弧，因此基线内**没有模板版本失败面**。
+2. `/upp/validate` 增约束校验（对齐 pySim `validation.py`）：首个 PE 必须 `header`、第二个 `mf`、末位 `end`；`header/mf/end/cd/telecom/usim/isim/csim/opt-*/df-saip/df-5gs` 单例；可选 PE 顺序（`opt-usim` 在 `usim` 后、`gsm-access`/`phonebook`/`df-5gs`/`df-saip` 在 `usim` 后、`opt-csim` 在 `csim` 后）；mandatory-services ↔ PE 存在性一致；AKA 算法 ↔ 服务位一致（含 TUAK-128/256）；`identification` 唯一；`File` 内 `doNotCreate` 互斥且 `fileDescriptor` 优先；**`gfste[]` 必须全部落在 13 个模板 OID 内，且拒绝带版本子弧**（如 `2.23.143.1.2.13.2`，说明来自更高规范）；非 V2.3.1 PE（`BE`/`BF20`/`BF21`/`BF1F`/`BF22`）带 `mandated` → warning。
+3. `testdata/upp/` 补 **V2.3.1 专用测试向量**（含 DF 5GS、DF SAIP、`get-identity` 服务位）。
+4. 顺带修 `FileHandle.Body()` **忽略 `fillFileOffset`** 的问题（`internal/saip/files.go:59-67`）：offset 分片的模板文件无法被 `Body()` 忠实还原，需补定向测试。
+
+**验收**：缺 `end`、PE 顺序错、带版本子弧的模板 → `/upp/validate` 给出明确错误；现有 TS.48 向量仍全部通过。
+
+---
+
+### N17. `SdKey*` 与 `MncLen` 个性化
+
+**需求**：真实 MNO-SD 场景需要注入 GP 安全域密钥集；`EF.AD` 的 MNC 长度需要可个性化。二者在 V2.3.1（`PE-SecurityDomain`、`EF.AD`）中都已存在，与基线无关。
+
+**现状（实测）**：`TODO.md` §2 记为未实现；`internal/saip/personalization/personalization.go` 与 `internal/saip/personalization/csv.go` 中无对应字段（当前只覆盖 ICCID/IMSI/K/OPc/算法/PIN/PUK/ADM/SPN/PLMN/MSISDN/ACC/`filePatches`）。
+
+**建议改动**：新增 `SdKey*`（SD/MNO-SD 密钥集、KVN、key usage qualifier，落在 `PE-SecurityDomain`）与 `MncLen`（`EF.AD` bit 4，FID `6F3A`）；同步 `/upp/{name}/schema` 的字段目录（与 N4 一起解决“目录 ≠ 模板可绑定字段”）；更新 `docs/coverage.md` 的 SAIP 个性化行。
+
+**验收**：含 `PE-SecurityDomain` 的模板可注入 SD 密钥集；`EF.AD` 的 MNC 长度可个性化。
+
+---
+
 ## 3. 可选 [P2]
 
 | # | 改动 | 说明 |
@@ -320,6 +514,35 @@
 | G16 | 聚合与导入补强 | 新增 `GET /eids`（按 EID 聚合设备与其 Profile）；`/profiles/import` 支持 CSV 上传与逐行错误报告（现为 JSON list，`admin/export.go:89-119`）。**事件查询部分因决策 6 升级为 P1，见 G20** |
 | G17 | 文档一致性 | `README.md` 与 `TODO.md` 曾对 ASN.1 binding 的表述不一致（一个称已实现、一个称 out of scope），需对齐，否则 esim42 的接口契约判断会出错 |
 | G18 | 模板版本与回滚 | `upp_templates` 每次 PUT 覆盖同名模板（`00003_upp_templates.sql`）。为此增加 `upp_template_versions` 归档与回滚接口（已实现） |
+
+### 3.1 第二轮可选项（N4 / N5 / N7–N10）
+
+| # | 改动 | 现状（实测）与建议 |
+|---|---|---|
+| N4 | `/upp/{name}/schema` 的模板级字段可用性 | `fields[]` 是**全局静态目录**（`internal/api/admin/upp_tools.go:20-29` 的 `uppFieldSchema`），与具体模板无关 → 模板里没有 `EF.SPN` 时编辑器仍展示 `spn`；`iccid.required=true`（`internal/api/admin/upp_tools.go:33`）还与凭据池流程冲突。**建议**：每项增 `applicable`(bool) / `targets[]`（命中的 EF/PE 名，空数组 = 不适用）/ `requiredIn[]`（`["render"]` \| `["render","import"]` \| `[]`）/ `note`；`applicable` 由 `inspection.files[]`/`elements[]` 推导；保留 `required`（= `requiredIn.includes("render")`）以兼容 |
+| N5 | `/upp/render` 支持未入库模板 | 现状强制 `name`（`internal/api/admin/upp_tools.go:98-121`，空则 400），上传向导无法“校验 → 预览 → 保存”。**建议**：请求体接受 `{name,…}` 或 `{data:"<base64 DER>",…}` 二选一；同时给出 → `400 invalid_request`；`data` 路径不得落库，审计 `function=renderUPP, subject="<ad-hoc>"` |
+| N7 | 统计与排序参数的契约补全 | 实测：openapi 中 `profiles/stats` 的 `groupBy` enum = `[state, day, tenant]`，**缺 `profile_type`**（而 `internal/store/stats.go:36-41` **已支持** `profile_type`）；`components.parameters.sort` 的 enum 与白名单（`internal/store/profile.go:217`）**均缺 `tenant`/`-tenant`**；`internal/api/admin/admin.go:181` 仍有 catch-all `"error"` 码。**注**：esim42 称 `/iccid-pool/stats` 未文档化 `tenant`，实测**已列**，该项无需改动 |
+| N8 | SM-DS 事件的管理写接口 | 现仅只读 `GET /events`（`internal/api/admin/ds.go:19`），写入只走 ES12（mTLS + Registered-ID SAN）。**建议**：`POST /events`（`eventId` 省略时生成 `EVT-<…>`；重名 → `409 event_id_in_use`）、`DELETE /events/{id}`；审计 `function=registerEvent`。**不阻塞首期**（首期靠 `ConfirmOrder` 自动注册） |
+| N9 | HTTP 延迟直方图 | `internal/metrics/metrics.go` 无 Histogram 类型，esim42 无法对重查询（`/profiles/export`、`/profiles/{iccid}/timeline`、`/upp/{name}/decoded`）做 SLO。**建议**：`rsp42_admin_http_request_duration_seconds{route,method,status}`（`route` 用 chi 的 pattern 模板，避免高基数）与 `rsp42_es2p_http_request_duration_seconds{function}` |
+| N10 | 明文密钥路径的显式契约 | **【不做】**（§8.4 决策 11、§10.3 步骤 2.4）：实测无 `Cache-Control`、`docs/interfaces.md` 未标注；本轮维持现状，不引入 `X-RSP42-Reveal-Secrets` 护栏、`Cache-Control: no-store` 与 secret-bearing 标注，安全边界由 esim42 承担 |
+
+### 3.2 代码级一致性修复（C 清单，与 N 清单并行）
+
+> 这些是核对 SGP.22 v2.7 原文与代码时实测发现的问题，esim42 未逐条点名，但会直接影响其上层的分支判断与契约生成。
+
+| # | 问题 | 现状（实测） | 建议 |
+|---|---|---|---|
+| C1 | ES2+ `downloadOrder.pprIds` 与“零 JSON body 扩展”原则冲突 | `internal/api/es2plus/handlers.go:59-67` 仍接受该私有 body 成员；而 SGP.22 v2.7 Table 22 的 DownloadOrder Additional Input Data **只有 `eid`/`iccid`/`profileType`**（`pprIds` 仅出现在 §5.7 的 `RulesAuthorisationTable`），与 §8.2 的自我约定矛盾 | **已定：选 ①** —— **删除该成员**，PPR **只走管理 API / `profiles.ppr_ids`**；同步删除 PPR 覆盖分支与 `config` 中“订单可覆盖 pprIds”的注释，`docs/interfaces.md`/openapi 不再声明该私有扩展。见 §10.6 |
+| C2 | `profileType` 解析静默降级 | `internal/api/es2plus/handlers.go:293-296`：不含 `/` 的值直接 `return "", nil`，回落版本选择 | 至少记审计/指标 `profileType-unparsed`，否则运营商拼写错误会表现为“下发了他人的模板”而不是明确失败 |
+| C3 | `8.2.1/3.8` 语义重载 | `internal/rsp/errors.go:61` 同时承载“池耗尽”与“租户 `profile_quota` 用尽”，且 `8.2.1/3.8` 不在 Table 24 的 DownloadOrder 专有码表内（esim42 `02` §10 q2 已提问） | 拆码（如 `8.2.5/3.7` No more Profile available），或把配额错误做成结构化字段 |
+| C4 | `8.2.6/3.7` 语义错位 | `internal/rsp/errors.go:62`：`8.2.6` 是 Matching ID、`3.7` 是 Unavailable，用于“数据库更新失败”不贴切 | 换用更贴切的主体/原因 |
+| C5 | `internal/asn1/doc.go` 陈述过期 / 两层并行 ASN.1 抽象 | `internal/asn1/doc.go:1` 仍写 “wraps `github.com/euicc-go/bertlv`”，但该包实际自成一层，仅 `internal/asn1/construct.go:7` 还 import bertlv（`internal/rsp/types.go:15`、`internal/rsp/notification.go:6`、`internal/crypto/ecdsa.go:15` 亦直接 import） | 修 doc；与 `TODO.md` §3.1「收紧 `bertlv` 抽象」合并，并提到与 N11/N12 同批处理 |
+| C6 | `FileHandle.Body()` 忽略 `fillFileOffset` | `internal/saip/files.go:59-67` 只拼接 `fillFileContent`；`SetBody`（`:71-81`）会删除 offset 并线性化 | 补 offset 分片模板的定向回归测试（已并入 N13 第 4 条） |
+| C7 | `ServicesList` 命名 `bertlv` vs 规范 `ber-tlv` | `internal/saip/header.go:231` | 与 N15 同批修正；这是 `/upp/{name}/decoded` 的对外契约变更 |
+| C8 | BER 不定长（indefinite length）被显式拒绝 | `internal/asn1/tlv.go:152`；长度字段 `> 4` 字节亦报错（`internal/asn1/tlv.go:155-157`）。esim42 `01` §4.1 称 SAIP 使用 `AUTOMATIC TAGS` + `EXTENSIBILITY IMPLIED`、多字节 high-tag-number，且实际数据会出现不定长编码 | 若采纳该结论则需支持；否则在 `TODO.md` 登记为「已知边界 + 影响面」，与 `TODO.md` §4.3 的 `bertlv` 多字节长度边界单测合并 |
+| C9 | V3.4/3.4.1 的 PE tag 常量缺失且未登记 | `bf1f`（df-5gprose）、`bf22`（ssim）在 `internal/saip` **零命中**，`TODO.md` 也无 V3 相关条目 → 能无损解析，但对 `PEName`/`isTemplatePE`/`RebuildMandatoryGFSTEList`/`/upp/{name}/decoded` 不可见 | 至少在 `TODO.md` 登记为**明确范围外**（对应 §0.4），避免后人当成遗漏缺陷 |
+| C10 | 无值域约束校验 | 树结构不查 schema，无 `SIZE(...)`/`INTEGER(0..n)` 校验，也没有 pySim `validation.py` 的对等物 | 归入 N13 的实现范围 |
+| C11 | `RebuildMandatoryServices` 覆盖不全且边界未文档化 | `internal/saip/header.go:125-146` 只处理 7 位；GFSTE 由独立的 `RebuildMandatoryGFSTEList`（`internal/saip/header.go:170`）负责 | N15 补到 24 项后写明两者职责边界，否则会出现“补了常量但不会自动置位” |
 
 ---
 
@@ -352,6 +575,13 @@ CREATE TABLE idempotency (key TEXT NOT NULL, endpoint TEXT NOT NULL, tenant_id T
 
 -- G6（凭据池，P1）
 -- personalization: 主键由 iccid 改为 id INTEGER PK，iccid 变为可空唯一列
+
+-- 第二轮（N 清单）的数据库影响：均为“无需新列”，只有暴露与查询语义的改动
+-- N1  审计游标：不新增列；把 audit_log 现有 rowid 显式暴露为 id（单调、不回收）
+-- N2  回调队列：callbacks 表及其 Enqueue/Due/MarkSent/MarkFailed/MarkRetry/Stats 已存在（00001），无需迁移
+-- N3  租户删除保护：不新增列；需按 tenant_id 对 profiles / upp_templates / iccid_pool / download_batches / personalization 做引用计数与批量改属
+-- N11 SEC：不新增列；additionalEuiccProfilePackageVersions 可复用 session/timeline 承载（或由 session 新增 JSON 列）
+-- N16 版本上限：不落库；只在 /upp 的写入路径做校验（配置 profiles.allowed_saip_versions）
 ```
 
 > 注：本节以下变更为草案。项目“无历史遗留、不做向后兼容代码”，但**迁移文件本身是追加式**的：
@@ -384,7 +614,25 @@ CREATE TABLE idempotency (key TEXT NOT NULL, endpoint TEXT NOT NULL, tenant_id T
 | GET | `/events`（SM-DS admin 监听） | 增 `tenant`/`since`/`until`/`expired` 过滤与排序；返回调用方 OID 与级联标记 | G20 |
 | GET | `/metrics` | Prometheus（P1） | G11 |
 
-> 管理 API **不引入鉴权**（见 §0.1-4）。因此 `/personalization` 的 K/OPc 导出（`?reveal=1`、`/export`）只依赖内网边界，esim42 必须确保该 API 不对外暴露/不被网关转发。
+### 5.1 第二轮（N 清单）新增/变更
+
+| 方法 | 路径 | 变更 | 对应 |
+|---|---|---|---|
+| GET | `/audit?afterId=&limit=` | 单调增量游标；响应含 `items[].id` / `nextAfterId` / `hasMore`；与 `page/size` 互斥、按 `id ASC` | N1 |
+| GET | `/callbacks` | 新端点：回调队列（`state=pending\|sent\|failed\|dead`，`tenant`/`iccid`/时间范围/分页/排序，`payload` 返回已解析对象） | N2 |
+| POST | `/callbacks/{id}/retry`、`/callbacks/retry-dead` | 单条/批量重投；重置 `attempts`，审计 `retryCallback` | N2 |
+| DELETE | `/tenants/{id}` | 改为存在引用时 `409 tenant_in_use` + `usage`；新增 `?force=true&reassignTo=<tenant\|"">` | N3 |
+| GET | `/tenants/{id}` | 响应增 `usage`（同 `tenant_in_use` 结构） | N3 |
+| POST | `/upp` | 超版本 → `409 saip_version_not_supported`（+`details.{templateVersion,maxSupported}`） | N16 |
+| POST | `/upp/validate` | 超版本时保持 `valid:true` 但返回 `warnings[]` | N16 |
+| GET | `/upp/{name}/schema` | `fields[]` 增 `applicable`/`targets[]`/`requiredIn[]`/`note`；`iccid.required` 与凭据池流程解耦 | N4 |
+| POST | `/upp/render` | 请求体接受 `data`（base64 DER）作为 `name` 的替代；二者同时给出 → `400` | N5 |
+| GET | `/profiles/stats`、`/audit/stats` | `groupBy` enum 补全（profiles 增 `profile_type`）；`sort` 白名单增 `tenant`/`-tenant`；删除 catch-all `error` 码 | N7 |
+| POST/DELETE | `/events`、`/events/{id}` | SM-DS 事件管理写接口（重名 → `409 event_id_in_use`），审计 `function=registerEvent` | N8 |
+| GET | `/personalization`、`/personalization/{iccid}?reveal=1`、`/personalization/export` | 需 `X-RSP42-Reveal-Secrets: yes`，否则 `403 secret_reveal_not_confirmed`；响应 `Cache-Control: no-store`；审计不记密钥 | N6/N10（**不做**，§10.3 步骤 2.4） |
+| — | （无端点） | `profile_version_not_supported` 作为 timeline/审计可见的稳定错误码 | N12 |
+
+> 管理 API **不引入鉴权**（见 §0.1-4）。因此 `/personalization` 的 K/OPc 导出（`?reveal=1`、`/export`）只依赖内网边界，esim42 必须确保该 API 不对外暴露/不被网关转发。N6/N10 的“默认值与护栏”补强**本轮明确不做**（§8.4 决策 11、§10.3 步骤 2.4），安全边界完全由 esim42 承担。
 
 ---
 
@@ -402,9 +650,20 @@ CREATE TABLE idempotency (key TEXT NOT NULL, endpoint TEXT NOT NULL, tenant_id T
 | 全部 | 越权状态码：ICCID → `8.2.1/1.2`；Profile Type/模板 → `8.2.5/1.2` | Table 24 / §5.3.1 |
 | 回调 | 载荷增 `tenantId`、`externalRef`、`matchingId`（**这是 rsp42→Operator 的自有通知**，不受 ES2+ 输入约束） | 纯增量 |
 
+### 6.1 第二轮（N 清单）的 ES2+ 影响
+
+| 函数 | 变更 | 规范依据 / 兼容性 |
+|---|---|---|
+| `downloadOrder` | **移除私有 body 成员 `pprIds`**（**已定**，见 C1/§10.6）：PPR 只走管理 API / `profiles.ppr_ids` | SGP.22 v2.7 Table 22 的下载输入仅 `eid`/`iccid`/`profileType`；`pprIds` 只出现在 §5.7 的 `RulesAuthorisationTable`。见 §8.2 与 C1 |
+| `downloadOrder` | `profileType` 不含 `/<template>` 时**不再静默回落**：至少记审计/指标（`profileType-unparsed`），避免拼写错误表现为“下发了他人的模板” | 见 C2；与 N16/N12 同为“不静默降级”原则 |
+| `authenticateClient`（间接，下载末期之前） | 无兼容模板时以 `8.2.6/3.8` + 可读 message 干净失败，且**不生成任何 BPP 段** | N12；SGP.22 无直接对应码，**不要**复用 `8.8.5/4.10`（unsupported curve） |
+| 全部 | 版本上限在 `/upp` 侧拦截（N16）是**第一道防线**，ES2+/ES9+ 的运行期校验（N12）是第二道；两者必须同时存在 | N16/N12 |
+
 ---
 
 ## 7. 实施里程碑建议
+
+### 7.1 第一轮（G 清单）—— 已全部落地
 
 | 里程碑 | 内容 | 阻塞 esim42 的什么 |
 |---|---|---|
@@ -413,7 +672,19 @@ CREATE TABLE idempotency (key TEXT NOT NULL, endpoint TEXT NOT NULL, tenant_id T
 | **M3（模板与个性化）** | G7 schema/validate/render/clone + PLMN 等字段、G6 凭据池/IMSI 池 | 模块 C 的可视化模板创建与批量开卡 |
 | **M4（运维与契约）** | G8 统计接口、G10 OpenAPI/错误码、G11 metrics、G12 BEGIN IMMEDIATE | 模块 C/D 看板与 esim42 SDK 生成 |
 
-**验收基线**：esim42 侧完成一次端到端（匿名领取 → LPA 下载 → 安装 → 看板可见 → 审计可查 → 取消/回池）的联调，全链路租户归属正确、幂等重放安全。
+### 7.2 第二轮（N 清单）—— 建议顺序
+
+esim42 `02` §7.2 与 `06` §13.1 给出的顺序，与第一轮的 M1–M4 **并行不冲突**：
+
+| 批次 | 内容 | 阻塞 esim42 的什么 |
+|---|---|---|
+| **批 1（P0）** | **N16 → N12**（同批做 N11 的接口预留：`Version` 集合入参、移除 `major<=0` 回退） | esim42 M2 的硬性退出条件；esim42 M3 的“不服务不适配机群”承诺 |
+| **批 2（P1，防数据丢失/误操作）** | **N2 → N3 → N1**（**N6 范围外**，见 §10.3 步骤 2.4） | 模块 C/E 的回调可靠性、模块 D 的误删防护、模块 E 的增量审计同步 |
+| **批 3（P1，SAIP 能力）** | **N15 → N13 → N17** | 模块 C 的模板上架校验与动态表单、MNO-SD 密钥集 |
+| **批 4（P2）** | **N4 → N5 → N7 → N8 → N9**（**N10 随 N6 范围外**） | 模块 C 的上传向导体验、契约生成与 SLO |
+| **并行（工程化）** | C1–C11（§3.2）与 §3 的文档项 | 契约漂移、错误分支正确性 |
+
+**验收基线**：esim42 侧完成一次端到端（匿名领取 → LPA 下载 → 安装 → 看板可见 → 审计可查 → 取消/回池）的联调，全链路租户归属正确、幂等重放安全；外加 esim42 `02` §9 的 A1–A25（其中 A13–A17 依赖批 3 的 N13/N15/N17）。
 
 ---
 
@@ -429,6 +700,10 @@ CREATE TABLE idempotency (key TEXT NOT NULL, endpoint TEXT NOT NULL, tenant_id T
 | 4 | K/OPc 是否允许 rsp42 生成 | **esim42 生成，rsp42 只存与注入** | rsp42 不提供密钥生成/派生端点；G7 的 `/schema`、`/render` 只承载字段与校验 |
 | 5 | 部署形态 | **同机同网**（esim42 后端 ↔ rsp42 管理 API 内网直连），esim42 前端只经 esim42 后端 | 管理 API **不鉴权**（§0.1-4，原 G1 排除）；存储固定 SQLite 单进程，PostgreSQL 与多副本明确不做（§8.4） |
 | 6 | SM-DS 是否启用 | **启用**：esim42 经 rsp42 走 ES12 事件注册/删除，并以 `/events` 做透视（支撑模块 B 的“无激活码推送”） | rsp42 的 SM-DS 能力已具备（`internal/api/es12`、`internal/api/admin/ds.go`），无需新建；但事件查询/清理需补齐，G16 中的事件部分**升级为 P1**（新增 G20） |
+| 7 | SAIP 基线版本 | **V2.3.1（包内编码 `(2,3)`）**（esim42 `01` §6.5 D1）；rsp42 据此增加版本上限（N16）与运行期兼容性干净失败（N12） | 新增 N16/N12（第二轮仅有的两个 P0）；SAIP V3.x 与 Annex F 降级构造（N14）列为范围外（§0.4） |
+| 8 | 版本上限的配置形态 | **列表** `profiles.allowed_saip_versions: ["2.3"]`，**不是**标量 `max_saip_version` | 与 esim42 `06` §13.1 R1 一致（零成本预留，将来加 `"3.2"` 不需迁移）；需 esim42 修正 `01` §6.5 D2 的标量表述 |
+| 9 | 双 major 选择逻辑 | **明确不做**，只做接口预留：`SelectBestFor` 收版本集合、移除 `major<=0` 的 `AnyForTenant()` 回退 | N11 的落地形态；esim42 `06` §13.1 已把双 major 登记为“未来规划”，现阶段不得实现 |
+| 10 | 回调队列是否可重投 | **做**（N2）：新增管理 API，让死信可查、可补投 | rsp42 队列 API + esim42 对账任务共同构成回调可靠性；`06` 的 SLO 以此为前提 |
 
 ### 8.2 决策 3 的规范依据（备查）
 
@@ -443,7 +718,7 @@ CREATE TABLE idempotency (key TEXT NOT NULL, endpoint TEXT NOT NULL, tenant_id T
 - **esim42 侧：中。** TLS 握手早于 HTTP 请求，无法按请求选证书 → 每运营商一个 `http.Client`/transport（`NewClient(..., hc)` 已支持，`internal/api/es2plus/clientlib.go:27-30`）。主要成本在**证书生命周期**：签发、分发、密钥保管、轮换、撤销、运营商上下线。
 - **结论（已收敛为“不做”）**：决策 3 选择 `functionRequesterIdentifier`，且 §8.4 决策 8 明确**不做**每运营商证书。本节其余内容只保留为历史分析，不再作为候选方案评估；若将来真出现“运营商直连 rsp42”的需求，应重新立项评估，而不是在此处补丁式启用。
 
-### 8.4 明确不做（决策 7–10）
+### 8.4 明确不做（决策 7–11）
 
 | # | 问题 | 结论 | 落地表现 |
 |---|---|---|---|
@@ -451,12 +726,17 @@ CREATE TABLE idempotency (key TEXT NOT NULL, endpoint TEXT NOT NULL, tenant_id T
 | 8 | 多副本部署 | **明确不做**。单进程、单数据库文件 | 无 leader 选举、无分布式锁；GC/ticker 在进程内。横向扩容需重新立项 |
 | 9 | 每运营商客户端证书 | **明确不做**。ES2+ 租户归属只用 `functionRequesterIdentifier` 映射 | §8.3 降级为历史备查；“运营商直连 rsp42”不在支持范围 |
 | 10 | rsp42 侧限流 | **明确不做**（不提供 429 语义） | 限流由 esim42 前置承担；rsp42 只做资源级配额硬校验（`tenants.template_quota` / `profile_quota`） |
+| 11 | 管理 API 监听面收敛与密钥导出护栏（N6/N10） | **明确不做**。admin `bind` 默认值保持现状；不引入 `X-RSP42-Reveal-Secrets: yes` 护栏、`Cache-Control: no-store` 与 secret-bearing 标注 | 安全边界完全由 esim42 承担（§0.1-4、§8.1 决策 5）：esim42 必须保证管理 API 不被反向代理、网关或前端暴露。见 §10.3 步骤 2.4 |
 
-> 说明：这四项此前在本文中写作“不实施/仅备查/未来加固”，容易被读成“以后可能做”。现统一收敛为**范围外**：文档不再把它们列为待办，代码也不再为它们预留会被误用的配置语义。
+> 说明：前四项此前在本文中写作“不实施/仅备查/未来加固”，容易被读成“以后可能做”；决策 11 为本次复核后新增的范围收敛项。现统一收敛为**范围外**：文档不再把它们列为待办，代码也不再为它们预留会被误用的配置语义。
 
 ---
 
 ## 附：现状能力对照（esim42 需求 → rsp42 是否已具备）
+
+### 附一：第一轮（G 清单）改造前快照
+
+> 下表是**改造前**的判定，保留为历史对照；实际落地情况见 §9。
 
 | esim42 需求 | 现状 | 结论 |
 |---|---|---|
@@ -479,11 +759,37 @@ CREATE TABLE idempotency (key TEXT NOT NULL, endpoint TEXT NOT NULL, tenant_id T
 | OpenAPI 契约 | 最小手写描述 | ❌ G10 |
 | 监控指标 | 仅 healthz/readyz | ❌ G11 |
 
+### 附二：第二轮（N 清单）当前判定
+
+> 判定基于本仓库当前代码（2026-10-14，commit `f3232da` 之后）。G 清单对应项的状态见 §9。
+
+| esim42 需求（N 编号） | 现状 | 结论 |
+|---|---|---|
+| OpenAPI 契约完整 | 完整 OpenAPI 3.0（`internal/api/admin/openapi.json`，`//go:embed` + 校验测试） | ✅ G10；N7 的 enum 补全待做 |
+| 监控指标 | `internal/metrics` + 管理监听 `GET /metrics` | ✅ G11；N9 的延迟直方图待做 |
+| SAIP 版本上限（N16） | 无（任意版本可入库） | ❌ **P0** |
+| 运行期版本兼容失败（N12） | 回落不校验版本，会把不兼容模板交给 eUICC | ❌ **P0** |
+| 审计单调游标（N1） | `AuditEntry` 无 `id`；只能按时间 + 分页 | ❌ P1 |
+| 回调队列管理 API（N2） | 无（仅内部方法与 `/metrics` 深度） | ❌ P1 |
+| 租户删除引用保护（N3） | 悬空引用删除 | ❌ P1 |
+| 管理 API 密钥导出护栏（N6/N10） | 无（仅 `?reveal=1` 约定） | 范围外（§8.4 决策 11、§10.3 步骤 2.4） |
+| `additionalEuiccProfilePackageVersions`（N11） | 未解析 | ❌ P1 |
+| `ServicesList` 24 项（N15） | 止于 18 项 | ❌ P1 |
+| Annex A 模板表（N13） | 未内置 | ❌ P1 |
+| `SdKey*` / `MncLen` 个性化（N17） | 未实现 | ❌ P1 |
+| schema 模板级字段可用性（N4） | 全局静态目录 | ❌ P2 |
+| `/upp/render` 未入库模板（N5） | 不支持 | ❌ P2 |
+| 统计/排序契约补全（N7） | 部分（`/iccid-pool/stats` 的 `tenant` 已列） | ⚠️ P2 |
+| SM-DS 事件管理写接口（N8） | 只读 | ❌ P2 |
+| HTTP 延迟直方图（N9） | 无 | ❌ P2 |
+| Annex F 降级构造（N14） | — | 范围外（§0.4） |
+
 ---
 
 ## 9. 实施状态（rsp42 侧，已落地）
 
 > 本节记录本文档各项改造在本仓库中的落地情况。图例：`[x]` 已实现并有测试；`[~]` 部分实现/已登记后续；`[ ]` 未做。
+> **§9 的状态表与 §9.1–§9.3 覆盖第一轮 G 清单；第二轮 N 清单见 §9.4。**
 
 | # | 项 | 状态 | 落地位置 |
 |---|---|---|---|
@@ -513,15 +819,204 @@ CREATE TABLE idempotency (key TEXT NOT NULL, endpoint TEXT NOT NULL, tenant_id T
 1. **数据库变更未合并进 `00001_init.sql`**。§4 当时的建议基于“单一当前 schema 迁移”的设想；但仓库现状已存在 `00002..00006`，合并意味着整库 squash（并使已迁移数据库的 goose 版本校验失败）。因此改为追加式迁移 `00007`–`00010`，与仓库现有的增量迁移实践一致，且不做任何向后兼容代码。
 2. **ES12 的租户归属走 HTTP 头 `X-RSP42-Tenant`**（§6.2 明确允许额外头部），而非新增 ES12 body 成员。服务端另有 `smds.es12.requester_tenants`（caller OID → 租户）作为回落。
 
-### 9.2 明确不做（决策 7–10，见 §8.4）
+### 9.2 明确不做（决策 7–11，见 §8.4）
 
-以下四项**不在本项目范围内**，不再作为“待办/未来加固”跟踪，相关文档与配置已按“仅支持当前形态”收敛：
+以下五项**不在本项目范围内**，不再作为“待办/未来加固”跟踪，相关文档与配置已按“仅支持当前形态”收敛：
 
 1. **PostgreSQL / 其他数据库后端**：仅 SQLite。`profiles.repository` 只接受 `sqlite`，其他取值在配置校验阶段报错。
 2. **多副本部署**：单进程、单数据库文件、无 leader 选举/分布式锁。需要横向扩容时应重新立项，而不是在当前形态上加锁。
 3. **每运营商客户端证书**：ES2+ 租户归属只用 `header.functionRequesterIdentifier`（§8.3 降级为历史备查）。
 4. **rsp42 侧限流 / 429 语义**：限流由 esim42 前置承担；rsp42 只做资源级配额硬校验（`tenants.template_quota` / `profile_quota`）。
+5. **管理 API 监听面收敛与密钥导出护栏（N6/N10）**：admin `bind` 保持现状，不引入 `X-RSP42-Reveal-Secrets` 护栏、`Cache-Control: no-store` 与 secret-bearing 标注。安全边界完全由 esim42 承担（§8.4 决策 11、§10.3 步骤 2.4）。
 
-### 9.3 尚未实施的 P2
+### 9.3 第一轮（G）：尚未实施的 P2
 
-**无。** 文档 §3 的可选项已全部落地：G13（ACR 调用方侧接线）、G14（MatchingID 轮换）、G15（配额硬校验）、G16（`GET /eids` / CSV 导入）、G18（模板版本与回滚）均已完成；G17 文档已对齐。§9.2 列出的四项为**明确不做**（范围外）。
+**无。** 文档 §3 的 G13–G18 已全部落地：G13（ACR 调用方侧接线）、G14（MatchingID 轮换）、G15（配额硬校验）、G16（`GET /eids` / CSV 导入）、G18（模板版本与回滚）均已完成；G17 文档已对齐。§9.2 列出的四项为**明确不做**（范围外）。
+
+> ⚠️ 本结论**只覆盖第一轮 G 清单**。第二轮的 N 清单除 **N6/N10 为范围外**（§8.4 决策 11）外全部未落地，其中 N16/N12 是 esim42 判定的 P0。§3.2 的 C1–C11 同样未处理（其中 **C1 已定方案**：删除 `pprIds`，见 §10.6）。第二轮的分步实施计划与已收敛决策见 **§10**。
+
+### 9.4 第二轮（N）：实施状态
+
+> 来源：`../esim42/todo/02` §7.2 与 `01` §8。判定均为本仓库当前代码（commit `f3232da` 之后）逐条实测。
+> 图例：`[x]` 已实现并有测试；`[~]` 部分实现；`[ ]` 未做。
+
+| # | 项 | 状态 | 现状证据 |
+|---|---|---|---|
+| N16 | SAIP 版本上限 | `[ ]` | `internal/api/admin/upp.go:113-121` 无上限；配置无 `allowed_saip_versions` |
+| N12 | 版本不兼容干净失败 | `[ ]` | `internal/service/download.go:224-250` 后两级回落不校验版本 |
+| N1 | 审计单调游标 | `[ ]` | `internal/store/audit.go:12-23` 无 `id` |
+| N2 | 回调队列管理 API | `[ ]` | `internal/api/admin/admin.go` 的 `Mount` 无 `/callbacks` |
+| N3 | 租户删除引用保护 | `[ ]` | `internal/store/tenant.go:112-114` “dangling by design”；`internal/api/admin/tenants.go:137-149` 直接删 |
+| N6 | admin 监听面 / 密钥导出加固 | `—` | **范围外**（§8.4 决策 11、§10.3 步骤 2.4）；现状：`config/config.example.yaml:19,73` = `0.0.0.0`，无 reveal 头校验，**本轮不改** |
+| N11 | `additionalEuiccProfilePackageVersions` | `[ ]` | 全仓零命中；`internal/store/upp.go:114-116` 的 `major<=0` 回退仍在 |
+| N15 | `ServicesList` 24 项 | `[ ]` | `internal/saip/header.go:101-119`、`:237` 止于 18；`SvcTUAK256` 从未置位 |
+| N13 | Annex A 模板表 + 约束 + 向量 | `[ ]` | `internal/saip/` 无 `templates.go`；`TODO.md` §2 |
+| N17 | `SdKey*` / `MncLen` | `[ ]` | `TODO.md` §2 |
+| N4 | schema 模板级字段可用性 | `[ ]` | `internal/api/admin/upp_tools.go:20-29` 为全局静态目录 |
+| N5 | `/upp/render` 未入库模板 | `[ ]` | `internal/api/admin/upp_tools.go:98-121` 强制 `name` |
+| N7 | 统计 / 排序契约补全 | `[~]` | `profiles/stats` 的 enum 缺 `profile_type`；`sort` 缺 `tenant`/`-tenant`；catch-all `"error"` 仍在（`internal/api/admin/admin.go:181`）；`/iccid-pool/stats` 的 `tenant` **已列** |
+| N8 | SM-DS 事件管理写接口 | `[ ]` | `internal/api/admin/ds.go:19` 仅只读 |
+| N9 | HTTP 延迟直方图 | `[ ]` | `internal/metrics/metrics.go` 无 Histogram |
+| N10 | 密钥端点显式契约 | `—` | **范围外**（随 N6，§10.3 步骤 2.4）；现状：无 `Cache-Control`、`docs/interfaces.md` 未标注，**本轮不改** |
+| N14 | Annex F 降级构造 | — | **范围外**（§0.4），不预留代码位/开关 |
+
+**代码级一致性（C1–C11，见 §3.2）**：全部未处理；其中 **C1 已定方案**（删除 `pprIds`，PPR 只走管理 API / `profiles.ppr_ids`，见 §10.6），其余见 §10.6 的处理计划。
+
+**本轮新增的范围收敛项**：**N6/N10 明确不做**（§8.4 决策 11、§10.3 步骤 2.4），状态记为 `—`（范围外），不再作为“以后再说”的备选项。
+
+**与 `TODO.md` 的优先级错位（需同步修正）**：
+- `TODO.md` §2 把“SAIP 完整模板表（FID/文件名/大小/AID/ARR/UST 默认值）”与“`SdKey*`/`MncLen`”记为 **P2**，而 esim42 定为 **N13 / N17 = P1**（且 `TODO.md` 只把它们当“个性化增强”，esim42 把它们当模板上架校验与 MNO-SD 能力）。
+- `TODO.md` §2 的 `CancelSession` 显式验签 / `smdpOid` 校验与 Brainpool P256r1 两项，esim42 **未提出要求**（属规范完整性/自研，应标注“非 esim42 阻塞项”）。
+- `TODO.md` 中**没有任何 N 编号**条目，第二轮的 17 项需要一并登记（其中 N6/N10 按“范围外”登记）。
+
+---
+
+## 10. 第二轮实施计划（分步）与已定决策
+
+> 本节把 §0.3 的 N 清单与 §3.2 的 C 清单落成可执行步骤，并记录本次复核后收敛的工程决策。
+> 图例：`【不做】` = 明确范围外；`【已定】` = 决策已收敛，实施时不再讨论。
+> **DoD（每步）**：代码 + 定向测试 + `openapi.json`（如动接口）+ 相关文档同步 + `go vet ./... && go test ./...` 全绿。
+> 迁移文件自 **00011** 起追加（当前最大 `00010`），保持追加式，不 squash `00001`（理由同 §9.1）。
+
+### 10.1 批 0：地基与口径（无代码产出）
+
+1. **N11 的规范依据**：以 `refs/SGP.22-v2.7-.pdf` §5.7.6 为准（`additionalEuiccProfilePackageVersions [15] SEQUENCE OF VersionType OPTIONAL`，`VersionType ::= OCTET STRING(SIZE(3))`）。`refs/pysim/pySim/esim/asn1/rsp/rsp.asn` 是删减版、**缺**该字段，不得作为依据。
+2. **会话版本列的必要性**：`loadUPP` 在 `GetBoundProfilePackage` 阶段执行，届时只有 `sessions` 行；eUICC 版本仅在 `AuthenticateClient` 的 `ca.Signed1.EuiccInfo2` 可见 → 必须经 `00011` 持久化（见 §10.7）。
+3. **choke point 约定**：SAIP 版本校验统一收敛到一个 `service` 函数，禁止只在 handler 内联（否则 CLI 导入等路径会绕过）。
+
+### 10.2 批 1（P0）
+
+#### 步骤 1.1 — N16：SAIP 版本上限 `≤(2,3)`
+
+- **配置**：`internal/config/config.go` 增 `profiles.allowed_saip_versions`（**列表**，默认 `["2.3"]`）并在 `Validate` 中校验格式；`config/config.example.yaml` 同步。比较**只按 `(major, minor)`**，注释写明“V2.3.1 是文档修订号、包内与 V2.3 同形”。
+- **唯一 choke point**：新增 `internal/service/saip_version.go`（`SAIPVersion` / `ParseSAIPVersion` / `AllowedSAIPVersion`），覆盖：
+  - `internal/api/admin/upp.go` 的 `putUPP`；
+  - `internal/api/admin/upp_tools.go` 的 `cloneUPP` / `promoteUPP` / `restoreUPP`；
+  - `internal/cli/admin_upp.go` 的 `service.ImportUPPTemplates`（CLI 导入是当前唯一绕过 API 的入口）。
+  - `admin.Handler` 增 `AllowedSAIP` 字段，在 `internal/cli/smdpp.go` 构造处注入。
+- **契约**：`POST /upp` 超限 → `409 {"code":"saip_version_not_supported", …, "details":{"templateVersion","maxSupported"}}`（`admin.go` 新增 `writeCodeDetails`）；`POST /upp/validate` **保持 `valid:true`** 并返回 `warnings[]`。
+- **验收**：上传 `(3,2)`/`(2,4)` → 409；`(2,3)` → 通过；validate 对 `(3,2)` 返回 warning 且仍 `valid:true`；CLI import 同样被拦。
+
+#### 步骤 1.2 — N11：解析 `additionalEuiccProfilePackageVersions` + 版本集合（接口预留）
+
+- **解析**：`internal/rsp/types.go` 的 `EUICCInfo2` 增 `AdditionalEuiccProfilePackageVersions [][]byte`（parse `asn1.Ctx(15, true)`）与 `UICCCapability`；新增 `type Version struct{ Major, Minor int }`、`SupportedVersions()`（`{profileVersion} ∪ additional…`）、`IsV3Capable()`。
+- **会话持久化（`00011`）**：`sessions` 增 `euicc_profile_version`、`euicc_supported_versions`（JSON），可选 `uicc_capability`；`store/session.go` 的 `Session`/`Put`/`Get`/`scanSession` 同步；`service/cmae.go` 的 `AuthenticateClient` 在 `Sessions.Put` 前写入，并对 V3-capable 记指标 `rsp42_euicc_v3_capable_total` 与审计。
+- **`SelectBestFor` 改版本集合入参**：`internal/store/upp.go` 删除 `major<=0 → AnyForTenant()` 回退；`AnyForTenant`/`Any` 仅保留给管理/列表，下载路径不再使用。**只做接口预留**，不实现双 major 选择逻辑（§8.1 决策 9）。
+- **验收**：声明 `(2,3)` + `additional=[{3,2}]` 的 eUICC 产生 `v3-capable-euicc` 标记，esim42 可从 timeline/session 读到版本集合；有单测断言 `major<=0` 回退不存在。
+
+#### 步骤 1.3 — N12：版本不兼容时干净失败
+
+- **逐级校验**：`internal/service/download.go` 的 `loadUPP` 对**四级回落**（订单 pin → 会话 → 租户默认 → 全局默认）**全部**做 `(major, minor)` 校验；全部不通过返回 `ErrProfileVersionNotSupported{euiccProfileVersion, supportedVersions, lowestTemplateVersion}`；会话无版本信息时按“未知版本”**拒绝**（不静默挑选）。
+- **错误码**：`internal/rsp/errors.go` 新增具名 `CodeProfileVersionNotSupported = {"8.2.6","3.8"}`（**不复用** `8.8.5/4.10`）；错误在 `buildBPP` 之前返回，**不生成任何 BPP 段**（用测试固化顺序）。
+- **可观测**：管理侧稳定码 `profile_version_not_supported` 写入 timeline 与审计；审计 `interface=es9p, function=authenticateClient, outcome=Failed, detail={euiccProfileVersion, supportedVersions, lowestTemplateVersion}`。
+- **验收**：注册表仅 `(2,3)` + `profileVersion=(2,1)` 的 eUICC → 可区分失败码、无 BPP、审计/指标可查。
+
+### 10.3 批 2（P1，防数据丢失/误操作）
+
+#### 步骤 2.1 — N2：回调队列管理 API
+
+- **存储**：`internal/store/callback.go` 增 `CallbackFilter`、`ListFiltered`、`Requeue`、`RequeueDead`（仅 `dead`/`failed` 可重投；重置 `attempts=0` 并立即入队）。
+- **【已定】tenant/iccid 过滤**：先用 SQLite `json_extract(payload_json,'$.tenantId'/'$.iccid')`（modernc.org/sqlite v1.60.1 支持 JSON1，零迁移）；spike 不通过再加列迁移 `00013`。
+- **接口**：新增 `internal/api/admin/callbacks.go` 并在 `admin.go` 的 `Mount` 注册：`GET /callbacks`（`payload` 返回**已解析对象**）、`POST /callbacks/{id}/retry`（非 dead/failed → `409 conflict`）、`POST /callbacks/retry-dead`；审计 `retryCallback`。
+- **验收**：死信可查、可补投；补投不产生重复的状态推进。
+
+#### 步骤 2.2 — N3：租户删除引用保护
+
+- **存储**：`internal/store/tenant.go` 增 `TenantUsage`、`Usage(id)`、`DeleteWithReassign(id, reassignTo)`（单事务改属后删）。
+- **接口**：`internal/api/admin/tenants.go` 的 `getTenant` 增 `usage`；`deleteTenant` 无 `force` 且存在引用 → `409 {"code":"tenant_in_use", "usage":{…}}`；`?force=true&reassignTo=<tenant|"">`，未注册目标 → `400 unknown_tenant`。
+- **验收**：误删被拦；force 路径可审计地迁移。
+
+#### 步骤 2.3 — N1：审计单调增量游标
+
+- **存储**：`internal/store/audit.go` 的 `AuditEntry` 增 `ID`，所有 SELECT/scan 补 `id`；新增 `ListAfterID(f, afterID, limit)`（`id > ? ORDER BY id ASC`，排他下界）。
+- **接口**：`internal/api/admin/audit.go` 支持 `afterId` + `limit`（默认 500），与 `page`/`size` **互斥**；响应 `{items[].id, nextAfterId, hasMore}`，空批时 `nextAfterId` 原样返回入参。
+- **【已定】单调性**：用迁移 `00012` 把 `audit_log` 改为 `AUTOINCREMENT`（普通 rowid 在删除最大行后可能复用，不满足“单调且不回收”）。
+- **验收**：增量同步“至少一次 + 无重复”。
+
+#### 步骤 2.4 — N6 / N10：管理 API 监听面收敛与密钥导出护栏 —— **【不做】**
+
+- **决策（§8.4 决策 11）**：本项**明确范围外**，本轮不实施：
+  - admin `bind` 默认值**保持现状**（`config/config.example.yaml:19,73` = `0.0.0.0`，`internal/config/config.go` 的默认值不动）；不新增“非 loopback + audit disabled”启动 WARN；
+  - 不引入 `X-RSP42-Reveal-Secrets: yes` 护栏；`GET /personalization/export`、`GET /personalization/{iccid}?reveal=1`、`GET /personalization?reveal=1` 维持现状；
+  - 不加 `Cache-Control: no-store`，`docs/interfaces.md` 不新增 secret-bearing 标注。
+- **理由**：管理 API 无鉴权已是既定部署前提（§0.1-4、§8.1 决策 5），安全边界完全由 esim42 承担；esim42 必须保证该 API 不被反向代理、网关或前端暴露。
+- **遗留提示（不构成待办）**：若将来重启该项，护栏应覆盖 `GET /personalization?reveal=1`（`internal/api/admin/personalization.go` 的 `reveal=1` 分支同样能回明文 K/OPc），而不只是 `/export`。
+
+### 10.4 批 3（P1，SAIP 能力）
+
+#### 步骤 3.1 — N15：`ServicesList` 补到 V2.3.1 的 24 项 + TUAK256 修复
+
+- `internal/saip/header.go`：补 `dfLink`(19)/`cat-tp`(20)/`get-identity`(21)/`profile-a-x25519`(22)/`profile-b-p256`(23)（拼写以 `refs/pysim/pySim/esim/asn1/saip/PE_Definitions-3.3.1.asn` 为准）；引入 `svcMax` 作为 `Services()` 的上界；`serviceNames` 同步；**`bertlv` → 规范拼写 `ber-tlv`**（`/upp/{name}/decoded` 的对外契约变更，需同步 esim42 的静态映射与契约快照）。**不为** V3.2 才引入的 5 项预留常量。
+- 修 `SvcTUAK256` 只声明、从未置位：按 `PE-AKAParameter` 中 K 的长度（16→TUAK128、32→TUAK256）置位，对齐 pySim。
+- 文档：写明 `RebuildMandatoryServices`（服务位）与 `RebuildMandatoryGFSTEList`（GFSTE）的职责边界（C11）。
+- **验收**：含 `get-identity` 的模板在 `/upp/{name}/decoded` 的 `services[]` 中可见；24 项表驱动单测通过。
+
+#### 步骤 3.2 — N13：Annex A/B 模板表 + 约束校验 + 测试向量
+
+- 新增 `internal/saip/templates.go`：V2.3.1 的 **13 个模板 OID** + spec-version OID `2.23.143.1.1.2`（V2.3.1 无版本化子弧）；FID/文件名/大小/AID/ARR/UST 默认值。
+- 新增 `internal/saip/validate.go`（对齐 pysim `validation.py`）：首个 PE `header`、第二个 `mf`、末位 `end`；单例 PE；可选 PE 顺序；mandatory-services ↔ PE 存在性一致；AKA 算法 ↔ 服务位一致（含 TUAK-128/256）；`identification` 唯一；`File` 的 `doNotCreate` 互斥与 `fileDescriptor` 优先；**`gfste[]` 必须全部落在 13 个模板 OID 内且拒绝带版本子弧**（如 `2.23.143.1.2.13.2`）；非 V2.3.1 PE（`BE`/`BF20`/`BF21`/`BF1F`/`BF22`）带 `mandated` → warning；值域约束（`SIZE(...)`/`INTEGER(0..n)`）。
+- **接线**：`service.UPPInspection` 增 `Errors []string`（硬失败）；`/upp/validate` 硬失败 → `valid:false` + `errors[]`；`/upp` 对硬失败拒绝入库。
+- **顺带修**：`internal/saip/files.go` 的 `Body()` 忽略 `fillFileOffset`（`SetBody` 保持线性化），补 offset 分片回归测试。
+- **向量**：`testdata/upp/` 增 V2.3.1 专用向量（含 DF 5GS、DF SAIP、`get-identity` 服务位）。
+- **验收**：缺 `end`/PE 顺序错/带版本子弧 → `/upp/validate` 给出明确错误；现有 TS.48 向量仍全部通过（回归门禁）。
+
+#### 步骤 3.3 — N17：`SdKey*` 与 `MncLen` 个性化
+
+- `internal/saip/personalization`：`Data` 增 `SdKeys`（SD/MNO-SD 密钥集、KVN、key usage qualifier → `PE-SecurityDomain`）与 `MncLen`（`EF.AD` bit 4，FID `6F3A`）；`Engine.Apply` 接线；`csv.go` 补列。K/OPc 仍由 esim42 生成（§8.1 决策 4，rsp42 不提供密钥生成/派生）。
+- `internal/api/admin/upp_tools.go` 的 `personalizationSchema` 增字段（与 N4 合并解决“目录 ≠ 模板可绑定字段”）；`docs/coverage.md` 同步。
+- **验收**：含 `PE-SecurityDomain` 的模板可注入 SD 密钥集；`EF.AD` 的 MNC 长度可个性化。
+
+### 10.5 批 4（P2）
+
+- **步骤 4.1 — N4**：`/upp/{name}/schema` 的 `fields[]` 增 `applicable`/`targets[]`/`requiredIn[]`/`note`，由 `inspection.files[]/elements[]` 推导；保留 `required`（= `requiredIn` 含 `"render"`）以兼容；解开 `iccid.required=true` 与凭据池流程的冲突。
+- **步骤 4.2 — N5**：`/upp/render` 接受 `{name,…}` 或 `{data:"<base64 DER>",…}` 二选一；同给 → `400 invalid_request`；`data` 路径不落库，审计 `function=renderUPP, subject="<ad-hoc>"`。
+- **步骤 4.3 — N7**：`openapi.json` 的 `profiles/stats` `groupBy` 补 `profile_type`（`store/stats.go` 已支持，仅补文档）；`sort` enum 补 `tenant`/`-tenant` 并同步 `internal/store/profile.go` 的白名单；删除 `admin.go` 的 catch-all `"error"` 码。`/iccid-pool/stats` 的 `tenant` **已列，无需改**。
+- **步骤 4.4 — N8**：`internal/api/admin/ds.go` 增 `POST /events`（省略时生成 `EVT-<…>`；重名 → `409 event_id_in_use`）与 `DELETE /events/{id}`；审计 `function=registerEvent`。
+- **步骤 4.5 — N9**：`internal/metrics` 增 `Histogram` 类型 + `Observe` + 桶渲染；middleware 以 chi `RoutePattern()` 作 `route` 标签（防高基数）：`rsp42_admin_http_request_duration_seconds{route,method,status}` 与 `rsp42_es2p_http_request_duration_seconds{function}`。
+- **N10【不做】**：见步骤 2.4（随 N6 一并范围外）。
+
+### 10.6 并行：C 清单（代码级一致性）
+
+- **C1【已定】**：**删除** ES2+ `downloadOrder` 的私有 body 成员 `pprIds`（`internal/api/es2plus/handlers.go` 的请求结构与 PPR 覆盖分支）；PPR **只走管理 API / `profiles.ppr_ids`**；`config/config.example.yaml` 中“订单可覆盖 pprIds”的注释一并删除；`docs/interfaces.md` 与 openapi 不再声明该私有扩展。
+- **C2**：`resolveProfileType` 对不含 `/` 的值不再静默，记审计/指标 `profileType-unparsed`。
+- **C3 / C4**：拆分 `internal/rsp/errors.go` 中 `8.2.1/3.8`（池耗尽 vs 租户 `profile_quota` 用尽）与 `8.2.6/3.7` 的语义错位。
+- **C5**：修正 `internal/asn1/doc.go` 的过期陈述，与 N11/N12 同批；与 `TODO.md` §3.1 合并。
+- **C6 / C7 / C10 / C11**：分别并入 N13 / N15。
+- **C8**：`internal/asn1/tlv.go` 对 BER 不定长与长度字段 >4 字节的拒绝 —— **先核查真实样本**是否出现不定长编码，再决定“实现支持”或“登记为已知边界 + 影响面”（本轮不预设结论）。
+- **C9**：`bf1f`(df-5gprose)/`bf22`(ssim) 在 `TODO.md` 登记为**明确范围外**（对应 §0.4）。
+
+### 10.7 迁移文件
+
+| 迁移 | 内容 | 来源 |
+|---|---|---|
+| `00011_session_euicc_versions.sql` | `sessions` 增 `euicc_profile_version`、`euicc_supported_versions`（JSON），可选 `uicc_capability` | N11 / N12 |
+| `00012_audit_autoincrement.sql` | `audit_log` 重建为 `AUTOINCREMENT`（保证 `id` 单调不回收） | N1 |
+| `00013_callback_columns.sql`（**仅当** `json_extract` spike 不通过） | `es2p_callbacks` 增 `tenant_id`/`iccid` + 索引 | N2 |
+
+> 保持追加式：不合并进 `00001_init.sql`（理由同 §9.1）。每条迁移需做“老库升级 + 新库全量”双向验证。
+
+### 10.8 已收敛决策（本轮）
+
+| # | 决策 | 结论 |
+|---|---|---|
+| 1 | N11/N12 是否新增会话版本列 | **是**，迁移 `00011`（否则 `loadUPP` 阶段无法校验版本） |
+| 2 | N2 的 tenant/iccid 过滤实现 | 先用 `json_extract`（零迁移）；spike 不通过再加列迁移 |
+| 3 | N1 的严格单调 | 迁移为 `AUTOINCREMENT` |
+| 4 | C1 的 `pprIds` | **删除该成员**；PPR 只走管理 API / `profiles.ppr_ids` |
+| 5 | C8 的 BER 不定长 | 先核查真实样本，再定“支持”或“登记为已知边界” |
+| 6 | N16 的校验覆盖面 | 统一 choke point，覆盖 `clone`/`promote`/`restore` + CLI `upp import` |
+| 7 | 密钥端点 reveal 护栏是否覆盖 `GET /personalization?reveal=1` | 若实施则**是**；但 N6/N10 整体**不做**（步骤 2.4），本条随之暂缓 |
+| 8 | N6/N10（监听面收敛 + 密钥导出护栏） | **明确不做**（§8.4 决策 11、步骤 2.4） |
+
+### 10.9 建议顺序与验收基线
+
+```
+批 0 决策 → ┬─ 批 1（N16 → N11 → N12）      ← esim42 M2 的硬性退出条件
+            ├─ 批 2（N2 → N3 → N1）          ← N6 已范围外
+            ├─ 批 3（N15 → N13 → N17）
+            └─ 批 4（N4 → N5 → N7 → N8 → N9）← N10 已范围外
+并行：C1–C11 与文档同步；每批结束跑 make ci
+```
+
+- **验收基线**：esim42 侧完成一次端到端（匿名领取 → LPA 下载 → 安装 → 看板可见 → 审计可查 → 取消/回池）的联调，全链路租户归属正确、幂等重放安全；外加 esim42 `02` §9 的 A1–A25（其中 A13–A17 依赖批 3 的 N13/N15/N17）。
+- **对外回执**：要求 esim42 修正 `01` §6.5 D2 的标量 `max_saip_version` 表述为列表 `allowed_saip_versions`，否则升级时会引入一次配置迁移。
