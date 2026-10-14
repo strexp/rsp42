@@ -563,8 +563,12 @@
 |---|---|
 | `8ad7eac` | `store/store.go`（名不符实）→ `errors.go` + `sqlutil.go`；`store/models.go` 按聚合拆为 `profile_model.go`/`event_model.go`/`notification_model.go` |
 | `f2afcc8` | `saip/header.go` 拆为 `header.go`（模型/编解码）、`header_services.go`（ServicesList 位策略与 mandatory services 重建）、`gfste.go`（GFSTE 列表、模板 PE 判定、PEName/AKA） |
+| `b1d5c5a` | CLI 顶层与 admin 子命令改为表驱动（分发与 usage 同源），消除 14 处 FlagSet 样板与已漂移的 usage 文本；`--config` 默认值单一常量 |
+| `28b3452` | `cmdSMDpp` 的对象图抽到 `smdpp_graph.go`：`dpGraph` + `bootstrapDP` + `runGC`；命令体变为 config → bootstrap → wire → serve，且所有错误路径都经 `dpGraph.close` 释放 store |
+| `d5e9bab` | `service/notification.go` 拆为 `notification.go`（DTO+编排）/`notification_verify.go`（PIR/OtherSigned 验签）/`iccid_decode.go`；`service/helpers.go` 拆为 `cert_verify.go` + `confirmation.go` |
+| `fc2187f` | `rsp/types.go`（468 行、12 个结构）拆为 `fields.go`、`euicc_info.go`、`signed.go`、`response_decode.go` |
 
-待办：`cli` 的 `cmdSMDpp`/`cmdSMDS` 组合根拆分与表驱动命令注册表；`es2plus` 客户端代码 → `internal/client/es2p`；`service/`（`helpers.go`、`notification.go`、`upp.go`、`smds_event.go`）与 `rsp/types.go`、`cert/manager.go`、`saip/personalization/personalization.go` 的文件级拆分。
+待办：`es2plus` 客户端代码 → `internal/client/es2p`；`cert/manager.go`（516 行）、`saip/personalization/personalization.go`（639 行）、`service/upp.go`/`smds_event.go` 的文件级拆分；`cmdSMDS` 是否需要与 DP 对称的 graph 抽取（当前 153 行尚可读）。
 
 ### 阶段 5：测试与工程化收尾（进行中）
 
