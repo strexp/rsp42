@@ -1,6 +1,7 @@
 package common
 
 import (
+	"context"
 	"encoding/base64"
 	"encoding/json"
 	"errors"
@@ -9,6 +10,37 @@ import (
 
 	"rsp42/internal/rsp"
 )
+
+// DefaultBodyLimit is the request-body budget when a router is not configured
+// with an explicit one.
+const DefaultBodyLimit int64 = 1 << 20
+
+type bodyLimitKey struct{}
+
+// WithBodyLimit records the router's request-body budget in ctx. It is set by
+// middleware.MaxBody so that every downstream reader (the idempotency replay
+// buffer, common.ReadJSON/ReadRaw) uses the same single limit.
+func WithBodyLimit(ctx context.Context, n int64) context.Context {
+	return context.WithValue(ctx, bodyLimitKey{}, n)
+}
+
+// BodyLimitFrom returns the body budget installed by middleware.MaxBody.
+func BodyLimitFrom(ctx context.Context) (int64, bool) {
+	n, ok := ctx.Value(bodyLimitKey{}).(int64)
+	return n, ok && n > 0
+}
+
+// resolveBodyLimit picks the effective limit for one read: an explicit positive
+// maxBytes wins, then the router's budget, then DefaultBodyLimit.
+func resolveBodyLimit(r *http.Request, maxBytes int64) int64 {
+	if maxBytes > 0 {
+		return maxBytes
+	}
+	if n, ok := BodyLimitFrom(r.Context()); ok {
+		return n
+	}
+	return DefaultBodyLimit
+}
 
 // B64 encodes binary data for the JSON binding.
 func B64(b []byte) string { return base64.StdEncoding.EncodeToString(b) }
@@ -49,15 +81,18 @@ func WriteStatusFailure(w http.ResponseWriter, err error) {
 	WriteCode(w, rsp.CodeVerificationFailed, err.Error())
 }
 
-// ReadRaw reads a request body with a size limit.
+// ReadRaw reads a request body within the router's budget. A maxBytes of 0
+// selects the budget installed by middleware.MaxBody (DefaultBodyLimit when the
+// handler runs outside that stack, e.g. in a unit test).
 func ReadRaw(w http.ResponseWriter, r *http.Request, maxBytes int64) ([]byte, error) {
-	return io.ReadAll(http.MaxBytesReader(w, r.Body, maxBytes))
+	return io.ReadAll(http.MaxBytesReader(w, r.Body, resolveBodyLimit(r, maxBytes)))
 }
 
-// ReadJSON reads and decodes a JSON request body with a size limit. It does not
-// write a response on failure; the caller decides the interface-specific code.
+// ReadJSON reads and decodes a JSON request body within the router's budget
+// (see ReadRaw for maxBytes). It does not write a response on failure; the
+// caller decides the interface-specific code.
 func ReadJSON(w http.ResponseWriter, r *http.Request, maxBytes int64, v any) error {
-	body, err := io.ReadAll(http.MaxBytesReader(w, r.Body, maxBytes))
+	body, err := io.ReadAll(http.MaxBytesReader(w, r.Body, resolveBodyLimit(r, maxBytes)))
 	if err != nil {
 		return err
 	}

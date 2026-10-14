@@ -187,8 +187,11 @@ func cmdSMDpp(prog string, args []string) int {
 	}
 	// Audit is applied inside the router (api.Options.Audit) so that it runs
 	// after middleware.RequestScope and can attribute every row to the request
-	// scope. The admin router ignores it and audits its own writes.
+	// scope. The admin router ignores it and audits its own writes; it does get
+	// the larger body budget, because template uploads and CSV imports are not
+	// bounded by SGP.22 message sizes.
 	apiOpts := api.Options{CORS: cfg.SMDpp.Server.CORS.AllowedOrigins, Audit: auditLog}
+	adminOpts := api.Options{CORS: cfg.SMDpp.Server.CORS.AllowedOrigins, BodyLimit: adminBodyLimit}
 	es9p, err := mk(api.NewES9PRouter(log, es9pHandler, apiOpts), cfg.SMDpp.Server.ES9P)
 	if err != nil {
 		log.Error("es9p listener", "err", err)
@@ -217,7 +220,7 @@ func cmdSMDpp(prog string, args []string) int {
 		api.NewAdminRouter(log, func() bool { return true }, func(r chi.Router) {
 			adminapi.Mount(r, adminH)
 			r.Get("/metrics", metrics.Handler(reg, poolCollector(st.Pool), callbackCollector(st.Callbacks)))
-		}, apiOpts))
+		}, adminOpts))
 	if err != nil {
 		log.Error("admin listener", "err", err)
 		return 1

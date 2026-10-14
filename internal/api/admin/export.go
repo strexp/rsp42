@@ -191,7 +191,7 @@ type importProfileRecord struct {
 // unknown columns are ignored and every row is reported individually by the
 // caller, so one malformed row never aborts the import.
 func readProfileCSV(r *http.Request) ([]importProfileRecord, error) {
-	body, err := io.ReadAll(io.LimitReader(r.Body, maxBody))
+	body, err := io.ReadAll(r.Body)
 	if err != nil {
 		return nil, err
 	}

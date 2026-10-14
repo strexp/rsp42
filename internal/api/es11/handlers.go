@@ -15,8 +15,6 @@ import (
 	"rsp42/internal/service"
 )
 
-const maxBody = 4 << 20
-
 // Handler holds the ES11 handler dependencies.
 type Handler struct {
 	Log *slog.Logger
@@ -42,7 +40,7 @@ type initiateReq struct {
 
 func (h *Handler) initiateAuthentication(w http.ResponseWriter, r *http.Request) {
 	var req initiateReq
-	if err := common.ReadJSON(w, r, maxBody, &req); err != nil {
+	if err := common.ReadJSON(w, r, 0, &req); err != nil {
 		common.WriteCode(w, rsp.CodeDSAddress, "invalid request")
 		return
 	}
@@ -77,7 +75,7 @@ type authenticateReq struct {
 
 func (h *Handler) authenticateClient(w http.ResponseWriter, r *http.Request) {
 	var req authenticateReq
-	if err := common.ReadJSON(w, r, maxBody, &req); err != nil {
+	if err := common.ReadJSON(w, r, 0, &req); err != nil {
 		common.WriteCode(w, rsp.CodeDSAuthFailed, "invalid request")
 		return
 	}

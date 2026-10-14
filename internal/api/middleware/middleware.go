@@ -204,12 +204,18 @@ func Audit(l *audit.Logger, iface string) func(http.Handler) http.Handler {
 	}
 }
 
-// MaxBody limits the size of request bodies.
+// MaxBody limits the size of request bodies and publishes the budget in the
+// request context, so that downstream readers (the idempotency replay buffer,
+// common.ReadJSON/ReadRaw) share one authoritative limit instead of each
+// carrying its own constant.
 func MaxBody(n int64) func(http.Handler) http.Handler {
+	if n <= 0 {
+		n = common.DefaultBodyLimit
+	}
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			r.Body = http.MaxBytesReader(w, r.Body, n)
-			next.ServeHTTP(w, r)
+			next.ServeHTTP(w, r.WithContext(common.WithBodyLimit(r.Context(), n)))
 		})
 	}
 }

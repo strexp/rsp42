@@ -24,6 +24,10 @@ import (
 const (
 	readHeaderTimeout = 10 * time.Second
 	shutdownTimeout   = 15 * time.Second
+	// adminBodyLimit bounds management-API request bodies. It is larger than the
+	// protocol default because it carries SAIP template uploads and inventory
+	// CSV imports, which are not SGP.22 messages.
+	adminBodyLimit = 8 << 20
 )
 
 type namedServer struct {

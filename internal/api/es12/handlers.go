@@ -17,8 +17,6 @@ import (
 	"rsp42/internal/store"
 )
 
-const maxBody = 1 << 20
-
 // Handler holds the ES12 handler dependencies.
 type Handler struct {
 	Log    *slog.Logger
@@ -66,7 +64,7 @@ type registerReq struct {
 
 func (h *Handler) registerEvent(w http.ResponseWriter, r *http.Request) {
 	var req registerReq
-	if err := common.ReadJSON(w, r, maxBody, &req); err != nil {
+	if err := common.ReadJSON(w, r, 0, &req); err != nil {
 		common.WriteCode(w, rsp.CodeES12BadRequest, "invalid request")
 		return
 	}
@@ -105,7 +103,7 @@ type deleteReq struct {
 
 func (h *Handler) deleteEvent(w http.ResponseWriter, r *http.Request) {
 	var req deleteReq
-	if err := common.ReadJSON(w, r, maxBody, &req); err != nil {
+	if err := common.ReadJSON(w, r, 0, &req); err != nil {
 		common.WriteCode(w, rsp.CodeES12BadRequest, "invalid request")
 		return
 	}

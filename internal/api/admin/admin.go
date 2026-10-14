@@ -6,7 +6,6 @@ package admin
 import (
 	"encoding/json"
 	"fmt"
-	"io"
 	"log/slog"
 	"net/http"
 	"strconv"
@@ -20,8 +19,6 @@ import (
 	"rsp42/internal/service"
 	"rsp42/internal/store"
 )
-
-const maxBody = 8 << 20
 
 // adminActor is the fixed audit actor for the (unauthenticated, internal)
 // management API.
@@ -220,8 +217,10 @@ func errCode(status int, msg string) string {
 	}
 }
 
+// readJSON decodes a management-API request body. The size budget comes from
+// middleware.MaxBody (api.Options.BodyLimit), so no separate limit applies.
 func readJSON(w http.ResponseWriter, r *http.Request, v any) bool {
-	if err := json.NewDecoder(io.LimitReader(r.Body, maxBody)).Decode(v); err != nil {
+	if err := json.NewDecoder(r.Body).Decode(v); err != nil {
 		writeErr(w, http.StatusBadRequest, "invalid JSON: "+err.Error())
 		return false
 	}

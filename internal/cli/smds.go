@@ -97,6 +97,7 @@ func cmdSMDS(prog string, args []string) int {
 	// after middleware.RequestScope and can attribute every row to the request
 	// scope. The admin router ignores it and audits its own writes.
 	apiOpts := api.Options{CORS: cfg.SMDS.Server.CORS.AllowedOrigins, Audit: auditLog}
+	adminOpts := api.Options{CORS: cfg.SMDS.Server.CORS.AllowedOrigins, BodyLimit: adminBodyLimit}
 	es11, err := buildServer(log, "es11", cfg.SMDS.Server.Bind, cfg.SMDS.Server.ES11, api.NewES11Router(log, es11Handler, apiOpts))
 	if err != nil {
 		log.Error("es11 listener", "err", err)
@@ -113,7 +114,7 @@ func cmdSMDS(prog string, args []string) int {
 				Events: st.Events, Audit: st.Audit, DefaultTTL: cfg.SMDS.EventTTL.Duration(),
 			})
 			r.Get("/metrics", metrics.Handler(reg, eventCollector(st.Events)))
-		}, apiOpts))
+		}, adminOpts))
 	if err != nil {
 		log.Error("admin listener", "err", err)
 		return 1

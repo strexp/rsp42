@@ -305,7 +305,7 @@ func (h *Handler) handleDownloadProgressInfo(w http.ResponseWriter, _ *http.Requ
 }
 
 func (h *Handler) handleAcrRequest(w http.ResponseWriter, r *http.Request) {
-	body, err := common.ReadRaw(w, r, 1<<20)
+	body, err := common.ReadRaw(w, r, 0)
 	if err != nil {
 		common.WriteCode(w, rsp.CodeInputRefused, "cannot read body")
 		return
@@ -424,7 +424,7 @@ func (h *Handler) registerFailure(tenant, eid, iccid string, err error) {
 // decode reads and validates a request and returns its header. ES2+ requires
 // both header identifiers.
 func decode(w http.ResponseWriter, r *http.Request, v any) (common.RequestHeader, bool) {
-	if err := common.ReadJSON(w, r, 1<<20, v); err != nil {
+	if err := common.ReadJSON(w, r, 0, v); err != nil {
 		common.WriteCode(w, rsp.CodeInvalidRequest, "invalid JSON")
 		return common.RequestHeader{}, false
 	}

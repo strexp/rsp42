@@ -15,8 +15,9 @@ import (
 	"rsp42/internal/store"
 )
 
-// maxReplayBody bounds how much of a request/response is buffered for replay.
-const maxReplayBody = 1 << 20
+// maxReplayBody is the fallback budget for the replay buffer when no
+// middleware.MaxBody ran ahead of it (i.e. the router's budget is unknown).
+const maxReplayBody = common.DefaultBodyLimit
 
 type replayResponse struct {
 	Status      int    `json:"status"`
@@ -45,7 +46,14 @@ func Idempotency(repo *store.IdempotencyRepo) func(http.Handler) http.Handler {
 				next.ServeHTTP(w, r)
 				return
 			}
-			body, err := io.ReadAll(http.MaxBytesReader(w, r.Body, maxReplayBody))
+			// Buffer within the router's budget so the idempotency hash sees
+			// the same body the handler will (a larger admin upload must not be
+			// truncated by a smaller constant here).
+			limit := maxReplayBody
+			if n, ok := common.BodyLimitFrom(r.Context()); ok && n > limit {
+				limit = n
+			}
+			body, err := io.ReadAll(http.MaxBytesReader(w, r.Body, limit))
 			if err != nil {
 				writeReplayErr(w, http.StatusRequestEntityTooLarge, "body_too_large", "request body exceeds the idempotency buffer")
 				return
@@ -152,9 +160,9 @@ func (w *replayWriter) WriteHeader(code int) {
 }
 
 func (w *replayWriter) Write(b []byte) (int, error) {
-	if w.buf.Len() < maxReplayBody {
-		remaining := maxReplayBody - w.buf.Len()
-		if len(b) > remaining {
+	if n := int64(w.buf.Len()); n < maxReplayBody {
+		remaining := maxReplayBody - n
+		if int64(len(b)) > remaining {
 			w.buf.Write(b[:remaining])
 		} else {
 			w.buf.Write(b)

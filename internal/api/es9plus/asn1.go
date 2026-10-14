@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/hex"
 	"errors"
-	"io"
 	"net/http"
 	"strings"
 
@@ -20,7 +19,7 @@ func (h *Handler) asn1Binding(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "unsupported Content-Type", http.StatusUnsupportedMediaType)
 		return
 	}
-	body, err := io.ReadAll(http.MaxBytesReader(w, r.Body, maxBody))
+	body, err := common.ReadRaw(w, r, 0)
 	if err != nil {
 		http.Error(w, "invalid request body", http.StatusBadRequest)
 		return

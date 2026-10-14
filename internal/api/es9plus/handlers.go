@@ -12,8 +12,6 @@ import (
 	"rsp42/internal/service"
 )
 
-const maxBody = 4 << 20
-
 // Handler holds the ES9+ handler dependencies.
 type Handler struct {
 	Log    *slog.Logger
@@ -45,7 +43,7 @@ type initiateReq struct {
 
 func (h *Handler) initiateAuthentication(w http.ResponseWriter, r *http.Request) {
 	var req initiateReq
-	if err := common.ReadJSON(w, r, maxBody, &req); err != nil {
+	if err := common.ReadJSON(w, r, 0, &req); err != nil {
 		common.WriteCode(w, rsp.CodeChallengeInvalid, "invalid request")
 		return
 	}
@@ -80,7 +78,7 @@ type authenticateReq struct {
 
 func (h *Handler) authenticateClient(w http.ResponseWriter, r *http.Request) {
 	var req authenticateReq
-	if err := common.ReadJSON(w, r, maxBody, &req); err != nil {
+	if err := common.ReadJSON(w, r, 0, &req); err != nil {
 		common.WriteCode(w, rsp.CodeVerificationFailed, "invalid request")
 		return
 	}
@@ -117,7 +115,7 @@ type getBPPReq struct {
 
 func (h *Handler) getBoundProfilePackage(w http.ResponseWriter, r *http.Request) {
 	var req getBPPReq
-	if err := common.ReadJSON(w, r, maxBody, &req); err != nil {
+	if err := common.ReadJSON(w, r, 0, &req); err != nil {
 		common.WriteCode(w, rsp.CodeVerificationFailed, "invalid request")
 		return
 	}
@@ -143,7 +141,7 @@ type notificationReq struct {
 
 func (h *Handler) handleNotification(w http.ResponseWriter, r *http.Request) {
 	var req notificationReq
-	if err := common.ReadJSON(w, r, maxBody, &req); err == nil && req.PendingNotification != "" && h.Notifs != nil {
+	if err := common.ReadJSON(w, r, 0, &req); err == nil && req.PendingNotification != "" && h.Notifs != nil {
 		if raw, err := common.DecodeB64(req.PendingNotification); err == nil {
 			_ = h.Notifs.HandlePendingNotification(r.Context(), raw)
 		}
@@ -159,7 +157,7 @@ type cancelReq struct {
 
 func (h *Handler) cancelSession(w http.ResponseWriter, r *http.Request) {
 	var req cancelReq
-	if err := common.ReadJSON(w, r, maxBody, &req); err != nil {
+	if err := common.ReadJSON(w, r, 0, &req); err != nil {
 		common.WriteCode(w, rsp.CodeUnknownTransaction, "invalid request")
 		return
 	}

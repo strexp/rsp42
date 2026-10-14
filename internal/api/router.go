@@ -7,6 +7,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
+	"rsp42/internal/api/common"
 	"rsp42/internal/api/es11"
 	"rsp42/internal/api/es12"
 	"rsp42/internal/api/es2plus"
@@ -14,9 +15,6 @@ import (
 	"rsp42/internal/api/middleware"
 	"rsp42/internal/audit"
 )
-
-// maxBodyBytes bounds request bodies to 1 MiB.
-const maxBodyBytes = 1 << 20
 
 // Options configures cross-cutting HTTP behaviour for a router.
 type Options struct {
@@ -28,6 +26,18 @@ type Options struct {
 	// by middleware.RequestScope (an outer wrapper would only see the original
 	// request context and lose the actor/tenant attribution).
 	Audit *audit.Logger
+	// BodyLimit bounds request bodies on this router, in bytes. Zero selects
+	// common.DefaultBodyLimit. It is the single place the limit is configured:
+	// the handlers themselves carry no limit constant.
+	BodyLimit int64
+}
+
+// bodyLimit resolves the configured limit.
+func (o Options) bodyLimit() int64 {
+	if o.BodyLimit > 0 {
+		return o.BodyLimit
+	}
+	return common.DefaultBodyLimit
 }
 
 func base(log *slog.Logger, opts Options, iface string) chi.Router {
@@ -43,7 +53,7 @@ func base(log *slog.Logger, opts Options, iface string) chi.Router {
 	r.Use(middleware.Recover(log))
 	r.Use(middleware.Logger(log))
 	r.Use(middleware.AdminProtocol)
-	r.Use(middleware.MaxBody(maxBodyBytes))
+	r.Use(middleware.MaxBody(opts.bodyLimit()))
 	return r
 }
 
