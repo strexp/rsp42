@@ -3,30 +3,30 @@ package es9plus
 import (
 	"context"
 	"encoding/hex"
-	"errors"
 	"net/http"
-	"strings"
 
+	"rsp42/internal/api/asn1bind"
 	"rsp42/internal/api/common"
 	"rsp42/internal/rsp"
+)
+
+// ES9+ ASN.1 error codes. The numeric space is SGP.22 §6.6's
+// InitiateAuthenticationResponseError / AuthenticateClientResponseError /
+// GetBoundProfilePackageResponseError / CancelSessionResponseError enums, keyed
+// by the subjectCode of the RSP status the service returned.
+var (
+	initiateErrorCodes     = map[string]int64{"8.8.1": 1, "8.8.2": 3}                                                             // invalidDpAddress, ciPKIdNotSupported
+	authenticateErrorCodes = map[string]int64{"8.1.3": 1, "8.1": 5, "8.1.4": 7, "8.2.5": 8, "8.2.6": 8, "8.8.2": 9, "8.10.1": 10} // eumCertificateInvalid, euiccSignatureInvalid, eidMismatch, noEligibleProfile, ciPKUnknown, invalidTransactionId
+	getBPPErrorCodes       = map[string]int64{"8.1": 1, "8.2.7": 3, "8.10.1": 95}                                                 // euiccSignatureInvalid, confirmationCodeRefused, invalidTransactionId
+	cancelErrorCodes       = map[string]int64{"8.10.1": 1, "8.1": 2}                                                              // invalidTransactionId, euiccSignatureInvalid
 )
 
 // asn1Binding implements the SGP.22 §6.6 ASN.1 binding at the generic path
 // /gsma/rsp2/asn1. The request and response bodies are DER-encoded
 // RemoteProfileProvisioningRequest/Response envelopes around the function TLV.
 func (h *Handler) asn1Binding(w http.ResponseWriter, r *http.Request) {
-	if common.MediaType(r.Header.Get("Content-Type")) != common.ContentTypeASN1 {
-		http.Error(w, "unsupported Content-Type", http.StatusUnsupportedMediaType)
-		return
-	}
-	body, err := common.ReadRaw(w, r, 0)
-	if err != nil {
-		http.Error(w, "invalid request body", http.StatusBadRequest)
-		return
-	}
-	fn, inner, err := rsp.DecodeRemoteProfileProvisioningRequest(body)
-	if err != nil {
-		http.Error(w, "invalid request", http.StatusBadRequest)
+	fn, inner, ok := asn1bind.DecodeRequest(w, r)
+	if !ok {
 		return
 	}
 
@@ -51,138 +51,70 @@ func (h *Handler) asn1Binding(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-func writeASN1Response(w http.ResponseWriter, inner []byte) {
-	common.WriteASN1(w, rsp.EncodeRemoteProfileProvisioningResponse(inner))
-}
-
 func (h *Handler) asn1Initiate(w http.ResponseWriter, inner []byte) {
 	req, err := rsp.DecodeInitiateAuthenticationRequest(inner)
 	if err != nil {
-		writeASN1Response(w, rsp.InitiateAuthenticationResponseError(1))
+		asn1bind.WriteResponse(w, rsp.InitiateAuthenticationResponseError(1))
 		return
 	}
 	res, err := h.CMAE.Initiate(req.EuiccChallenge, req.EuiccInfo1, req.SmdpAddress)
 	if err != nil {
-		writeASN1Response(w, rsp.InitiateAuthenticationResponseError(initiateErrorCode(err)))
+		asn1bind.WriteResponse(w, rsp.InitiateAuthenticationResponseError(asn1bind.CodeFor(err, initiateErrorCodes, 2)))
 		return
 	}
 	txn, err := hex.DecodeString(res.TransactionID)
 	if err != nil {
-		writeASN1Response(w, rsp.InitiateAuthenticationResponseError(1))
+		asn1bind.WriteResponse(w, rsp.InitiateAuthenticationResponseError(1))
 		return
 	}
-	writeASN1Response(w, rsp.InitiateAuthenticationResponseOk(
+	asn1bind.WriteResponse(w, rsp.InitiateAuthenticationResponseOk(
 		txn, res.ServerSigned1, res.ServerSignature1, res.EuiccCiPKIDToBeUsed, res.ServerCertificate))
 }
 
 func (h *Handler) asn1Authenticate(w http.ResponseWriter, ctx context.Context, inner []byte) {
 	req, err := rsp.DecodeAuthenticateClientRequest(inner)
 	if err != nil {
-		writeASN1Response(w, rsp.AuthenticateClientResponseEs9Error(10)) // invalidTransactionId
+		asn1bind.WriteResponse(w, rsp.AuthenticateClientResponseEs9Error(10)) // invalidTransactionId
 		return
 	}
-	res, err := h.CMAE.AuthenticateClient(ctx, hexUpper(req.TransactionID), req.AuthenticateResponse)
+	res, err := h.CMAE.AuthenticateClient(ctx, asn1bind.HexUpper(req.TransactionID), req.AuthenticateResponse)
 	if err != nil {
-		writeASN1Response(w, rsp.AuthenticateClientResponseEs9Error(authenticateErrorCode(err)))
+		asn1bind.WriteResponse(w, rsp.AuthenticateClientResponseEs9Error(asn1bind.CodeFor(err, authenticateErrorCodes, 127)))
 		return
 	}
 	txn, _ := hex.DecodeString(res.TransactionID)
 	if res.ACROnly {
-		writeASN1Response(w, rsp.AuthenticateClientResponseEs9OkAcr(txn, res.ProfileMetadata))
+		asn1bind.WriteResponse(w, rsp.AuthenticateClientResponseEs9OkAcr(txn, res.ProfileMetadata))
 		return
 	}
-	writeASN1Response(w, rsp.AuthenticateClientResponseEs9Ok(
+	asn1bind.WriteResponse(w, rsp.AuthenticateClientResponseEs9Ok(
 		txn, res.ProfileMetadata, res.SmdpSigned2, res.SmdpSignature2, res.SmdpCertificate))
 }
 
 func (h *Handler) asn1GetBPP(w http.ResponseWriter, inner []byte) {
 	req, err := rsp.DecodeGetBoundProfilePackageRequest(inner)
 	if err != nil {
-		writeASN1Response(w, rsp.GetBoundProfilePackageResponseError(95))
+		asn1bind.WriteResponse(w, rsp.GetBoundProfilePackageResponseError(95))
 		return
 	}
-	res, err := h.CMAE.GetBoundProfilePackage(hexUpper(req.TransactionID), req.PrepareDownloadRaw)
+	res, err := h.CMAE.GetBoundProfilePackage(asn1bind.HexUpper(req.TransactionID), req.PrepareDownloadRaw)
 	if err != nil {
-		writeASN1Response(w, rsp.GetBoundProfilePackageResponseError(getBPPErrorCode(err)))
+		asn1bind.WriteResponse(w, rsp.GetBoundProfilePackageResponseError(asn1bind.CodeFor(err, getBPPErrorCodes, 127)))
 		return
 	}
 	txn, _ := hex.DecodeString(res.TransactionID)
-	writeASN1Response(w, rsp.GetBoundProfilePackageResponseOk(txn, res.BoundProfilePackage))
+	asn1bind.WriteResponse(w, rsp.GetBoundProfilePackageResponseOk(txn, res.BoundProfilePackage))
 }
 
 func (h *Handler) asn1Cancel(w http.ResponseWriter, inner []byte) {
 	req, err := rsp.DecodeCancelSessionRequestEs9(inner)
 	if err != nil {
-		writeASN1Response(w, rsp.CancelSessionResponseEs9Error(1))
+		asn1bind.WriteResponse(w, rsp.CancelSessionResponseEs9Error(1))
 		return
 	}
-	if _, _, err := h.CMAE.CancelSession(hexUpper(req.TransactionID), inner); err != nil {
-		writeASN1Response(w, rsp.CancelSessionResponseEs9Error(cancelErrorCode(err)))
+	if _, _, err := h.CMAE.CancelSession(asn1bind.HexUpper(req.TransactionID), inner); err != nil {
+		asn1bind.WriteResponse(w, rsp.CancelSessionResponseEs9Error(asn1bind.CodeFor(err, cancelErrorCodes, 127)))
 		return
 	}
-	writeASN1Response(w, rsp.CancelSessionResponseEs9Ok())
-}
-
-// hexUpper encodes transaction id bytes as the uppercase hex string expected by
-// the service layer (and the JSON binding).
-func hexUpper(b []byte) string {
-	return strings.ToUpper(hex.EncodeToString(b))
-}
-
-func subjectCode(err error) string {
-	var sc *rsp.StatusCode
-	if errors.As(err, &sc) {
-		return sc.SubjectCode
-	}
-	return ""
-}
-
-func initiateErrorCode(err error) int64 {
-	switch subjectCode(err) {
-	case "8.8.1":
-		return 1 // invalidDpAddress
-	case "8.8.2":
-		return 3 // ciPKIdNotSupported
-	}
-	return 2 // euiccVersionNotSupportedByDp
-}
-
-func authenticateErrorCode(err error) int64 {
-	switch subjectCode(err) {
-	case "8.1.3":
-		return 1 // eumCertificateInvalid
-	case "8.1":
-		return 5 // euiccSignatureInvalid
-	case "8.1.4":
-		return 7 // eidMismatch
-	case "8.2.5", "8.2.6":
-		return 8 // noEligibleProfile
-	case "8.8.2":
-		return 9 // ciPKUnknown
-	case "8.10.1":
-		return 10 // invalidTransactionId
-	}
-	return 127 // undefinedError
-}
-
-func getBPPErrorCode(err error) int64 {
-	switch subjectCode(err) {
-	case "8.1":
-		return 1 // euiccSignatureInvalid
-	case "8.2.7":
-		return 3 // confirmationCodeRefused
-	case "8.10.1":
-		return 95 // invalidTransactionId
-	}
-	return 127
-}
-
-func cancelErrorCode(err error) int64 {
-	switch subjectCode(err) {
-	case "8.10.1":
-		return 1 // invalidTransactionId
-	case "8.1":
-		return 2 // euiccSignatureInvalid
-	}
-	return 127
+	asn1bind.WriteResponse(w, rsp.CancelSessionResponseEs9Ok())
 }
