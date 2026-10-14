@@ -174,7 +174,7 @@ func (h *Handler) validateUPP(w http.ResponseWriter, r *http.Request) {
 	// learns now rather than at POST /upp time. N13 hard constraint violations
 	// make the package invalid (valid: false) and are listed under errors[].
 	warnings := append([]string{}, ins.Warnings...)
-	if rej := h.AllowedSAIP.CheckSAIPVersion(ins.SAIPMajor, ins.SAIPMinor); rej != nil {
+	if rej := checkSAIPVersion(h.AllowedSAIP, ins.SAIPMajor, ins.SAIPMinor); rej != nil {
 		warnings = append(warnings, rej.Error())
 	}
 	errors := ins.Errors
@@ -287,7 +287,7 @@ func (h *Handler) cloneUPP(w http.ResponseWriter, r *http.Request) {
 		adminhttp.WriteErr(w, http.StatusNotFound, "unknown template "+source)
 		return
 	}
-	if rej := h.AllowedSAIP.CheckSAIPVersion(src.SAIPMajor, src.SAIPMinor); rej != nil {
+	if rej := checkSAIPVersion(h.AllowedSAIP, src.SAIPMajor, src.SAIPMinor); rej != nil {
 		h.writeSAIPVersionErr(w, rej)
 		return
 	}
@@ -325,7 +325,7 @@ func (h *Handler) promoteUPP(w http.ResponseWriter, r *http.Request) {
 		adminhttp.WriteErr(w, http.StatusNotFound, "unknown template")
 		return
 	}
-	if rej := h.AllowedSAIP.CheckSAIPVersion(src.SAIPMajor, src.SAIPMinor); rej != nil {
+	if rej := checkSAIPVersion(h.AllowedSAIP, src.SAIPMajor, src.SAIPMinor); rej != nil {
 		h.writeSAIPVersionErr(w, rej)
 		return
 	}
@@ -394,7 +394,7 @@ func (h *Handler) restoreUPP(w http.ResponseWriter, r *http.Request) {
 		adminhttp.WriteErr(w, http.StatusNotFound, "unknown template version")
 		return
 	}
-	if rej := h.AllowedSAIP.CheckSAIPVersion(v.SAIPMajor, v.SAIPMinor); rej != nil {
+	if rej := checkSAIPVersion(h.AllowedSAIP, v.SAIPMajor, v.SAIPMinor); rej != nil {
 		h.writeSAIPVersionErr(w, rej)
 		return
 	}

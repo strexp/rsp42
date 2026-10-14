@@ -24,25 +24,25 @@ import (
 // Handler holds the management API dependencies.
 type Handler struct {
 	Log       *slog.Logger
-	Tenants   *store.TenantRepo
-	Profiles  *store.ProfileRepo
-	Orders    *service.OrderService
-	Inventory *service.Inventory
-	UPP       *store.UPPRepo
-	Perso     *service.PersonalizationService
-	Audit     *store.AuditRepo
-	Batch     *store.BatchRepo
-	OrderRepo *store.OrderRepo
-	Notifs    *store.NotificationRepo
-	Sessions  *store.SessionRepo
-	Pool      *store.PoolRepo
+	Tenants   TenantStore
+	Profiles  ProfileStore
+	Orders    OrderTransitions
+	Inventory Allocator
+	UPP       UPPStore
+	Perso     PersonalizationStore
+	Audit     AuditStore
+	Batch     BatchStore
+	OrderRepo OrderStore
+	Notifs    NotificationStore
+	Sessions  SessionStore
+	Pool      PoolStore
 	// Callbacks exposes the outbound ES2+ notification queue (N2).
-	Callbacks *store.CallbackRepo
+	Callbacks CallbackStore
 	// Idem enables Idempotency-Key replay on the management writes.
-	Idem *store.IdempotencyRepo
+	Idem middleware.IdempotencyStore
 	// AllowedSAIP enforces profiles.allowed_saip_versions on every template
 	// write (N16). A nil policy means "no limit".
-	AllowedSAIP *service.SAIPVersionPolicy
+	AllowedSAIP SAIPVersionChecker
 	// DefaultReserveTTL bounds how long an unclaimed pool reservation may live.
 	DefaultReserveTTL time.Duration
 	// FQDN and OID are used when generating activation codes.

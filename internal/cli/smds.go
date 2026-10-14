@@ -108,11 +108,14 @@ func cmdSMDS(prog string, args []string) int {
 		log.Error("es12 listener", "err", err)
 		return 1
 	}
+	dsAdmin := dsadmin.Config{Events: st.Events, Audit: st.Audit, DefaultTTL: cfg.SMDS.EventTTL.Duration()}
+	if err := dsAdmin.Validate(); err != nil {
+		log.Error("ds admin", "err", err)
+		return 1
+	}
 	admin, err := buildServer(log, "admin", cfg.SMDS.Server.Bind, cfg.SMDS.Server.Admin,
 		api.NewAdminRouter(log, func() bool { return true }, func(r chi.Router) {
-			dsadmin.Mount(r, dsadmin.Config{
-				Events: st.Events, Audit: st.Audit, DefaultTTL: cfg.SMDS.EventTTL.Duration(),
-			})
+			dsadmin.Mount(r, dsAdmin)
 			r.Get("/metrics", metrics.Handler(reg, eventCollector(st.Events)))
 		}, adminOpts))
 	if err != nil {

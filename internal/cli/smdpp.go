@@ -216,6 +216,10 @@ func cmdSMDpp(prog string, args []string) int {
 		DefaultReserveTTL: cfg.Profiles.Personalization.ReserveTTL.Duration(),
 		FQDN:              cfg.SMDpp.FQDN, OID: cfg.SMDpp.OID,
 	}
+	if err := adminH.Validate(); err != nil {
+		log.Error("admin handler", "err", err)
+		return 1
+	}
 	admin, err := buildServer(log, "admin", cfg.SMDpp.Server.Bind, cfg.SMDpp.Server.Admin,
 		api.NewAdminRouter(log, func() bool { return true }, func(r chi.Router) {
 			adminapi.Mount(r, adminH)

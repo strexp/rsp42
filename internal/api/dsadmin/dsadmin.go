@@ -10,6 +10,7 @@ package dsadmin
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"time"
 
@@ -44,6 +45,15 @@ type Config struct {
 	// DefaultTTL bounds the lifetime of admin-registered events; 0 means the
 	// event never expires (the ES12 path uses smds.event_ttl).
 	DefaultTTL time.Duration
+}
+
+// Validate reports whether the required dependency was wired, so the
+// composition root refuses to serve instead of answering 501 at request time.
+func (c Config) Validate() error {
+	if c.Events == nil {
+		return fmt.Errorf("dsadmin: event store is not configured")
+	}
+	return nil
 }
 
 // Mount registers the SM-DS management API on r.

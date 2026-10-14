@@ -128,7 +128,7 @@ func (h *Handler) putUPP(w http.ResponseWriter, r *http.Request) {
 	// N16: refuse templates above the configured SAIP baseline. V2.3.1 is a
 	// document revision number and is encoded in the package exactly like
 	// V2.3, so the comparison only ever uses (major, minor).
-	if rej := h.AllowedSAIP.CheckSAIPVersion(major, minor); rej != nil {
+	if rej := checkSAIPVersion(h.AllowedSAIP, major, minor); rej != nil {
 		h.writeSAIPVersionErr(w, rej)
 		return
 	}
