@@ -27,7 +27,7 @@ internal/saip/personalization personalization engine + data sources
 internal/store                SQLite + goose migrations + repositories
 internal/service              business logic (CMAE, orders, sessions, SM-DS, …)
 internal/api                  HTTP routers and handlers (ES2+/ES9+/ES11/ES12)
-internal/api/admin            management API (profiles, batches, UPP, personalization)
+internal/api/admin            management API (profiles, batches, UPP, personalization, ICCID pool, audit)
 internal/audit                structured audit sinks
 internal/activationcode       activation codes + QR
 ```

@@ -52,6 +52,7 @@ func cmdSMDpp(prog string, args []string) int {
 	defer func() { _ = st.Close() }()
 	orders := service.NewOrderService(st.Profiles)
 	inventory := service.NewInventory(st.Profiles, cfg.Profiles.Personalization.ICCIDPoolPrefix, cfg.Profiles.Personalization.IMSIPoolPrefix)
+	inventory.Pool = st.Pool
 	es2pHandler := es2plus.New(log, st.Profiles, orders, inventory)
 
 	sessions := service.NewSessionService(st.Sessions, provider, cfg.SMDpp.SessionTTL.Duration())
@@ -168,7 +169,7 @@ func cmdSMDpp(prog string, args []string) int {
 	adminH := &adminapi.Handler{
 		Log: log, Profiles: st.Profiles, Orders: orders, Inventory: inventory,
 		UPP: st.UPP, Perso: perso, Audit: st.Audit, Batch: st.Batch,
-		OrderRepo: st.Orders, Notifs: st.Notifs, FQDN: cfg.SMDpp.FQDN, OID: cfg.SMDpp.OID,
+		OrderRepo: st.Orders, Notifs: st.Notifs, Pool: st.Pool, FQDN: cfg.SMDpp.FQDN, OID: cfg.SMDpp.OID,
 	}
 	admin, err := buildServer(log, "admin", cfg.Server.Bind, cfg.Server.Admin, api.NewAdminRouter(log, func() bool { return true }, func(r chi.Router) { adminapi.Mount(r, adminH) }))
 	if err != nil {

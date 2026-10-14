@@ -11,6 +11,7 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"testing"
 
 	"github.com/go-chi/chi/v5"
@@ -28,11 +29,13 @@ func newTestServer(t *testing.T) (*httptest.Server, *store.Store) {
 	t.Cleanup(func() { _ = st.Close() })
 	provider, err := kms.NewFileProviderFromKEK([]byte("0123456789abcdef0123456789abcdef"))
 	require.NoError(t, err)
+	inv := service.NewInventory(st.Profiles, "8900012", "00101")
+	inv.Pool = st.Pool
 	h := &Handler{
 		Log: slog.Default(), Profiles: st.Profiles,
-		Orders: service.NewOrderService(st.Profiles), Inventory: service.NewInventory(st.Profiles, "8900012", "00101"),
+		Orders: service.NewOrderService(st.Profiles), Inventory: inv,
 		UPP: st.UPP, Perso: service.NewPersonalizationService(st.Perso, provider), Audit: st.Audit, Batch: st.Batch,
-		OrderRepo: st.Orders, Notifs: st.Notifs,
+		OrderRepo: st.Orders, Notifs: st.Notifs, Pool: st.Pool,
 		FQDN: "testsmdpplus1.example.com", OID: "2.999.10",
 	}
 	r := chi.NewRouter()
@@ -216,6 +219,95 @@ func TestAdminBatchesAndBulk(t *testing.T) {
 	// Delete the batch.
 	status, _ = do(t, "DELETE", base+"/batches/"+idStr, nil)
 	require.Equal(t, 204, status)
+}
+
+func TestAdminICCIDPoolAndDecoded(t *testing.T) {
+	srv, _ := newTestServer(t)
+	base := srv.URL + "/admin/api/v1"
+
+	// Import a range.
+	status, raw := do(t, "POST", base+"/iccid-ranges", map[string]any{
+		"start": "8900012000000000000", "end": "8900012000000000199", "note": "test",
+	})
+	require.Equal(t, 201, status)
+	var imp struct {
+		RangeID  int64 `json:"rangeId"`
+		Inserted int   `json:"inserted"`
+	}
+	require.NoError(t, json.Unmarshal(raw, &imp))
+	require.Greater(t, imp.Inserted, 0)
+
+	// Stats + reserve.
+	status, raw = do(t, "GET", base+"/iccid-pool/stats", nil)
+	require.Equal(t, 200, status)
+	require.Contains(t, string(raw), "available")
+
+	status, raw = do(t, "POST", base+"/iccid-pool/reserve", map[string]any{"eid": "EID-X"})
+	require.Equal(t, 200, status)
+	var reserved struct {
+		ICCID string `json:"iccid"`
+	}
+	require.NoError(t, json.Unmarshal(raw, &reserved))
+	require.NotEmpty(t, reserved.ICCID)
+
+	// Allocation now prefers the pool: a new profile consumes one pool ICCID.
+	status, raw = do(t, "POST", base+"/profiles", map[string]any{"profileType": "operational"})
+	require.Equal(t, 201, status)
+	var created struct {
+		ICCID string `json:"iccid"`
+	}
+	require.NoError(t, json.Unmarshal(raw, &created))
+	require.True(t, strings.HasPrefix(created.ICCID, "89000120"), "expected a pool ICCID, got %s", created.ICCID)
+
+	// Release the reserved one.
+	status, _ = do(t, "POST", base+"/iccid-pool/release", map[string]any{"iccid": reserved.ICCID})
+	require.Equal(t, 200, status)
+
+	// Delete the range.
+	status, _ = do(t, "DELETE", base+"/iccid-ranges/"+strconv.FormatInt(imp.RangeID, 10), nil)
+	require.Equal(t, 200, status)
+
+	// UPP decoded view.
+	der, err := os.ReadFile("../../../testdata/upp/TS48v1_A.der")
+	require.NoError(t, err)
+	do(t, "POST", base+"/upp", map[string]any{"name": "u.der", "data": base64.StdEncoding.EncodeToString(der)})
+	status, raw = do(t, "GET", base+"/upp/u.der/decoded", nil)
+	require.Equal(t, 200, status)
+	require.Contains(t, string(raw), `"name":"header"`)
+	require.Contains(t, string(raw), `"services"`)
+}
+
+func TestAdminExportImport(t *testing.T) {
+	srv, _ := newTestServer(t)
+	base := srv.URL + "/admin/api/v1"
+
+	do(t, "POST", base+"/profiles", map[string]any{"profileType": "operational", "matchingId": "M-EXP"})
+
+	// Export CSV.
+	status, raw := do(t, "GET", base+"/profiles/export?format=csv", nil)
+	require.Equal(t, 200, status)
+	require.Contains(t, string(raw), "iccid,imsi,profileType")
+
+	// Export JSON + re-import one record.
+	status, raw = do(t, "GET", base+"/profiles/export?format=json", nil)
+	require.Equal(t, 200, status)
+	var exp struct {
+		Items []map[string]any `json:"items"`
+	}
+	require.NoError(t, json.Unmarshal(raw, &exp))
+	require.NotEmpty(t, exp.Items)
+
+	status, raw = do(t, "POST", base+"/profiles/import", map[string]any{
+		"records": []map[string]any{{"iccid": "89000123456789012341", "profileType": "operational"}},
+	})
+	require.Equal(t, 200, status)
+	require.Contains(t, string(raw), `"imported":1`)
+
+	// Personalization export.
+	do(t, "PUT", base+"/personalization/89000123456789012341", map[string]any{"imsi": "001010123456063", "k": "465B5CE8B199B49FAA5F0A2EE238A6BC"})
+	status, raw = do(t, "GET", base+"/personalization/export?format=csv", nil)
+	require.Equal(t, 200, status)
+	require.Contains(t, string(raw), "iccid,imsi,k,opc")
 }
 
 func TestAdminOpenAPIAndAudit(t *testing.T) {

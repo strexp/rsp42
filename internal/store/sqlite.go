@@ -30,6 +30,7 @@ type Store struct {
 	UPP       *UPPRepo
 	Perso     *PersonalizationRepo
 	Batch     *BatchRepo
+	Pool      *PoolRepo
 }
 
 // Open opens the SQLite database at dsn and applies all migrations.
@@ -68,6 +69,7 @@ func Open(dsn string) (*Store, error) {
 	s.UPP = &UPPRepo{db: db}
 	s.Perso = &PersonalizationRepo{db: db}
 	s.Batch = &BatchRepo{db: db}
+	s.Pool = &PoolRepo{db: db}
 	return s, nil
 }
 

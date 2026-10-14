@@ -7,7 +7,10 @@ import (
 	"os"
 	"time"
 
+	"github.com/go-chi/chi/v5"
+
 	"rsp42/internal/api"
+	adminapi "rsp42/internal/api/admin"
 	"rsp42/internal/api/es11"
 	"rsp42/internal/api/es12"
 	"rsp42/internal/api/middleware"
@@ -100,7 +103,8 @@ func cmdSMDS(prog string, args []string) int {
 		log.Error("es12 listener", "err", err)
 		return 1
 	}
-	admin, err := buildServer(log, "admin", cfg.SMDS.Server.Bind, cfg.SMDS.Server.Admin, api.NewAdminRouter(log, func() bool { return true }, nil))
+	admin, err := buildServer(log, "admin", cfg.SMDS.Server.Bind, cfg.SMDS.Server.Admin,
+		api.NewAdminRouter(log, func() bool { return true }, func(r chi.Router) { adminapi.MountDS(r, st.Events) }))
 	if err != nil {
 		log.Error("admin listener", "err", err)
 		return 1

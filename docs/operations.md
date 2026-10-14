@@ -94,6 +94,7 @@ later).
 rsp42 admin profile list|show        # inventory (not users)
 rsp42 admin session gc               # remove expired sessions
 rsp42 admin gc [--keep 720h]         # delete stale notifications/orders/audit
+rsp42 admin iccid import|list|stats [--start X --end Y]   # manage the ICCID pool
 rsp42 admin upp import --dir DIR     # import UPP templates into the registry
 rsp42 admin upp list                 # list registry templates (SAIP version, hash)
 rsp42 admin personalization import --file CSV|list|delete   # manage per-ICCID personalization

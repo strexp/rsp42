@@ -70,9 +70,15 @@ trusted network. `GET /admin/api/v1/openapi.json` returns a compact description.
 |---|---|
 | Profiles | `GET/POST /profiles`, `GET/PATCH/DELETE /profiles/{iccid}`, `POST /profiles/{iccid}/confirm\|cancel\|release`, `POST /profiles/{iccid}/activation-code`, `GET /profiles/{iccid}/timeline`, `POST /profiles/bulk` |
 | Download batches | `GET/POST /batches`, `GET/DELETE /batches/{id}`, `GET /batches/{id}/items`, `POST /batches/{id}/confirm\|cancel` |
-| UPP registry | `GET/POST /upp`, `GET/DELETE /upp/{name}`, `GET /upp/{name}/bytes`, `POST /upp/{name}/activate\|deactivate` |
-| Personalization | `GET /personalization`, `GET/PUT/DELETE /personalization/{iccid}` (`?reveal=1` includes K/OPc), `POST /personalization/import` |
+| UPP registry | `GET/POST /upp`, `GET/DELETE /upp/{name}`, `GET /upp/{name}/bytes`, `GET /upp/{name}/decoded`, `POST /upp/{name}/activate\|deactivate` |
+| Personalization | `GET /personalization`, `GET/PUT/DELETE /personalization/{iccid}` (`?reveal=1` includes K/OPc), `POST /personalization/import`, `GET /personalization/export` |
+| ICCID pool | `GET /iccid-pool`, `GET /iccid-pool/stats`, `POST /iccid-pool/reserve\|release\|block`, `GET/POST /iccid-ranges`, `DELETE /iccid-ranges/{id}` |
+| Export/import | `GET /profiles/export?format=csv\|json`, `POST /profiles/import` |
 | Audit log | `GET /audit` (`interface`, `function`, `subject`, `actor`, `outcome`, `since`, `until`, `page`, `size`) |
+
+The SM-DS admin listener exposes a read-only `GET /admin/api/v1/events`
+(`eid`, `eventId`, `page`, `size`); event writes remain the ES12 machine
+interface.
 
 Profile listings accept `state`, `eid`, `iccid` (prefix), `q` (substring),
 `page`, `size`, `sort`. Mutations are recorded in `audit_log` with

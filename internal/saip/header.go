@@ -221,6 +221,68 @@ func (s *Sequence) RebuildMandatoryGFSTEList() error {
 	return nil
 }
 
+// serviceNames maps ServicesList indices to their SGP.22 names.
+var serviceNames = map[int]string{
+	SvcContactless: "contactless", SvcUSIM: "usim", SvcISIM: "isim", SvcCSIM: "csim",
+	SvcMilenage: "milenage", SvcTUAK128: "tuak128", SvcCave: "cave",
+	SvcGBAUSIM: "gba-usim", SvcGBAISIM: "gba-isim", SvcMBMS: "mbms", SvcEAP: "eap",
+	SvcJavaCard: "javacard", SvcMultOS: "multos", SvcMultipleUSIM: "multiple-usim",
+	SvcMultipleISIM: "multiple-isim", SvcMultipleCSIM: "multiple-csim", SvcTUAK256: "tuak256",
+	SvcUSIMTestAlgorithm: "usim-test-algorithm", SvcBERTLV: "bertlv",
+}
+
+// Services returns the mandatory services advertised by the header.
+func (h *Header) Services() []string {
+	var out []string
+	for i := SvcContactless; i <= SvcBERTLV; i++ {
+		if h.HasService(i) {
+			out = append(out, serviceNames[i])
+		}
+	}
+	return out
+}
+
+// GFSTEList returns the eUICC-Mandatory-GFSTEList OIDs as dotted strings.
+func (h *Header) GFSTEList() []string {
+	node := h.Node.Find(hdrGFSTE)
+	if node == nil {
+		return nil
+	}
+	var out []string
+	for _, c := range node.Children {
+		if bytesEq(c.Tag, tagOID) {
+			if oid, err := asn1.DecodeOID(c.Value); err == nil {
+				out = append(out, oid)
+			}
+		}
+	}
+	return out
+}
+
+// PEName returns a human-readable name for a ProfileElement tag, or "".
+func PEName(tag []byte) string {
+	return peNames[tagHex(tag)]
+}
+
+var peNames = map[string]string{
+	"a0": "header", "a1": "genericFileManagement", "a2": "pinCodes", "a3": "pukCodes",
+	"a4": "akaParameter", "a5": "cdmaParameter", "a6": "securityDomain", "a7": "rfm",
+	"a8": "application", "a9": "nonStandard", "aa": "end",
+	"b0": "mf", "b1": "cd", "b2": "telecom", "b3": "usim", "b4": "opt-usim",
+	"b5": "isim", "b6": "opt-isim", "b7": "phonebook", "b8": "gsm-access",
+	"b9": "csim", "ba": "opt-csim", "bb": "eap", "bc": "df-5gs", "bd": "df-saip",
+	"be": "df-snpn", "bf20": "iot", "bf21": "opt-iot",
+}
+
+func tagHex(tag []byte) string {
+	const d = "0123456789abcdef"
+	out := make([]byte, 0, len(tag)*2)
+	for _, b := range tag {
+		out = append(out, d[b>>4], d[b&0x0f])
+	}
+	return string(out)
+}
+
 // AKAAlgorithmID navigates PE-AKAParameter → algoConfiguration → algoParameter
 // → algorithmID.
 func AKAAlgorithmID(pe *asn1.Node) int {

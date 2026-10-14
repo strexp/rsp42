@@ -31,6 +31,7 @@ type Handler struct {
 	Batch     *store.BatchRepo
 	OrderRepo *store.OrderRepo
 	Notifs    *store.NotificationRepo
+	Pool      *store.PoolRepo
 	// FQDN and OID are used when generating activation codes.
 	FQDN string
 	OID  string
@@ -48,6 +49,8 @@ func Mount(r chi.Router, h *Handler) {
 			r.Get("/", h.listProfiles)
 			r.Post("/", h.createProfile)
 			r.Post("/bulk", h.bulkProfiles)
+			r.Get("/export", h.exportProfiles)
+			r.Post("/import", h.importProfiles)
 			r.Get("/{iccid}", h.getProfile)
 			r.Patch("/{iccid}", h.updateProfile)
 			r.Delete("/{iccid}", h.deleteProfile)
@@ -63,6 +66,7 @@ func Mount(r chi.Router, h *Handler) {
 			r.Post("/", h.putUPP)
 			r.Get("/{name}", h.getUPP)
 			r.Get("/{name}/bytes", h.getUPPBytes)
+			r.Get("/{name}/decoded", h.decodedUPP)
 			r.Delete("/{name}", h.deleteUPP)
 			r.Post("/{name}/activate", h.activateUPP)
 			r.Post("/{name}/deactivate", h.deactivateUPP)
@@ -80,8 +84,22 @@ func Mount(r chi.Router, h *Handler) {
 
 		r.Get("/audit", h.listAudit)
 
+		r.Route("/iccid-pool", func(r chi.Router) {
+			r.Get("/", h.listPool)
+			r.Get("/stats", h.poolStats)
+			r.Post("/reserve", h.reserveICCID)
+			r.Post("/release", h.releaseICCID)
+			r.Post("/block", h.blockICCID)
+		})
+		r.Route("/iccid-ranges", func(r chi.Router) {
+			r.Get("/", h.listRanges)
+			r.Post("/", h.importRange)
+			r.Delete("/{id}", h.deleteRange)
+		})
+
 		r.Route("/personalization", func(r chi.Router) {
 			r.Get("/", h.listPerso)
+			r.Get("/export", h.exportPersonalization)
 			r.Post("/import", h.importPerso)
 			r.Get("/{iccid}", h.getPerso)
 			r.Put("/{iccid}", h.putPerso)
@@ -177,6 +195,8 @@ var openAPIDoc = map[string]any{
 		"/admin/api/v1/profiles/{iccid}/release":         map[string]any{"post": op("Release the profile")},
 		"/admin/api/v1/profiles/{iccid}/activation-code": map[string]any{"post": op("Generate an activation code")},
 		"/admin/api/v1/profiles/bulk":                    map[string]any{"post": op("Apply an action (confirm|cancel|release|delete) to a list of ICCIDs")},
+		"/admin/api/v1/profiles/export":                  map[string]any{"get": op("Export profiles (format=csv|json, same filters as the list)")},
+		"/admin/api/v1/profiles/import":                  map[string]any{"post": op("Import profiles from a JSON record list")},
 		"/admin/api/v1/batches":                          map[string]any{"get": op("List download batches"), "post": op("Create a download batch (allocates N profiles)")},
 		"/admin/api/v1/batches/{id}":                     map[string]any{"get": op("Get a batch and its state breakdown"), "delete": op("Delete a batch")},
 		"/admin/api/v1/batches/{id}/items":               map[string]any{"get": op("List the profiles in a batch")},
@@ -185,10 +205,19 @@ var openAPIDoc = map[string]any{
 		"/admin/api/v1/upp":                              map[string]any{"get": op("List UPP templates"), "post": op("Add/replace a UPP template (base64 DER, SAIP version parsed server-side)")},
 		"/admin/api/v1/upp/{name}":                       map[string]any{"get": op("Get UPP metadata"), "delete": op("Delete a UPP template")},
 		"/admin/api/v1/upp/{name}/bytes":                 map[string]any{"get": op("Download the UPP DER")},
+		"/admin/api/v1/upp/{name}/decoded":               map[string]any{"get": op("Decoded UPP view (header, services, GFSTE, elements, files)")},
 		"/admin/api/v1/upp/{name}/activate":              map[string]any{"post": op("Enable a UPP template")},
 		"/admin/api/v1/upp/{name}/deactivate":            map[string]any{"post": op("Disable a UPP template")},
 		"/admin/api/v1/audit":                            map[string]any{"get": op("Query the audit log", "interface, function, subject, actor, outcome, since, until, page, size")},
+		"/admin/api/v1/iccid-pool":                       map[string]any{"get": op("List ICCID pool entries", "state, iccid, page, size")},
+		"/admin/api/v1/iccid-pool/stats":                 map[string]any{"get": op("ICCID pool counts by state")},
+		"/admin/api/v1/iccid-pool/reserve":               map[string]any{"post": op("Reserve an ICCID from the pool")},
+		"/admin/api/v1/iccid-pool/release":               map[string]any{"post": op("Return an ICCID to the pool")},
+		"/admin/api/v1/iccid-pool/block":                 map[string]any{"post": op("Block an ICCID")},
+		"/admin/api/v1/iccid-ranges":                     map[string]any{"get": op("List imported ICCID ranges"), "post": op("Import an ICCID range")},
+		"/admin/api/v1/iccid-ranges/{id}":                map[string]any{"delete": op("Delete an ICCID range")},
 		"/admin/api/v1/personalization":                  map[string]any{"get": op("List personalization records"), "post": op("Bulk import personalization records")},
+		"/admin/api/v1/personalization/export":           map[string]any{"get": op("Export personalization (format=csv|json; includes K/OPc)")},
 		"/admin/api/v1/personalization/{iccid}":          map[string]any{"get": op("Get a record (?reveal=1 to include K/OPc)"), "put": op("Create/replace a record"), "delete": op("Delete a record")},
 	},
 }

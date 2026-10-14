@@ -2,6 +2,7 @@ package service
 
 import (
 	"crypto/rand"
+	"errors"
 	"fmt"
 	"strings"
 
@@ -9,11 +10,18 @@ import (
 	"rsp42/internal/store"
 )
 
-// Inventory allocates ICCIDs and creates profile rows for ES2+.DownloadOrder.
+// ICCIDPool reserves ICCIDs from an operator-managed pool.
+type ICCIDPool interface {
+	Reserve(eid string) (string, error)
+}
+
+// Inventory allocates ICCIDs and creates profile rows for ES2+.DownloadOrder. If
+// a Pool is set it is preferred; otherwise an ICCID is generated on demand.
 type Inventory struct {
 	Profiles    ProfileCreator
 	ICCIDPrefix string
 	IMSI        string
+	Pool        ICCIDPool
 }
 
 // NewInventory builds an Inventory.
@@ -49,6 +57,18 @@ func (inv *Inventory) Allocate(eid, profileType, requestedICCID string) (*store.
 			return nil, fmt.Errorf("service: ICCID %s is not available: %w", iccid, err)
 		}
 		return p, nil
+	}
+
+	// Prefer an operator-imported ICCID from the pool when one is available.
+	if inv.Pool != nil {
+		if iccid, err := inv.Pool.Reserve(eid); err == nil {
+			p := &store.Profile{ICCID: iccid, EID: eid, ProfileType: profileType, State: state, IMSI: inv.IMSI}
+			if _, err := inv.Profiles.Create(p); err == nil {
+				return p, nil
+			}
+		} else if !errors.Is(err, store.ErrNotFound) {
+			return nil, err
+		}
 	}
 
 	for attempt := 0; attempt < 8; attempt++ {
