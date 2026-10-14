@@ -82,3 +82,35 @@ func TestUPPVersionLimitRejectsAboveBaseline(t *testing.T) {
 	status, raw = do(t, "GET", base+"/upp/v23.der", nil)
 	require.Equal(t, 404, status, string(raw))
 }
+
+// TestUPPValidateConstraintErrors pins N13 at the API boundary: a package that
+// violates the V2.3.1 constraints is reported by /upp/validate (valid:false,
+// errors[]) and refused by POST /upp without being stored.
+func TestUPPValidateConstraintErrors(t *testing.T) {
+	policy, err := service.NewSAIPVersionPolicy([]string{"2.3"})
+	require.NoError(t, err)
+	srv, _ := newTestServer(t, func(h *Handler) { h.AllowedSAIP = policy })
+	base := srv.URL + "/admin/api/v1"
+
+	// ProfileHeader (major 2, minor 3) + PE-MF, with no trailing PE-End.
+	raw := []byte{0xa0, 0x06, 0x80, 0x01, 0x02, 0x81, 0x01, 0x03, 0xb0, 0x00}
+	data := base64.StdEncoding.EncodeToString(raw)
+
+	status, body := do(t, "POST", base+"/upp/validate", map[string]any{"data": data})
+	require.Equal(t, 200, status, string(body))
+	var v struct {
+		Valid  bool     `json:"valid"`
+		Errors []string `json:"errors"`
+	}
+	require.NoError(t, json.Unmarshal(body, &v))
+	require.False(t, v.Valid)
+	require.NotEmpty(t, v.Errors)
+
+	status, body = do(t, "POST", base+"/upp", map[string]any{"name": "bad.der", "data": data})
+	require.Equal(t, 400, status, string(body))
+	require.Contains(t, string(body), "invalid_upp")
+
+	// The refused template was not stored.
+	status, _ = do(t, "GET", base+"/upp/bad.der", nil)
+	require.Equal(t, 404, status)
+}

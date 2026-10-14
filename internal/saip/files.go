@@ -54,16 +54,40 @@ func (s *Sequence) FindFile(fid uint16) *FileHandle {
 	return nil
 }
 
-// Body returns the linearized file content (concatenation of fillFileContent
-// elements, ignoring offsets).
+// Body returns the linearized file content. The File CHOICE is a sequence of
+// fillFileOffset / fillFileContent elements: fillFileOffset moves the write
+// position (UInt16, big-endian, absolute) and fillFileContent writes at that
+// position, zero-extending the body when it skips ahead. Ignoring the offsets
+// silently corrupted templates that use fragmented file content (C6/N13).
 func (f *FileHandle) Body() []byte {
 	var out []byte
+	pos := 0
 	for _, c := range f.Entry.Children {
-		if bytesEq(c.Tag, tagFileContent) {
-			out = append(out, c.Value...)
+		switch {
+		case bytesEq(c.Tag, tagFileOffset):
+			pos = uintFromBytes(c.Value)
+		case bytesEq(c.Tag, tagFileContent):
+			if pos > len(out) {
+				out = append(out, make([]byte, pos-len(out))...)
+			}
+			end := pos + len(c.Value)
+			if end > len(out) {
+				out = append(out, make([]byte, end-len(out))...)
+			}
+			copy(out[pos:], c.Value)
+			pos = end
 		}
 	}
 	return out
+}
+
+// uintFromBytes decodes a big-endian unsigned integer of up to 8 bytes.
+func uintFromBytes(b []byte) int {
+	n := 0
+	for _, x := range b {
+		n = n<<8 | int(x)
+	}
+	return n
 }
 
 // SetBody replaces the file content with body. Any existing fillFileOffset /

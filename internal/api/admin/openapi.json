@@ -1101,7 +1101,7 @@
         "tags": [
           "upp"
         ],
-        "summary": "Add/replace a UPP template (base64 DER, SAIP version parsed server-side)",
+        "summary": "Add/replace a UPP template (base64 DER, SAIP version parsed server-side; a template violating the SAIP V2.3.1 constraints is refused with 400 invalid_upp and an `errors` array — N13)",
         "requestBody": {
           "required": true,
           "content": {
@@ -1147,7 +1147,7 @@
         "tags": [
           "upp"
         ],
-        "summary": "Validate an uploaded SAIP binary without storing it; returns `warnings[]`, including a version above profiles.allowed_saip_versions (still valid: true)",
+        "summary": "Validate an uploaded SAIP binary without storing it; returns `warnings[]` (including a version above profiles.allowed_saip_versions, still valid: true) and `errors[]` (hard SAIP V2.3.1 constraint violations, valid: false — N13)",
         "requestBody": {
           "required": true,
           "content": {

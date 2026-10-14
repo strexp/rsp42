@@ -51,7 +51,7 @@
 | N6 | admin `bind` 默认 `127.0.0.1`；`X-RSP42-Reveal-Secrets: yes` 护栏（`secret_reveal_not_confirmed`） | 部署约束 | **范围外**（§8.4 决策 11、§10.3 步骤 2.4） |
 | N11 | 解析 `additionalEuiccProfilePackageVersions`；`Version`/`SupportedVersions`/`IsV3Capable`；移除 `SelectBestFor` 的 `major<=0` 回退 | SEC；`01` §8.4.1 | P1 |
 | N15 | `ServicesList` 补到 V2.3.1 的 24 项（`dfLink`/`cat-tp`/`get-identity`/`profile-a-x25519`/`profile-b-p256`） | `03` §3.1 能力位 | P1 |
-| N13 | Annex A 模板表（V2.3.1 的 13 个模板 OID）+ 约束校验 + V2.3.1 测试向量 | 模块 C 模板上架校验 | P1 |
+| N13 | Annex A 模板表（V2.3.1 的 14 个模板 OID，**非 13**）+ 约束校验 + V2.3.1 测试向量 | 模块 C 模板上架校验 | P1 |
 | N17 | `SdKey*` 与 `MncLen` 个性化 | MNO-SD 密钥集 / `EF.AD` | P1 |
 | N4 | `/upp/{name}/schema` 的 `fields[]` 增 `applicable`/`targets[]`/`requiredIn[]`/`note` | 模块 C 动态表单 | P2 |
 | N5 | `/upp/render` 接受未入库模板（`data` base64 DER） | 模块 C 上传向导 | P2 |
@@ -850,7 +850,7 @@ esim42 `02` §7.2 与 `06` §13.1 给出的顺序，与第一轮的 M1–M4 **�
 | N6 | admin 监听面 / 密钥导出加固 | `—` | **范围外**（§8.4 决策 11、§10.3 步骤 2.4）；现状：`config/config.example.yaml:19,73` = `0.0.0.0`，无 reveal 头校验，**本轮不改** |
 | N11 | `additionalEuiccProfilePackageVersions` | `[x]` | `internal/rsp/types.go`（`EUICCInfo2` 解析 `[15]`、`SupportedVersions()`、`IsV3Capable()`）+ `internal/rsp/version.go`（`Version`）；`store.SelectBestFor` 改版本集合入参并移除 `major<=0 → AnyForTenant()` 回退；会话持久化 `euicc_profile_version`/`euicc_supported_versions`/`uicc_capability`（迁移 `00011`）；`v3-capable-euicc` 指标 |
 | N15 | `ServicesList` 24 项 | `[x]` | `internal/saip/header.go`：补 `dfLink`(19)/`cat-tp`(20)/`get-identity`(21)/`profile-a-x25519`(22)/`profile-b-p256`(23) + `svcMax` 作为 `Services()` 上界；`bertlv` → 规范拼写 `ber-tlv`（对外契约变更，C7）；TUAK-256 修复（按 `PE-AKAParameter` 的 K 长度 16/32 置 `tuak128`/`tuak256`，新增 `AKAKeyLength`）；`internal/saip/services_test.go` |
-| N13 | Annex A 模板表 + 约束 + 向量 | `[ ]` | `internal/saip/` 无 `templates.go`；`TODO.md` §2 |
+| N13 | Annex A/B 模板表 + 约束 + 向量 | `[x]` | `internal/saip/templates.go`（**V2.3.1 Annex B 权威表 = 14 个模板 OID**，`2.23.143.1.2.1`–`.2.14` + spec-version `2.23.143.1.1.2`；无版本化子弧）、`internal/saip/validate.go`（结构/单例/可选顺序/mandatory-services↔PE/AKA↔服务位/identification 唯一/File `doNotCreate`·`fileDescriptor`/GFSTE ⊆ 14 模板且拒绝带版本子弧/非 V2.3.1 PE 带 `mandated` → warning）、`internal/saip/files.go` 修 `Body()` 的 `fillFileOffset`；`service.UPPInspection.Errors` + `/upp/validate`（`valid:false`+`errors[]`）+ `/upp` 拒绝入库（`400 invalid_upp`）；测试 `internal/saip/validate_test.go`（含 TS.48 回归门禁） |
 | N17 | `SdKey*` / `MncLen` | `[ ]` | `TODO.md` §2 |
 | N4 | schema 模板级字段可用性 | `[ ]` | `internal/api/admin/upp_tools.go:20-29` 为全局静态目录 |
 | N5 | `/upp/render` 未入库模板 | `[ ]` | `internal/api/admin/upp_tools.go:98-121` 强制 `name` |
@@ -942,9 +942,9 @@ esim42 `02` §7.2 与 `06` §13.1 给出的顺序，与第一轮的 M1–M4 **�
 - **理由**：管理 API 无鉴权已是既定部署前提（§0.1-4、§8.1 决策 5），安全边界完全由 esim42 承担；esim42 必须保证该 API 不被反向代理、网关或前端暴露。
 - **遗留提示（不构成待办）**：若将来重启该项，护栏应覆盖 `GET /personalization?reveal=1`（`internal/api/admin/personalization.go` 的 `reveal=1` 分支同样能回明文 K/OPc），而不只是 `/export`。
 
-### 10.4 批 3（P1，SAIP 能力）—— N15 已落地；N13/N17 待实施
+### 10.4 批 3（P1，SAIP 能力）—— N15/N13 已落地；N17 待实施
 
-> ⚠️ **N13 有一处待决策的偏差**：计划写“V2.3.1 Annex B 的 **13** 个模板 OID”，但本仓库 `refs/pysim/pySim/esim/saip/oid.py` 给出 **14** 个无版本维度的模板 OID（`2.23.143.1.2.1`–`.2.14`，含 MF `.2.1` 与 DF.CD `.2.2`），而 `refs/YggdraSIM/Tools/ProfilePackage/saip_pe_editors/_naa.py` 又给出**语义冲突**的另一张表（`.2.3`=ADF.USIM 等）。refs 中没有 TCA SAIP V2.3.1 规范原文，无法权威判定哪一项不属于 V2.3.1。N13 落地前需确认采用哪一张表（详见实施暂停说明）。
+> **N13 偏差已解决（2026-10-14 复核）**：计划写“V2.3.1 Annex B 的 **13** 个模板 OID”，但把规范原文（`refs/Profile interoperability technical specification_V2.3.1 Final.pdf`）放入 refs 后核实，Annex B 实际分配 **14** 个模板 OID（`2.23.143.1.2.1`–`.2.14`，含 MF `.2.1` 与 DF.CD `.2.2`）+ spec-version OID `2.23.143.1.1.2`，与 pysim 的 `oid.py` 一致；`refs/YggdraSIM/.../\_naa.py` 的冲突表**不采用**。实现按权威的 14 项进行（`internal/saip/templates.go`），计划中的“13”为笔误。
 
 #### 步骤 3.1 — N15：`ServicesList` 补到 V2.3.1 的 24 项 + TUAK256 修复
 

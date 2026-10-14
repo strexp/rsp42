@@ -88,15 +88,22 @@ func (h *Handler) validateUPP(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusOK, map[string]any{"valid": false, "error": err.Error()})
 		return
 	}
-	// N16: uploading a template just to look at its structure stays possible
-	// (valid: true), but a version above the baseline is reported explicitly so
-	// the caller learns now rather than at POST /upp time.
+	// N16: uploading a template just to look at its structure stays possible,
+	// but a version above the baseline is reported explicitly so the caller
+	// learns now rather than at POST /upp time. N13 hard constraint violations
+	// make the package invalid (valid: false) and are listed under errors[].
 	warnings := append([]string{}, ins.Warnings...)
 	if rej := h.AllowedSAIP.CheckSAIPVersion(ins.SAIPMajor, ins.SAIPMinor); rej != nil {
 		warnings = append(warnings, rej.Error())
 	}
+	errors := ins.Errors
+	if errors == nil {
+		errors = []string{}
+	}
 	h.audit(r, "validateUPP", req.Name, "Executed-Success", map[string]any{"sha256": ins.SHA256, "saip": ins.SAIP})
-	writeJSON(w, http.StatusOK, map[string]any{"valid": true, "inspection": ins, "warnings": warnings})
+	writeJSON(w, http.StatusOK, map[string]any{
+		"valid": len(errors) == 0, "inspection": ins, "warnings": warnings, "errors": errors,
+	})
 }
 
 // renderUPP is a dry-run: it applies personalization to a template and reports

@@ -106,11 +106,24 @@ func (h *Handler) putUPP(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusBadRequest, "data must be base64-encoded DER")
 		return
 	}
-	major, minor, err := service.UPPVersion(raw)
+	// Parse once: the inspection carries the SAIP version and the N13
+	// constraint result.
+	ins, err := service.InspectUPP(raw)
 	if err != nil {
 		writeErr(w, http.StatusBadRequest, "invalid UPP profile: "+err.Error())
 		return
 	}
+	// N13: a template that violates the V2.3.1 structural or semantic
+	// constraints must not enter the registry.
+	if len(ins.Errors) > 0 {
+		writeJSON(w, http.StatusBadRequest, map[string]any{
+			"code":    "invalid_upp",
+			"message": "the SAIP profile violates the V2.3.1 constraints",
+			"errors":  ins.Errors,
+		})
+		return
+	}
+	major, minor := ins.SAIPMajor, ins.SAIPMinor
 	// N16: refuse templates above the configured SAIP baseline. V2.3.1 is a
 	// document revision number and is encoded in the package exactly like
 	// V2.3, so the comparison only ever uses (major, minor).

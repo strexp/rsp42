@@ -39,8 +39,11 @@ type UPPInspection struct {
 	Elements    []PEElement `json:"elements"`
 	Files       []PEFile    `json:"files"`
 	// Warnings lists non-fatal inconsistencies (e.g. a GFSTE entry with no
-	// matching ProfileElement present in the package).
+	// matching ProfileElement present in the package) and baseline advisories.
 	Warnings []string `json:"warnings"`
+	// Errors lists hard SAIP V2.3.1 constraint violations (N13). A package with
+	// errors is not a valid V2.3.1 profile and is refused by POST /upp.
+	Errors []string `json:"errors,omitempty"`
 }
 
 // InspectUPP parses a UPP binary and returns its structure plus best-effort
@@ -93,6 +96,11 @@ func InspectUPP(raw []byte) (*UPPInspection, error) {
 		if !present[g] {
 			out.Warnings = append(out.Warnings, "GFSTE entry "+g+" has no matching ProfileElement in the package")
 		}
+	}
+	// N13: SAIP V2.3.1 structural and semantic constraints.
+	if cv := seq.ValidateV231(); cv != nil {
+		out.Errors = cv.Errors
+		out.Warnings = append(out.Warnings, cv.Warnings...)
 	}
 	return out, nil
 }
