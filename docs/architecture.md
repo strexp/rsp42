@@ -20,25 +20,39 @@ container selects one via `RSP42_ROLE`.
 
 ```
 cmd/rsp42                     single entry point
-internal/config               YAML + env config, strict validation
+internal/config               YAML + env config (per-section validation, RSP42_* overrides)
 internal/logging              slog setup
-internal/asn1                 BER-TLV: raw-preserving parser + mutable Node tree
+internal/version              build metadata (-ldflags injected)
+internal/iccid                ICCID text helpers (padding, Luhn) — leaf, no dependencies
+internal/saipver              SAIP version value type — leaf, no dependencies
+internal/asn1                 BER-TLV: raw-preserving parser + mutable Node tree (the only bertlv importer)
 internal/rsp                  hand-written SGP.22 message codecs + signing helpers
 internal/crypto               ECDSA raw, X9.63 KDF, SCP03t (BSP), BPP protection
 internal/cert                 certificate chain, roles/policies, EUM constraints
-internal/kms                  file KMS: PEM keys + AES-256-GCM
-internal/saip                 SAIP ProfileElement model (parse/edit/encode)
+internal/kms                  file KMS: PEM keys + AES-256-GCM (SignerLoader / Sealer)
+internal/saip                 SAIP ProfileElement model (parse/edit/encode, PE registry)
 internal/saip/personalization personalization engine + data sources
 internal/store                SQLite + goose migrations + repositories
 internal/service              business logic (CMAE, orders, sessions, SM-DS, …)
-internal/api                  HTTP routers and handlers (ES2+/ES9+/ES11/ES12)
-internal/api/admin            management API (profiles, batches, UPP, personalization, ICCID pool, audit)
+internal/api                  HTTP routers for ES2+/ES9+/ES11/ES12
+internal/api/common           shared JSON-binding types and response writers
+internal/api/middleware       shared HTTP middleware (audit, idempotency, limits)
+internal/api/asn1bind         shared ASN.1-binding plumbing for ES9+/ES11
+internal/api/adminhttp        shared management-API HTTP conventions (error model, paging)
+internal/api/admin            SM-DP+ management API + its OpenAPI document (admin/openapi)
+internal/api/dsadmin          SM-DS management API (event records)
 internal/audit                structured audit sinks
 internal/activationcode       activation codes + QR
+internal/testutil             test-only helpers (not linked into the binary)
 ```
 
 Package dependencies flow `cmd → api/service → {rsp, saip, crypto, cert, kms,
-store, config, logging}`; the low-level packages never depend on `api`.
+store, config, logging}`; the low-level packages never depend on `api`. The leaf
+packages (`iccid`, `saipver`, `asn1`, `kms`, `logging`, `metrics`, `version`)
+depend on nothing inside rsp42, which is what lets `store` and `config` stay
+independent of the protocol codecs. `bertlv` is imported by exactly one file
+(`internal/asn1/construct.go`), and the management API declares the store seams it
+uses instead of naming the SQLite repositories.
 
 ## Design notes
 
