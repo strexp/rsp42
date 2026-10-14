@@ -1,6 +1,6 @@
 # 重构计划（SOLID 符合性与目录内聚性）
 
-> 状态：**待评审，尚未执行**。本文件只描述分析与计划，未伴随任何代码改动。
+> 状态：**执行中**。阶段 0–2 已完成，阶段 3 部分完成（见文末「执行记录」）。
 > 最后更新：2026-10-14
 
 > 语言约定：与 `TODO.md` 一致，工作/计划类文档使用中文；代码、注释与权威文档
@@ -476,3 +476,56 @@
   `ICCIDFromHeaderBytes`、`ICCIDEFBytes`、`ICCIDFromEFBytes`
 
 > 注意：`asn1.Int` 有 16 处调用，是活代码，不属于死导出。
+
+---
+
+## 执行记录（按提交顺序）
+
+每个提交独立通过 `go build ./... && go vet ./... && go test ./...`（23 个包全绿）。
+
+### 阶段 0：护栏
+
+- 阶段 0 的意图（为将改动的行为补特征化/回归测试）并入阶段 1 的各项修复，逐项新增测试，不再单独提交。
+
+### 阶段 1：P0 正确性与接缝修复（全部完成）
+
+| 提交 | 内容 |
+|---|---|
+| `9a81105` | `asn1.EncodeOID` 不再 panic，改为返回 error 并校验 X.690 §8.19 弧规则；`config.validateOID` 委托同一实现，非法 `smdpp.oid`/`smds.oid` 无法再通过校验后在生成 BPP 时崩溃；`rsp.ConfigureISDPRequest.Encode` 返回 error；删除死导出 `asn1.OID` |
+| `49bd963` | `middleware.Audit` 移入 `base()` 的 `RequestScope` 之内（`api.Options.Audit`），修复通用审计行 actor/tenant 恒空；admin 路由显式不启用该中间件，避免 health/metrics 刷审计 |
+| `3a7b647` | `OrderService.Transition` 在所有调用上执行 `mutate` 并传入 `stateChanged`；重发时刷新 release flag / 失败原因，`InstalledAt` 只在首次安装写入，下载计数只在真实状态迁移时递增 |
+| `eaa262a` | `Inventory.claimReservation` 返回错误并回滚已创建的 profile；池预留释放失败上报；生成 ICCID 只在唯一冲突时重试；`store.IsUniqueViolation` 用驱动错误码替代字符串匹配；`ReleaseExpired` 不再回收已归属 profile 的条目 |
+| `222e7ae` | `bindEnvs` 从 `Config` 的 mapstructure tag 反射出全部键并 `BindEnv`，`RSP42_*` 覆盖不再漏键；新增 `smds.session_ttl`（默认 30m，校验为正）并让 SM-DS 使用它而非 `smdpp.session_ttl`/`event_ttl`；修正 `Profile.CCHash` 的错误注释 |
+| `8d824cf` | `middleware.Recover` 返回 JSON 500 并记录堆栈；保留的 ES2+ `handleAcrRequest` 存根返回 JSON；`mustHexLower` → `hexLower` 返回 error；`EventService.Register/Delete` 用 `errors.Is(store.ErrNotFound)` 区分存储故障 |
+| `1e79110` | 请求体上限单一来源 `api.Options.BodyLimit`（`common.ReadJSON/ReadRaw` 从请求上下文取预算），删除 es9plus/es11/es12/es2plus/admin 各自的 `maxBody`；`middleware.Idempotency` 按路由预算缓冲，admin 用 8 MiB |
+| `5ff4472` | `InitialiseSecureChannelRequest.Encode` 不再改写 receiver，`Encode`/`SignedBytes` 共用 `remoteOpID()`，签名与编码不可能不一致 |
+
+### 阶段 2：去重与复用（全部完成）
+
+| 提交 | 内容 |
+|---|---|
+| `66a88da` | 新增 `internal/api/asn1bind`：DER 信封、媒体类型闸门、`subjectCode`、`hexUpper` 与表驱动 `CodeFor`；es9plus/es11 只保留各自的分发与数值错误表 |
+| `099393b` | admin 的 `parsePage` + `writeListEnvelope[T]`，10 处分页/信封样板收敛，契约不变 |
+| `a566f09` | `store/tx.go` 的 `withTx`/`dbtx`/`rowScanner`；`upp_templates` 改 `ON CONFLICT DO UPDATE`；`UpsertArchived`、`PersonalizationRepo.Upsert`、`PoolRepo.DeleteRange` 进事务 |
+| `7b001fe` | 清理死导出（`crypto.UnprotectBPP` 除外，见下）、删 `rsp/encoding.go` 死函数、`bytes.Equal`/`asn1.IntBytes`/`encoding/hex` 替代手写 helper、去掉 6 个包重复的包注释 |
+| `7e2d7f7` | `internal/rsp/choice.go` 统一 CHOICE 解码（4 份 → 1 份）；`tlvBytes` 保留并加测试说明「为何不能改用 `asn1.Marshal`」 |
+| `4554474` | `saip` 单一 `peDescriptor` 注册表替代 5 张平行表，TS.48 向量与 GFSTE 重建逐字节不变 |
+| `05556c4` | `service.ProgressInfo` 成为唯一 DTO，删除 `es2plus.ProgressInfo` 与未接线的 `CallbackClient.HandleDownloadProgressInfo` |
+| `2629a96` | 新增叶子包 `internal/saipver` 与 `internal/iccid`；`store`、`config` 不再 import `internal/rsp` |
+| `53d6f84` | 删除 `rsp` 的 Luhn 包装，codec 包只剩真正的消费者 |
+
+**与计划的偏差（有意，已记录）**
+
+1. `crypto.UnprotectBPP` 未删除，改为**恢复并测试**：它是 `ProtectBPP` 的唯一逆运算，是验证「生成的 BPP 能被解回原文」的途径。现由 `TestProtectBPPRoundTrip`（多段 UPP + 可选 BF26）与 `TestProtectBPPWithoutReplaceSessionKeys` 覆盖。
+2. `rsp.tlvBytes` **未**统一到 `asn1.Marshal`：实测 `asn1.Marshal`（bertlv）在内容 >65535 字节、或构造型 tag 带原始内容时 panic，而 `tlvBytes` 正是为 BF36 信封与 `[n]` 分段组而存在。已用测试固定该边界，并在 `asn1.Marshal` 上写明限制。
+3. `saip` 的 PE 注册表保留了旧的 4 处不一致（bf1f/bf22 无名字但有 post-baseline 名、post-baseline 模板 PE 非 singleton 等），只统一存储方式，不改数据；唯一可见变化是 singleton 错误改为按描述符顺序确定输出（错误集合不变）。
+4. 阶段 2 未做的两项：`jsonschema/v6`/`yaml.v3` 依赖的去留决策（需确认是否接入请求校验，见阶段 2 第 10 条）、`es2plus` 与 `service/smdsc.go` 的重试循环合并。
+
+### 阶段 3：接口与契约收口（进行中）
+
+- 已完成：`saipver`/`iccid` 叶子包（`store`/`config` 不再 import `rsp`）；`RoleAdminStore` 与分段校验（`LogConfig`/`KMSConfig`/`ProfilesConfig` 各自的 `Validate()`，`validateCommon`/`validateDP` 委托，CLI 数据库类命令不再要求证书/FQDN）；`internal/api/asn1bind` 收敛 HTTP 分发。
+- 待办：`admin`/`es12`/`es2plus`/`api/middleware`/`audit` 的消费方接口；`Options`/`Deps` 注入以消除 68 个「构造后字段赋值」；`asn1.Find/FindAll/First` 暴露解析错误；`rsp` 错误词汇统一到 `rsp.Code`；`StoreMetadataRequest` 解码补齐；`CancelSessionResponseFromTLV` 改返回 error；`kms.Provider` 拆 `SignerLoader`/`Sealer`；`asn1` 去掉 bertlv 别名；`profiles` 分段校验的剩余部分；`admin_ops.go` 的混合命令拆分与配置profile。
+
+### 阶段 4：目录与组合根拆分（未开始）
+
+### 阶段 5：测试与工程化收尾（未开始）
