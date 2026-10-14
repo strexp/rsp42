@@ -10,6 +10,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"rsp42/internal/asn1"
+	"rsp42/internal/testutil"
 )
 
 func golden(t *testing.T) map[string]string {
@@ -126,7 +127,7 @@ func TestACROIDLiteral(t *testing.T) {
 func TestEncodeStoreMetadataRequest(t *testing.T) {
 	class := int64(2)
 	r := &StoreMetadataRequest{
-		ICCID:               mustHex(t, "98001032547698103214"),
+		ICCID:               testutil.MustHex(t, "98001032547698103214"),
 		ServiceProviderName: "SPN",
 		ProfileName:         "Name",
 		ProfileClass:        &class,
@@ -149,9 +150,9 @@ func TestAssembleBoundProfilePackage(t *testing.T) {
 			SmdpOtpk:           seqBytes(65, 0),
 			SmdpSign:           repeat(0, 64),
 		},
-		FirstSequenceOf87: [][]byte{mustHex(t, "8704aabbccdd")},
-		SequenceOf88:      [][]byte{mustHex(t, "8804aabbccdd")},
-		SequenceOf86:      [][]byte{mustHex(t, "8604aabbccdd")},
+		FirstSequenceOf87: [][]byte{testutil.MustHex(t, "8704aabbccdd")},
+		SequenceOf88:      [][]byte{testutil.MustHex(t, "8804aabbccdd")},
+		SequenceOf86:      [][]byte{testutil.MustHex(t, "8604aabbccdd")},
 	}
 	g := golden(t)
 	hexEq(t, g["BoundProfilePackage"], bpp.Assemble())
@@ -169,7 +170,7 @@ func TestEncodeResponses(t *testing.T) {
 	txn := seqBytes(16, 0)
 
 	// AuthenticateClientResponseEs9 OK.
-	profileMeta := (&StoreMetadataRequest{ICCID: mustHex(t, "98001032547698103214"), ServiceProviderName: "SPN", ProfileName: "Name"}).Encode()
+	profileMeta := (&StoreMetadataRequest{ICCID: testutil.MustHex(t, "98001032547698103214"), ServiceProviderName: "SPN", ProfileName: "Name"}).Encode()
 	smdpSigned2 := (&SmdpSigned2{TransactionID: txn, CCRequiredFlag: false}).Encode()
 	sig2 := tlvBytes(asn1.App(55, false), repeat(0, 64))
 	certDER := mustRead(t, "../../testdata/sgp26/EUM/CERT_EUM_NIST.der")
@@ -183,7 +184,7 @@ func TestEncodeResponses(t *testing.T) {
 	hexEq(t, g["AuthenticateClientResponseEs9_OkAcr"], AuthenticateClientResponseEs9OkAcr(txn, profileMeta))
 
 	// GetBoundProfilePackageResponse OK.
-	bpp := mustHex(t, g["BoundProfilePackage"])
+	bpp := testutil.MustHex(t, g["BoundProfilePackage"])
 	hexEq(t, g["GetBoundProfilePackageResponse_Ok"], GetBoundProfilePackageResponseOk(txn, bpp))
 
 	// CancelSessionResponseEs9 OK.
@@ -196,7 +197,7 @@ func TestEncodeResponses(t *testing.T) {
 
 func TestDecodePrepareDownloadResponse(t *testing.T) {
 	g := golden(t)
-	ok, errResp, err := DecodePrepareDownloadResponse(mustHex(t, g["PrepareDownloadResponse_Ok"]))
+	ok, errResp, err := DecodePrepareDownloadResponse(testutil.MustHex(t, g["PrepareDownloadResponse_Ok"]))
 	require.NoError(t, err)
 	require.Nil(t, errResp)
 	require.NotNil(t, ok)
@@ -204,7 +205,7 @@ func TestDecodePrepareDownloadResponse(t *testing.T) {
 	require.Equal(t, seqBytes(65, 0), ok.EuiccSigned2.EuiccOtpk)
 	require.Equal(t, repeat(0, 64), ok.EuiccSignature2)
 
-	ok, errResp, err = DecodePrepareDownloadResponse(mustHex(t, g["PrepareDownloadResponse_Err"]))
+	ok, errResp, err = DecodePrepareDownloadResponse(testutil.MustHex(t, g["PrepareDownloadResponse_Err"]))
 	require.NoError(t, err)
 	require.Nil(t, ok)
 	require.EqualValues(t, 1, errResp.DownloadErrorCode)
@@ -212,7 +213,7 @@ func TestDecodePrepareDownloadResponse(t *testing.T) {
 
 func TestDecodeAuthenticateServerResponse(t *testing.T) {
 	g := golden(t)
-	ok, errResp, err := DecodeAuthenticateServerResponse(mustHex(t, g["AuthenticateServerResponse_Ok"]))
+	ok, errResp, err := DecodeAuthenticateServerResponse(testutil.MustHex(t, g["AuthenticateServerResponse_Ok"]))
 	require.NoError(t, err)
 	require.Nil(t, errResp)
 	require.Equal(t, seqBytes(16, 0), ok.EuiccSigned1.TransactionID)
@@ -221,20 +222,20 @@ func TestDecodeAuthenticateServerResponse(t *testing.T) {
 	require.Equal(t, mustRead(t, "../../testdata/sgp26/eUICC/CERT_EUICC_NIST.der"), ok.EuiccCertificate)
 	require.Equal(t, mustRead(t, "../../testdata/sgp26/EUM/CERT_EUM_NIST.der"), ok.EumCertificate)
 
-	_, errResp, err = DecodeAuthenticateServerResponse(mustHex(t, g["AuthenticateServerResponse_Err"]))
+	_, errResp, err = DecodeAuthenticateServerResponse(testutil.MustHex(t, g["AuthenticateServerResponse_Err"]))
 	require.NoError(t, err)
 	require.EqualValues(t, 3, errResp.AuthenticateErrorCode)
 }
 
 func TestDecodeCancelSession(t *testing.T) {
 	g := golden(t)
-	ok, _, err := DecodeCancelSessionResponse(mustHex(t, g["CancelSessionResponse"]))
+	ok, _, err := DecodeCancelSessionResponse(testutil.MustHex(t, g["CancelSessionResponse"]))
 	require.NoError(t, err)
 	require.Equal(t, seqBytes(16, 0), ok.Signed.TransactionID)
 	require.Equal(t, "2.999.10", ok.Signed.SmdpOID)
 	require.EqualValues(t, 0, ok.Signed.Reason)
 
-	req, err := DecodeCancelSessionRequestEs9(mustHex(t, g["CancelSessionRequestEs9"]))
+	req, err := DecodeCancelSessionRequestEs9(testutil.MustHex(t, g["CancelSessionRequestEs9"]))
 	require.NoError(t, err)
 	require.Equal(t, seqBytes(16, 0), req.TransactionID)
 	require.EqualValues(t, 5, req.Reason)
@@ -242,16 +243,16 @@ func TestDecodeCancelSession(t *testing.T) {
 
 func TestDecodeHandleNotification(t *testing.T) {
 	g := golden(t)
-	h, err := DecodeHandleNotification(mustHex(t, g["HandleNotification"]))
+	h, err := DecodeHandleNotification(testutil.MustHex(t, g["HandleNotification"]))
 	require.NoError(t, err)
 	require.NotNil(t, h.Pending.InstallationResult)
 	pir := h.Pending.InstallationResult
 	require.Equal(t, seqBytes(16, 0), pir.Data.TransactionID)
 	require.NotNil(t, pir.Data.FinalResult)
 	require.True(t, pir.Data.FinalResult.Success)
-	require.Equal(t, mustHex(t, "a0000005591010ffffffff8900001000"), pir.Data.FinalResult.AID)
+	require.Equal(t, testutil.MustHex(t, "a0000005591010ffffffff8900001000"), pir.Data.FinalResult.AID)
 
-	o, err := DecodePendingNotification(mustHex(t, g["OtherSignedNotification"]))
+	o, err := DecodePendingNotification(testutil.MustHex(t, g["OtherSignedNotification"]))
 	require.NoError(t, err)
 	require.NotNil(t, o.OtherSigned)
 	require.EqualValues(t, 2, o.OtherSigned.Notification.SeqNumber)
@@ -260,18 +261,11 @@ func TestDecodeHandleNotification(t *testing.T) {
 
 func TestParseEUICCInfo1(t *testing.T) {
 	g := golden(t)
-	info, err := ParseEUICCInfo1(mustHex(t, g["EUICCInfo1"]))
+	info, err := ParseEUICCInfo1(testutil.MustHex(t, g["EUICCInfo1"]))
 	require.NoError(t, err)
-	require.Equal(t, mustHex(t, "020200"), info.SVN)
+	require.Equal(t, testutil.MustHex(t, "020200"), info.SVN)
 	require.Len(t, info.CiPKIDListForVerification, 1)
 	require.Len(t, info.CiPKIDListForSigning, 1)
-}
-
-func mustHex(t *testing.T, s string) []byte {
-	t.Helper()
-	b, err := hex.DecodeString(s)
-	require.NoError(t, err)
-	return b
 }
 
 func mustRead(t *testing.T, p string) []byte {

@@ -14,6 +14,7 @@ import (
 	"rsp42/internal/kms"
 	"rsp42/internal/rsp"
 	"rsp42/internal/store"
+	"rsp42/internal/testutil"
 )
 
 func setupDS(t *testing.T) (*DSService, *EventService, *store.Store) {
@@ -58,11 +59,11 @@ func euiccAuthenticate(t *testing.T, ds *DSService, matchingID string) (string, 
 	ctxInner := tlv([]byte{0x80}, make([]byte, 8))
 	var ctx []byte
 	if matchingID != "" {
-		ctx = tlv(tCtx0c, concat(tlv([]byte{0x80}, []byte(matchingID)), tlv(tCtx1c, ctxInner)))
+		ctx = tlv(tCtx0c, testutil.Concat(tlv([]byte{0x80}, []byte(matchingID)), tlv(tCtx1c, ctxInner)))
 	} else {
 		ctx = tlv(tCtx0c, tlv(tCtx1c, ctxInner))
 	}
-	euiccSigned1 := tlv(tSeq, concat(
+	euiccSigned1 := tlv(tSeq, testutil.Concat(
 		tlv(tCtx0p, txn),
 		tlv(tCtx3p, []byte("testrootsmds.example.com")),
 		tlv(tCtx4p, ss1.ServerChallenge),
@@ -75,7 +76,7 @@ func euiccAuthenticate(t *testing.T, ds *DSService, matchingID string) (string, 
 	require.NoError(t, err)
 	sig, err := crypto.SignRaw(key, euiccSigned1)
 	require.NoError(t, err)
-	asr := tlv(tBF38, tlv(tCtx0c, concat(
+	asr := tlv(tBF38, tlv(tCtx0c, testutil.Concat(
 		euiccSigned1, tlv(tSig, sig),
 		readFile(t, testRoot+"/eUICC/CERT_EUICC_NIST.der"),
 		readFile(t, testRoot+"/EUM/CERT_EUM_NIST.der"),

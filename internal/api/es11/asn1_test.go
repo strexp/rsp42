@@ -22,6 +22,7 @@ import (
 	"rsp42/internal/rsp"
 	"rsp42/internal/service"
 	"rsp42/internal/store"
+	"rsp42/internal/testutil"
 )
 
 const testRoot = "../../../testdata/sgp26"
@@ -65,9 +66,9 @@ func TestES11ASN1BindingInitiate(t *testing.T) {
 	info := asn1.Marshal(asn1.New(asn1.Ctx(32, true),
 		asn1.Prim(asn1.Ctx(2, false), []byte{0x02, 0x02, 0x00}),
 	))
-	req := tlvOf(asn1.Ctx(57, true), concat(
-		tlvOf(asn1.Ctx(1, false), challenge),
-		tlvOf(asn1.Ctx(3, false), []byte("testrootsmds.example.com")),
+	req := testutil.TLV(asn1.Ctx(57, true), testutil.Concat(
+		testutil.TLV(asn1.Ctx(1, false), challenge),
+		testutil.TLV(asn1.Ctx(3, false), []byte("testrootsmds.example.com")),
 		info,
 	))
 
@@ -83,7 +84,7 @@ func TestES11ASN1BindingInitiate(t *testing.T) {
 	require.Equal(t, rsp.FuncInitiateAuthentication, fn)
 	tlv, _, err := asn1.ReadTLV(inner)
 	require.NoError(t, err)
-	require.Equal(t, "bf39", hexTagOf(tlv.Tag))
+	require.Equal(t, "bf39", testutil.HexTag(tlv.Tag))
 
 	// Malformed ASN.1 and JSON bodies are rejected.
 	resp, err = http.Post(srv.URL+"/gsma/rsp2/asn1", common.ContentTypeASN1, strings.NewReader("nope"))
@@ -95,27 +96,4 @@ func TestES11ASN1BindingInitiate(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, http.StatusUnsupportedMediaType, resp.StatusCode)
 	_ = resp.Body.Close()
-}
-
-func tlvOf(tag, content []byte) []byte {
-	out := append([]byte{}, tag...)
-	out = append(out, asn1.EncodeLength(len(content))...)
-	return append(out, content...)
-}
-
-func concat(parts ...[]byte) []byte {
-	var out []byte
-	for _, p := range parts {
-		out = append(out, p...)
-	}
-	return out
-}
-
-func hexTagOf(tag []byte) string {
-	const h = "0123456789abcdef"
-	out := make([]byte, 0, len(tag)*2)
-	for _, b := range tag {
-		out = append(out, h[b>>4], h[b&0x0f])
-	}
-	return string(out)
 }

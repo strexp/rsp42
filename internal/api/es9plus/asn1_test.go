@@ -23,6 +23,7 @@ import (
 	"rsp42/internal/saip/personalization"
 	"rsp42/internal/service"
 	"rsp42/internal/store"
+	"rsp42/internal/testutil"
 )
 
 const testRoot = "../../../testdata/sgp26"
@@ -101,9 +102,9 @@ func TestASN1BindingInitiateFlow(t *testing.T) {
 	srv := newTestServer(t, h)
 
 	challenge := bytes.Repeat([]byte{0x5a}, 16)
-	req := tlvOf(asn1.Ctx(57, true), concat(
-		tlvOf(asn1.Ctx(1, false), challenge),
-		tlvOf(asn1.Ctx(3, false), []byte("testsmdpplus1.example.com")),
+	req := testutil.TLV(asn1.Ctx(57, true), testutil.Concat(
+		testutil.TLV(asn1.Ctx(1, false), challenge),
+		testutil.TLV(asn1.Ctx(3, false), []byte("testsmdpplus1.example.com")),
 		euiccInfo1(certs.CI().SubjectKeyId),
 	))
 
@@ -121,7 +122,7 @@ func TestASN1BindingInitiateFlow(t *testing.T) {
 
 	tlv, _, err := asn1.ReadTLV(inner)
 	require.NoError(t, err)
-	require.Equal(t, "bf39", hexTagOf(tlv.Tag))
+	require.Equal(t, "bf39", testutil.HexTag(tlv.Tag))
 	ok, found := tlv.Find(asn1.Ctx(0, true))
 	require.True(t, found, "expected an A0 OK branch")
 	txn, found := ok.Find(asn1.Ctx(0, false))
@@ -134,27 +135,4 @@ func TestASN1BindingInitiateFlow(t *testing.T) {
 	require.True(t, hasSig)
 	_, hasSKI := ok.Find(asn1.TagOctetStr)
 	require.True(t, hasSKI)
-}
-
-func tlvOf(tag, content []byte) []byte {
-	out := append([]byte{}, tag...)
-	out = append(out, asn1.EncodeLength(len(content))...)
-	return append(out, content...)
-}
-
-func concat(parts ...[]byte) []byte {
-	var out []byte
-	for _, p := range parts {
-		out = append(out, p...)
-	}
-	return out
-}
-
-func hexTagOf(tag []byte) string {
-	const h = "0123456789abcdef"
-	out := make([]byte, 0, len(tag)*2)
-	for _, b := range tag {
-		out = append(out, h[b>>4], h[b&0x0f])
-	}
-	return string(out)
 }

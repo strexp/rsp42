@@ -23,6 +23,7 @@ import (
 	"rsp42/internal/saip"
 	"rsp42/internal/saip/personalization"
 	"rsp42/internal/store"
+	"rsp42/internal/testutil"
 )
 
 const (
@@ -57,7 +58,7 @@ var (
 
 func buildEUICCInfo1(ski []byte) []byte {
 	return tlv([]byte{0xbf, 0x20},
-		concat(
+		testutil.Concat(
 			tlv([]byte{0x82}, []byte{0x02, 0x02, 0x00}),
 			tlv([]byte{0xa9}, tlv([]byte{0x04}, ski)),
 			tlv([]byte{0xaa}, tlv([]byte{0x04}, ski)),
@@ -65,7 +66,7 @@ func buildEUICCInfo1(ski []byte) []byte {
 }
 
 func buildEUICCInfo2(ski []byte) []byte {
-	return tlv(tBF22, concat(
+	return tlv(tBF22, testutil.Concat(
 		tlv([]byte{0x81}, []byte{0x02, 0x02, 0x00}),
 		tlv([]byte{0x82}, []byte{0x02, 0x02, 0x00}),
 		tlv([]byte{0x83}, []byte{0x02, 0x02, 0x00}),
@@ -77,14 +78,6 @@ func buildEUICCInfo2(ski []byte) []byte {
 		tlv([]byte{0x04}, []byte{0x02, 0x00, 0x00}),
 		tlv([]byte{0x0c}, []byte("x")),
 	))
-}
-
-func concat(parts ...[]byte) []byte {
-	var out []byte
-	for _, p := range parts {
-		out = append(out, p...)
-	}
-	return out
 }
 
 func setupCMAE(t *testing.T) (*CMAE, *store.Store) {
@@ -154,14 +147,14 @@ func TestFullDownloadFlow(t *testing.T) {
 
 	// --- eUICC builds AuthenticateServerResponse ---
 	txn := mustHexLower(t, init.TransactionID)
-	euiccSigned1 := tlv(tSeq, concat(
+	euiccSigned1 := tlv(tSeq, testutil.Concat(
 		tlv(tCtx0p, txn),
 		tlv(tCtx3p, []byte(testFQDN)),
 		tlv(tCtx4p, ss1.ServerChallenge),
 		buildEUICCInfo2(ciSKI),
-		tlv(tCtx0c, concat(
+		tlv(tCtx0c, testutil.Concat(
 			tlv([]byte{0x80}, []byte("MATCH-1")),
-			tlv(tCtx1c, concat(tlv([]byte{0x80}, make([]byte, 8)), tlv(tCtx1c, nil))),
+			tlv(tCtx1c, testutil.Concat(tlv([]byte{0x80}, make([]byte, 8)), tlv(tCtx1c, nil))),
 		)),
 	))
 	euiccKey, err := kms.NewFileProviderFromKEK(testKEK)
@@ -173,7 +166,7 @@ func TestFullDownloadFlow(t *testing.T) {
 
 	euiccCertDER := readFile(t, testRoot+"/eUICC/CERT_EUICC_NIST.der")
 	eumCertDER := readFile(t, testRoot+"/EUM/CERT_EUM_NIST.der")
-	asr := tlv(tBF38, tlv(tCtx0c, concat(
+	asr := tlv(tBF38, tlv(tCtx0c, testutil.Concat(
 		euiccSigned1,
 		tlv(tSig, euiccSig1),
 		euiccCertDER,
@@ -185,17 +178,17 @@ func TestFullDownloadFlow(t *testing.T) {
 
 	// Verify smdpSignature2 over smdpSigned2 || euiccSignature1.
 	dpPbPub := cmae.Certs.DPPb().PublicKey.(*ecdsa.PublicKey)
-	require.True(t, crypto.VerifyRaw(dpPbPub, concat(auth.SmdpSigned2, tlv(tSig, euiccSig1)), rsp.SignatureValue(auth.SmdpSignature2)))
+	require.True(t, crypto.VerifyRaw(dpPbPub, testutil.Concat(auth.SmdpSigned2, tlv(tSig, euiccSig1)), rsp.SignatureValue(auth.SmdpSignature2)))
 
 	// --- eUICC builds PrepareDownloadResponse ---
 	euiccOtSK := make([]byte, 32)
 	_, _ = rand.Read(euiccOtSK)
 	euiccOtpk, err := crypto.ECPointFromPrivate(euiccOtSK)
 	require.NoError(t, err)
-	euiccSigned2 := tlv(tSeq, concat(tlv(tCtx0p, txn), tlv(tOtpk, euiccOtpk)))
-	euiccSig2, err := crypto.SignRaw(euiccPriv, concat(euiccSigned2, auth.SmdpSignature2))
+	euiccSigned2 := tlv(tSeq, testutil.Concat(tlv(tCtx0p, txn), tlv(tOtpk, euiccOtpk)))
+	euiccSig2, err := crypto.SignRaw(euiccPriv, testutil.Concat(euiccSigned2, auth.SmdpSignature2))
 	require.NoError(t, err)
-	pdr := tlv(tBF21, tlv(tCtx0c, concat(euiccSigned2, tlv(tSig, euiccSig2))))
+	pdr := tlv(tBF21, tlv(tCtx0c, testutil.Concat(euiccSigned2, tlv(tSig, euiccSig2))))
 
 	got, err := cmae.GetBoundProfilePackage(init.TransactionID, pdr)
 	require.NoError(t, err)
@@ -319,19 +312,19 @@ func TestNotificationInstalled(t *testing.T) {
 		return nil
 	}
 
-	meta := tlv([]byte{0xbf, 0x2f}, concat(
+	meta := tlv([]byte{0xbf, 0x2f}, testutil.Concat(
 		tlv([]byte{0x80}, []byte{0x01}),
 		tlv([]byte{0x81}, []byte{0x00, 0x80}),
 		tlv([]byte{0x0c}, []byte("x")),
 	))
-	success := tlv([]byte{0xa2}, tlv([]byte{0xa0}, concat(
-		tlv([]byte{0x4f}, mustHex(t, "a0000005591010ffffffff8900001000")),
+	success := tlv([]byte{0xa2}, tlv([]byte{0xa0}, testutil.Concat(
+		tlv([]byte{0x4f}, testutil.MustHex(t, "a0000005591010ffffffff8900001000")),
 		tlv([]byte{0x04}, nil),
 	)))
-	pird := tlv([]byte{0xbf, 0x27}, concat(tlv(tCtx0p, txn), meta, success))
+	pird := tlv([]byte{0xbf, 0x27}, testutil.Concat(tlv(tCtx0p, txn), meta, success))
 	sig, err := crypto.SignRaw(euiccKey, pird)
 	require.NoError(t, err)
-	pir := tlv([]byte{0xbf, 0x37}, concat(pird, tlv(tSig, sig)))
+	pir := tlv([]byte{0xbf, 0x37}, testutil.Concat(pird, tlv(tSig, sig)))
 
 	require.NoError(t, notifs.HandlePendingNotification(context.Background(), pir))
 
@@ -382,17 +375,17 @@ func TestNotificationInstallRejectsBadSignature(t *testing.T) {
 	}))
 	notifs.Sessions = ss
 
-	meta := tlv([]byte{0xbf, 0x2f}, concat(
+	meta := tlv([]byte{0xbf, 0x2f}, testutil.Concat(
 		tlv([]byte{0x80}, []byte{0x01}),
 		tlv([]byte{0x81}, []byte{0x00, 0x80}),
 		tlv([]byte{0x0c}, []byte("x")),
 	))
-	success := tlv([]byte{0xa2}, tlv([]byte{0xa0}, concat(
-		tlv([]byte{0x4f}, mustHex(t, "a0000005591010ffffffff8900001000")),
+	success := tlv([]byte{0xa2}, tlv([]byte{0xa0}, testutil.Concat(
+		tlv([]byte{0x4f}, testutil.MustHex(t, "a0000005591010ffffffff8900001000")),
 		tlv([]byte{0x04}, nil),
 	)))
-	pird := tlv([]byte{0xbf, 0x27}, concat(tlv(tCtx0p, txn), meta, success))
-	pir := tlv([]byte{0xbf, 0x37}, concat(pird, tlv(tSig, make([]byte, 64))))
+	pird := tlv([]byte{0xbf, 0x27}, testutil.Concat(tlv(tCtx0p, txn), meta, success))
+	pir := tlv([]byte{0xbf, 0x37}, testutil.Concat(pird, tlv(tSig, make([]byte, 64))))
 
 	require.NoError(t, notifs.HandlePendingNotification(context.Background(), pir))
 
@@ -430,7 +423,7 @@ func TestNotificationOtherSignedVerification(t *testing.T) {
 
 	iccidBCD, err := personalization.ICCIDEFBytes(profile.ICCID)
 	require.NoError(t, err)
-	meta := tlv([]byte{0xbf, 0x2f}, concat(
+	meta := tlv([]byte{0xbf, 0x2f}, testutil.Concat(
 		tlv([]byte{0x80}, []byte{0x01}),
 		tlv([]byte{0x81}, []byte{0x00, 0x10}), // delete
 		tlv([]byte{0x0c}, []byte("x")),
@@ -440,7 +433,7 @@ func TestNotificationOtherSignedVerification(t *testing.T) {
 	require.NoError(t, err)
 
 	// Valid notification (PendingNotification wraps the CHOICE in [0]).
-	osn := tlv([]byte{0xa0}, tlv([]byte{0x30}, concat(meta, tlv(tSig, sig), euiccCert, eumCert)))
+	osn := tlv([]byte{0xa0}, tlv([]byte{0x30}, testutil.Concat(meta, tlv(tSig, sig), euiccCert, eumCert)))
 	require.NoError(t, notifs.HandlePendingNotification(context.Background(), osn))
 
 	got, err := st.Notifs.ListByEID(testEID)
@@ -451,7 +444,7 @@ func TestNotificationOtherSignedVerification(t *testing.T) {
 	require.Equal(t, profile.ICCID, got[0].ICCID)
 
 	// Tampered signature is recorded but not processed.
-	bad := tlv([]byte{0xa0}, tlv([]byte{0x30}, concat(meta, tlv(tSig, make([]byte, 64)), euiccCert, eumCert)))
+	bad := tlv([]byte{0xa0}, tlv([]byte{0x30}, testutil.Concat(meta, tlv(tSig, make([]byte, 64)), euiccCert, eumCert)))
 	require.NoError(t, notifs.HandlePendingNotification(context.Background(), bad))
 	got, err = st.Notifs.ListByEID(testEID)
 	require.NoError(t, err)
@@ -559,13 +552,6 @@ func TestBuildStoreMetadataPPR(t *testing.T) {
 	raw, err = cmae.buildStoreMetadata(profile)
 	require.NoError(t, err)
 	require.Contains(t, hex.EncodeToString(raw), "99020020")
-}
-
-func mustHex(t *testing.T, s string) []byte {
-	t.Helper()
-	b, err := hex.DecodeString(s)
-	require.NoError(t, err)
-	return b
 }
 
 func TestACRRetrieval(t *testing.T) {
@@ -762,14 +748,14 @@ func authenticateForTest(t *testing.T, cmae *CMAE, matchingID string) error {
 	require.NoError(t, err)
 
 	txn := mustHexLower(t, init.TransactionID)
-	euiccSigned1 := tlv(tSeq, concat(
+	euiccSigned1 := tlv(tSeq, testutil.Concat(
 		tlv(tCtx0p, txn),
 		tlv(tCtx3p, []byte(testFQDN)),
 		tlv(tCtx4p, ss1.ServerChallenge),
 		buildEUICCInfo2(ciSKI),
-		tlv(tCtx0c, concat(
+		tlv(tCtx0c, testutil.Concat(
 			tlv([]byte{0x80}, []byte(matchingID)),
-			tlv(tCtx1c, concat(tlv([]byte{0x80}, make([]byte, 8)), tlv(tCtx1c, nil))),
+			tlv(tCtx1c, testutil.Concat(tlv([]byte{0x80}, make([]byte, 8)), tlv(tCtx1c, nil))),
 		)),
 	))
 	key, err := kms.NewFileProviderFromKEK(testKEK)
@@ -779,7 +765,7 @@ func authenticateForTest(t *testing.T, cmae *CMAE, matchingID string) error {
 	euiccSig1, err := crypto.SignRaw(euiccPriv, euiccSigned1)
 	require.NoError(t, err)
 
-	asr := tlv(tBF38, tlv(tCtx0c, concat(
+	asr := tlv(tBF38, tlv(tCtx0c, testutil.Concat(
 		euiccSigned1,
 		tlv(tSig, euiccSig1),
 		readFile(t, testRoot+"/eUICC/CERT_EUICC_NIST.der"),

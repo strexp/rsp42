@@ -9,6 +9,7 @@ import (
 
 	"rsp42/internal/asn1"
 	"rsp42/internal/saip"
+	"rsp42/internal/testutil"
 )
 
 func loadUPP(t *testing.T, name string) (*saip.Sequence, []byte) {
@@ -60,8 +61,8 @@ func TestApplyPersonalization(t *testing.T) {
 	d := &Data{
 		ICCID:     "89000123456789012342",
 		IMSI:      "001010123456064",
-		K:         mustHex(t, "465b5ce8b199b49faa5f0a2ee238a6bc"),
-		OPc:       mustHex(t, "cdc202d5123e20f62b6d676ac72cab35"),
+		K:         testutil.MustHex(t, "465b5ce8b199b49faa5f0a2ee238a6bc"),
+		OPc:       testutil.MustHex(t, "cdc202d5123e20f62b6d676ac72cab35"),
 		Algorithm: "milenage",
 		PIN1:      "4321",
 		PUK1:      "87654321",
@@ -103,7 +104,7 @@ func TestApplyExtendedParams(t *testing.T) {
 		OPc:               make([]byte, 16),
 		ADM1:              "11111111",
 		ADM2:              "22222222",
-		RotationConstants: mustHex(t, "4000204060"),
+		RotationConstants: testutil.MustHex(t, "4000204060"),
 		XoringConstants:   make([]byte, 80),
 		NumberOfKeccak:    &keccak,
 	}))
@@ -113,7 +114,7 @@ func TestApplyExtendedParams(t *testing.T) {
 	aka := seq2.Find(saip.TagAKAParameter)
 	require.NotNil(t, aka)
 	algo := aka.Find(asn1.Ctx(1, true)).Find(asn1.Ctx(1, true))
-	require.Equal(t, mustHex(t, "4000204060"), algo.Find(asn1.Ctx(4, false)).Value)
+	require.Equal(t, testutil.MustHex(t, "4000204060"), algo.Find(asn1.Ctx(4, false)).Value)
 	require.Equal(t, asn1.IntBytes(2), algo.Find(asn1.Ctx(7, false)).Value)
 
 	// ADM1/ADM2 applied to the PIN PE (key references 0x0a / 0x0b).
@@ -165,13 +166,6 @@ func TestApplyTwoProfiles(t *testing.T) {
 			require.Equal(t, "89000123456789012345", hex.EncodeToString(hdr.ICCID))
 		})
 	}
-}
-
-func mustHex(t *testing.T, s string) []byte {
-	t.Helper()
-	b, err := hex.DecodeString(s)
-	require.NoError(t, err)
-	return b
 }
 
 func TestEncodePLMN(t *testing.T) {

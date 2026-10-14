@@ -2,6 +2,7 @@ package admin
 
 import (
 	"encoding/json"
+	"strconv"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -39,7 +40,7 @@ func TestAdminCallbacksQueue(t *testing.T) {
 	require.EqualValues(t, 3, list.Items[0].Payload["notificationPointId"])
 
 	// Re-queueing a live callback is refused.
-	status, raw = do(t, "POST", base+"/callbacks/"+itoa(idA)+"/retry", nil)
+	status, raw = do(t, "POST", base+"/callbacks/"+strconv.FormatInt(idA, 10)+"/retry", nil)
 	require.Equal(t, 409, status, string(raw))
 
 	// An unknown id is a 404.
@@ -54,7 +55,7 @@ func TestAdminCallbacksQueue(t *testing.T) {
 	require.NoError(t, json.Unmarshal(raw, &list))
 	require.Equal(t, 2, list.Total)
 
-	status, raw = do(t, "POST", base+"/callbacks/"+itoa(idA)+"/retry", nil)
+	status, raw = do(t, "POST", base+"/callbacks/"+strconv.FormatInt(idA, 10)+"/retry", nil)
 	require.Equal(t, 200, status, string(raw))
 	var one struct {
 		ID       int64  `json:"id"`
@@ -74,9 +75,4 @@ func TestAdminCallbacksQueue(t *testing.T) {
 	}
 	require.NoError(t, json.Unmarshal(raw, &batch))
 	require.Equal(t, 1, batch.Requeued)
-}
-
-func itoa(v int64) string {
-	b, _ := json.Marshal(v)
-	return string(b)
 }
