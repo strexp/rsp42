@@ -46,7 +46,7 @@ scope. §5.3.6/§5.3.7 are VOID in v2.7.
 | UPP template selection by eUICC profile version | §5.5.3 | ✅ (registry lookup by the eUICC's supported version set — `profileVersion` plus `additionalEuiccProfilePackageVersions`; order override wins; no compatible template fails cleanly with `8.2.6/3.8`) |
 | SAIP profile package validation (V2.3.1 constraints) | SAIP Annex A/B, §9 | ✅ (`/upp/validate` + `/upp`: structure/order, mandatory services, AKA/service bits, PE identification, File `doNotCreate`/`fileDescriptor`, GFSTE subset of the 14 Annex B template OIDs) |
 | Activation Code Retrieval (ACR) | §4.9 / §5.3.8 | ✅ response metadata (both ACR types) + caller-side Operator confirmation through `ES2+.HandleAcrRequest` (`acr_url`), refusal `8.2.1/1.2` |
-| Profile Policy Rules (pprIds) | §5.3 | ✅ populated from order `pprIds` / `profiles.ppr_ids` |
+| Profile Policy Rules (PPR) | §5.3 | ✅ populated from `profiles.ppr_ids`; the non-standard ES2+ `downloadOrder.pprIds` body member was removed (C1) |
 | `otherCertsInChain` | §6.5.2 | ✅ parsed and chained between EUM and CI |
 | CRL download / strong CRL checks | §3.5.5 | ✗ (registered risk; interface reserved) |
 

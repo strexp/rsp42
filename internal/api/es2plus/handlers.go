@@ -76,9 +76,6 @@ type downloadOrderReq struct {
 	EID         string               `json:"eid"`
 	ICCID       string               `json:"iccid"`
 	ProfileType string               `json:"profileType"`
-	// PPRIds optionally sets the Profile Policy Rules for this profile
-	// (SGP.22 §2.4a: 1 = PPR1, 2 = PPR2).
-	PPRIds []int `json:"pprIds"`
 }
 
 type confirmOrderReq struct {
@@ -125,11 +122,16 @@ func (h *Handler) downloadOrder(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	tenant := h.applyCaller(r, hdr)
-	template, err := h.resolveProfileType(tenant, req.ProfileType)
+	template, parsed, err := h.resolveProfileType(tenant, req.ProfileType)
 	if err != nil {
 		common.WriteStatusFailure(w, err)
 		return
 	}
+	// C2: a profileType without the "<tenant>/<template>" selector no longer
+	// degrades silently; the outcome is recorded once the ICCID is known so an
+	// operator typo shows up as such rather than as "the wrong template was
+	// downloaded".
+	unparsed := !parsed && req.ProfileType != ""
 	p, err := h.Inventory.Allocate(service.AllocateRequest{
 		EID:         req.EID,
 		ProfileType: req.ProfileType,
@@ -139,14 +141,29 @@ func (h *Handler) downloadOrder(w http.ResponseWriter, r *http.Request) {
 		Reference:   hdr.FunctionCallIdentifier,
 	})
 	if err != nil {
-		writeFailure(w, rsp.CodeAllocateFailed, err.Error())
+		// C3: distinguish "no Profile of this type is available" (8.2.5/3.7)
+		// from "this ICCID cannot be issued" (8.2.1/3.3) and a generic
+		// allocation failure (8.2/4.2).
+		switch {
+		case errors.Is(err, service.ErrQuotaExceeded):
+			writeFailure(w, rsp.CodeNoMoreProfileAvailable, err.Error())
+		case errors.Is(err, service.ErrICCIDInUse):
+			writeFailure(w, rsp.CodeICCIDInUse, err.Error())
+		default:
+			writeFailure(w, rsp.CodeAllocateFailed, err.Error())
+		}
 		return
 	}
-	if len(req.PPRIds) > 0 {
-		p.PPRIds = rsp.PPRIDBits(req.PPRIds)
-		if err := h.Profiles.Update(p); err != nil {
-			writeFailure(w, rsp.CodeProfileUpdateFailed, err.Error())
-			return
+	if unparsed {
+		if h.Metrics != nil {
+			h.Metrics.Inc("rsp42_es2p_profile_type_unparsed_total", map[string]string{"tenant": tenant})
+		}
+		if h.AuditRepo != nil {
+			detail, _ := json.Marshal(map[string]string{"profileType": req.ProfileType, "warning": "profileType-unparsed"})
+			_ = h.AuditRepo.Insert(&store.AuditEntry{
+				TenantID: tenant, Interface: "es2p", Function: "downloadOrder",
+				Subject: p.ICCID, Outcome: "Executed-Success", DetailJSON: string(detail),
+			})
 		}
 	}
 	if err := h.record(tenant, "downloadOrder", req.ICCID, req.EID, "", req); err != nil {
@@ -332,26 +349,27 @@ func (h *Handler) applyCaller(r *http.Request, hdr common.RequestHeader) string 
 // resolveProfileType interprets the operator's profileType. A
 // "<tenant>/<template>" value selects a template inside the caller's tenant
 // (SGP.22 §6.5.2.1: profileType is content free information defined by the
-// Operator); anything else stays opaque and lets the SM-DP+ fall back to the
-// eUICC version and the tenant default.
-func (h *Handler) resolveProfileType(tenant, profileType string) (string, error) {
+// Operator). The second return value reports whether the value carried the
+// selector; anything else stays opaque and lets the SM-DP+ fall back to the
+// eUICC version and the tenant default, but the caller records it (C2).
+func (h *Handler) resolveProfileType(tenant, profileType string) (string, bool, error) {
 	i := strings.IndexByte(profileType, '/')
 	if i < 0 {
-		return "", nil
+		return "", false, nil
 	}
 	want, name := profileType[:i], profileType[i+1:]
 	if want == "" || name == "" {
-		return "", rsp.CodeProfileTypeUnknown.Status("malformed profileType " + profileType)
+		return "", false, rsp.CodeProfileTypeUnknown.Status("malformed profileType " + profileType)
 	}
 	if want != tenant {
-		return "", rsp.CodeProfileTypeNotAllowed.Status("profileType belongs to another tenant")
+		return "", false, rsp.CodeProfileTypeNotAllowed.Status("profileType belongs to another tenant")
 	}
 	if h.UPP != nil {
 		if _, err := h.UPP.GetForTenant(tenant, name); err != nil {
-			return "", rsp.CodeProfileTypeUnknown.Status("unknown profileType template " + name)
+			return "", false, rsp.CodeProfileTypeUnknown.Status("unknown profileType template " + name)
 		}
 	}
-	return name, nil
+	return name, true, nil
 }
 
 // authorize enforces tenant ownership of a profile and, when the request

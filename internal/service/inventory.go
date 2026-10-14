@@ -64,6 +64,11 @@ type AllocateRequest struct {
 // ErrQuotaExceeded indicates that a tenant quota is exhausted.
 var ErrQuotaExceeded = errors.New("service: quota exceeded")
 
+// ErrICCIDInUse indicates that an operator-supplied ICCID cannot be issued
+// (already in use, blocked, or otherwise unavailable). It lets the ES2+ layer
+// answer 8.2.1/3.3 instead of a generic allocation failure (C3).
+var ErrICCIDInUse = errors.New("service: iccid not available")
+
 // Inventory allocates ICCIDs and creates profile rows for ES2+.DownloadOrder. If
 // a Pool is set it is preferred; otherwise an ICCID is generated on demand.
 type Inventory struct {
@@ -148,7 +153,7 @@ func (inv *Inventory) Allocate(req AllocateRequest) (*store.Profile, error) {
 			if sameResend(existing, req) {
 				return existing, nil
 			}
-			return nil, fmt.Errorf("service: ICCID %s is already in use (state %s)", iccid, existing.State)
+			return nil, fmt.Errorf("%w: ICCID %s is already in use (state %s)", ErrICCIDInUse, iccid, existing.State)
 		} else if !errors.Is(gerr, store.ErrNotFound) {
 			return nil, gerr
 		}
@@ -159,14 +164,14 @@ func (inv *Inventory) Allocate(req AllocateRequest) (*store.Profile, error) {
 		// the pool: a blocked ICCID is never issued.
 		if inv.Pool != nil {
 			if state, serr := inv.Pool.State(iccid); serr == nil && state == "blocked" {
-				return nil, fmt.Errorf("service: ICCID %s is blocked", iccid)
+				return nil, fmt.Errorf("%w: ICCID %s is blocked", ErrICCIDInUse, iccid)
 			} else if serr != nil && !errors.Is(serr, store.ErrNotFound) {
 				return nil, serr
 			}
 		}
 		p := newProfile(iccid)
 		if _, err := inv.Profiles.Create(p); err != nil {
-			return nil, fmt.Errorf("service: ICCID %s is not available: %w", iccid, err)
+			return nil, fmt.Errorf("%w: ICCID %s is not available: %w", ErrICCIDInUse, iccid, err)
 		}
 		inv.claim(iccid, p.ID)
 		return p, nil

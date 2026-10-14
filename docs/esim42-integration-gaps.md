@@ -532,17 +532,17 @@
 
 | # | 问题 | 现状（实测） | 建议 |
 |---|---|---|---|
-| C1 | ES2+ `downloadOrder.pprIds` 与“零 JSON body 扩展”原则冲突 | `internal/api/es2plus/handlers.go:59-67` 仍接受该私有 body 成员；而 SGP.22 v2.7 Table 22 的 DownloadOrder Additional Input Data **只有 `eid`/`iccid`/`profileType`**（`pprIds` 仅出现在 §5.7 的 `RulesAuthorisationTable`），与 §8.2 的自我约定矛盾 | **已定：选 ①** —— **删除该成员**，PPR **只走管理 API / `profiles.ppr_ids`**；同步删除 PPR 覆盖分支与 `config` 中“订单可覆盖 pprIds”的注释，`docs/interfaces.md`/openapi 不再声明该私有扩展。见 §10.6 |
-| C2 | `profileType` 解析静默降级 | `internal/api/es2plus/handlers.go:293-296`：不含 `/` 的值直接 `return "", nil`，回落版本选择 | 至少记审计/指标 `profileType-unparsed`，否则运营商拼写错误会表现为“下发了他人的模板”而不是明确失败 |
-| C3 | `8.2.1/3.8` 语义重载 | `internal/rsp/errors.go:61` 同时承载“池耗尽”与“租户 `profile_quota` 用尽”，且 `8.2.1/3.8` 不在 Table 24 的 DownloadOrder 专有码表内（esim42 `02` §10 q2 已提问） | 拆码（如 `8.2.5/3.7` No more Profile available），或把配额错误做成结构化字段 |
-| C4 | `8.2.6/3.7` 语义错位 | `internal/rsp/errors.go:62`：`8.2.6` 是 Matching ID、`3.7` 是 Unavailable，用于“数据库更新失败”不贴切 | 换用更贴切的主体/原因 |
-| C5 | `internal/asn1/doc.go` 陈述过期 / 两层并行 ASN.1 抽象 | `internal/asn1/doc.go:1` 仍写 “wraps `github.com/euicc-go/bertlv`”，但该包实际自成一层，仅 `internal/asn1/construct.go:7` 还 import bertlv（`internal/rsp/types.go:15`、`internal/rsp/notification.go:6`、`internal/crypto/ecdsa.go:15` 亦直接 import） | 修 doc；与 `TODO.md` §3.1「收紧 `bertlv` 抽象」合并，并提到与 N11/N12 同批处理 |
+| C1 | ES2+ `downloadOrder.pprIds` 与“零 JSON body 扩展”原则冲突 | `internal/api/es2plus/handlers.go:59-67` 仍接受该私有 body 成员；而 SGP.22 v2.7 Table 22 的 DownloadOrder Additional Input Data **只有 `eid`/`iccid`/`profileType`**（`pprIds` 仅出现在 §5.7 的 `RulesAuthorisationTable`），与 §8.2 的自我约定矛盾 | **已定：选 ①** —— **删除该成员**，PPR **只走管理 API / `profiles.ppr_ids`**；同步删除 PPR 覆盖分支与 `config` 中“订单可覆盖 pprIds”的注释，`docs/interfaces.md`/openapi 不再声明该私有扩展。**已落地**（§10.6 C1）。 |
+| C2 | `profileType` 解析静默降级 | 原不含 `/` 的值直接回落版本选择 | **已修**：`resolveProfileType` 返回 `parsed` 标志，未解析时计数 `rsp42_es2p_profile_type_unparsed_total` 并写审计（`detail.warning=profileType-unparsed`），不再静默 |
+| C3 | `8.2.1/3.8` 语义重载 | 原 `CodeAllocateFailed` 为 `8.2.1/3.8`，不在 Table 24 内 | **已修**：配额/无可用 Profile → `8.2.5/3.7`（`CodeNoMoreProfileAvailable`）；ICCID 不可用 → `8.2.1/3.3`（`CodeICCIDInUse`，新增 `service.ErrICCIDInUse`）；其余分配失败 → `8.2/4.2` |
+| C4 | `8.2.6/3.7` 语义错位 | `8.2.6` 是 Matching ID、`3.7` 是 Unavailable | **已修**：`CodeProfileUpdateFailed` 改为 `8.2/4.2`（Profile / Execution Error） |
+| C5 | `internal/asn1/doc.go` 陈述过期 | 原写 “wraps `github.com/euicc-go/bertlv`”，但该包自成一层 | **已修**：doc 改为准确描述（仅 `construct.go` 用 bertlv；上层直接 import 的收紧仍登记在 `TODO.md` §3.1） |
 | C6 | `FileHandle.Body()` 忽略 `fillFileOffset` | `internal/saip/files.go:59-67` 只拼接 `fillFileContent`；`SetBody`（`:71-81`）会删除 offset 并线性化 | 补 offset 分片模板的定向回归测试（已并入 N13 第 4 条） |
 | C7 | `ServicesList` 命名 `bertlv` vs 规范 `ber-tlv` | `internal/saip/header.go:231` | **已修**（随 N15）：`serviceNames[SvcBERTLV] = "ber-tlv"`；这是 `/upp/{name}/decoded` 的对外契约变更 |
-| C8 | BER 不定长（indefinite length）被显式拒绝 | `internal/asn1/tlv.go:152`；长度字段 `> 4` 字节亦报错（`internal/asn1/tlv.go:155-157`）。esim42 `01` §4.1 称 SAIP 使用 `AUTOMATIC TAGS` + `EXTENSIBILITY IMPLIED`、多字节 high-tag-number，且实际数据会出现不定长编码 | 若采纳该结论则需支持；否则在 `TODO.md` 登记为「已知边界 + 影响面」，与 `TODO.md` §4.3 的 `bertlv` 多字节长度边界单测合并 |
-| C9 | V3.4/3.4.1 的 PE tag 常量缺失且未登记 | `bf1f`（df-5gprose）、`bf22`（ssim）在 `internal/saip` **零命中**，`TODO.md` 也无 V3 相关条目 → 能无损解析，但对 `PEName`/`isTemplatePE`/`RebuildMandatoryGFSTEList`/`/upp/{name}/decoded` 不可见 | 至少在 `TODO.md` 登记为**明确范围外**（对应 §0.4），避免后人当成遗漏缺陷 |
-| C10 | 无值域约束校验 | 树结构不查 schema，无 `SIZE(...)`/`INTEGER(0..n)` 校验，也没有 pySim `validation.py` 的对等物 | 归入 N13 的实现范围 |
-| C11 | `RebuildMandatoryServices` 覆盖不全且边界未文档化 | `internal/saip/header.go:125-146` 只处理 7 位；GFSTE 由独立的 `RebuildMandatoryGFSTEList`（`internal/saip/header.go:170`）负责 | N15 补到 24 项后写明两者职责边界，否则会出现“补了常量但不会自动置位” |
+| C8 | BER 不定长（indefinite length）被显式拒绝 | `internal/asn1/tlv.go:152`；长度字段 `> 4` 字节亦报错 | **已核查**：`testdata/upp` 全部 TS.48 向量与 SGP.26 证书均以定长编码解析通过（N13 回归门禁），未观察到不定长样本；**登记为已知边界**（`TODO.md` §4.3），若将来出现真实样本再决定支持 |
+| C9 | V3.4/3.4.1 的 PE tag 常量缺失且未登记 | `bf1f`（df-5gprose）、`bf22`（ssim）在 `internal/saip` 零命中，仍能无损解析 | **已登记**：`TODO.md` 记为**明确范围外**（对应 §0.4）；N13 另对带 `mandated` 的非 V2.3.1 PE 给出 warning |
+| C10 | 无值域约束校验 | 树结构不查 schema，无 `SIZE(...)`/`INTEGER(0..n)` 校验 | **部分落地**：N13 已实现结构/语义约束（顺序、单例、服务位、identification、File、GFSTE）；**逐文件 `SIZE`/取值范围校验仍需 V2.3.1 §9 默认表**，登记在 `TODO.md` §2-2 |
+| C11 | `RebuildMandatoryServices` 覆盖不全且边界未文档化 | 服务位与 GFSTE 由两个函数分别负责 | **已修**（随 N15）：`Services()` 覆盖 0–23；在 `header.go` 写明 `RebuildMandatoryServices`（尽力推导服务位，不触碰 GFSTE）与 `RebuildMandatoryGFSTEList`（仅重建 GFSTE 列表）的职责边界 |
 
 ---
 
@@ -850,7 +850,7 @@ esim42 `02` §7.2 与 `06` §13.1 给出的顺序，与第一轮的 M1–M4 **�
 | N6 | admin 监听面 / 密钥导出加固 | `—` | **范围外**（§8.4 决策 11、§10.3 步骤 2.4）；现状：`config/config.example.yaml:19,73` = `0.0.0.0`，无 reveal 头校验，**本轮不改** |
 | N11 | `additionalEuiccProfilePackageVersions` | `[x]` | `internal/rsp/types.go`（`EUICCInfo2` 解析 `[15]`、`SupportedVersions()`、`IsV3Capable()`）+ `internal/rsp/version.go`（`Version`）；`store.SelectBestFor` 改版本集合入参并移除 `major<=0 → AnyForTenant()` 回退；会话持久化 `euicc_profile_version`/`euicc_supported_versions`/`uicc_capability`（迁移 `00011`）；`v3-capable-euicc` 指标 |
 | N15 | `ServicesList` 24 项 | `[x]` | `internal/saip/header.go`：补 `dfLink`(19)/`cat-tp`(20)/`get-identity`(21)/`profile-a-x25519`(22)/`profile-b-p256`(23) + `svcMax` 作为 `Services()` 上界；`bertlv` → 规范拼写 `ber-tlv`（对外契约变更，C7）；TUAK-256 修复（按 `PE-AKAParameter` 的 K 长度 16/32 置 `tuak128`/`tuak256`，新增 `AKAKeyLength`）；`internal/saip/services_test.go` |
-| N13 | Annex A/B 模板表 + 约束 + 向量 | `[x]` | `internal/saip/templates.go`（**V2.3.1 Annex B 权威表 = 14 个模板 OID**，`2.23.143.1.2.1`–`.2.14` + spec-version `2.23.143.1.1.2`；无版本化子弧）、`internal/saip/validate.go`（结构/单例/可选顺序/mandatory-services↔PE/AKA↔服务位/identification 唯一/File `doNotCreate`·`fileDescriptor`/GFSTE ⊆ 14 模板且拒绝带版本子弧/非 V2.3.1 PE 带 `mandated` → warning）、`internal/saip/files.go` 修 `Body()` 的 `fillFileOffset`；`service.UPPInspection.Errors` + `/upp/validate`（`valid:false`+`errors[]`）+ `/upp` 拒绝入库（`400 invalid_upp`）；测试 `internal/saip/validate_test.go`（含 TS.48 回归门禁） |
+| N13 | Annex A/B 模板表 + 约束 + 向量 | `[x]` | `internal/saip/templates.go`（**V2.3.1 Annex B 权威表 = 14 个模板 OID**，`2.23.143.1.2.1`–`.2.14` + spec-version `2.23.143.1.1.2`；无版本化子弧）、`internal/saip/validate.go`（结构/单例/可选顺序/mandatory-services↔PE/AKA↔服务位/identification 唯一/File `doNotCreate`·`fileDescriptor`/GFSTE ⊆ 14 模板且拒绝带版本子弧/非 V2.3.1 PE 带 `mandated` → warning）、`internal/saip/files.go` 修 `Body()` 的 `fillFileOffset`；`service.UPPInspection.Errors` + `/upp/validate`（`valid:false`+`errors[]`）+ `/upp` 拒绝入库（`400 invalid_upp`）；测试 `internal/saip/validate_test.go`（含 TS.48 回归门禁）。**范围说明**：V2.3.1 §9 的逐文件默认表（FID/文件名/大小/AID/ARR/UST）与值域校验（C10）未编码，登记在 `TODO.md` §2-2 |
 | N17 | `SdKey*` / `MncLen` | `[x]` | `internal/saip/personalization/personalization.go`：`Data.SdKeys`（`KeyObject` 全字段：keyUsageQualifier/keyAccess/keyIdentifier/keyVersionNumber/keyCounterValue/keyCompontents，含 keyType/keyData/macLength）注入 `PE-SecurityDomain` 的 `keyList[2]`；`Data.MncLen` 写 **EF.AD = FID 6FAD**（TS 31.102 §4.2.23，byte-4 低半字节；**文档原写 6F3A 是 EF.LI，已更正**）；`csv.go` 增 `mnclen`/`sdkeys` 列；`api/admin/personalization.go` 与 `uppFieldSchema` 同步；测试 `personalization_test.go`、`api/admin/upp_version_test.go` |
 | N4 | schema 模板级字段可用性 | `[x]` | `api/admin/upp_tools.go`：`uppFieldSchema` 增 `applicable`/`targets[]`/`requiredIn[]`/`note`；`annotateSchema` 按 `inspection.files[].fid` 与 `elements[].name` 逐模板解析（`sdKeys`→`securityDomain`、`mncLen`→`6FAD` 等）；`required` 由 `requiredIn` 派生（`iccid` = `["render"]`，与凭据池流程解耦）；测试 `api/admin/upp_schema_test.go` |
 | N5 | `/upp/render` 未入库模板 | `[x]` | `api/admin/upp_tools.go renderUPP`：`{name}` 与 `{data:"<base64 DER>"}` 二选一，二者同给或都缺 → `400 invalid_request`；`data` 路径不落库，审计 `function=renderUPP, subject="<ad-hoc>"`；测试 `api/admin/upp_schema_test.go` |
@@ -860,7 +860,7 @@ esim42 `02` §7.2 与 `06` §13.1 给出的顺序，与第一轮的 M1–M4 **�
 | N10 | 密钥端点显式契约 | `—` | **范围外**（随 N6，§10.3 步骤 2.4）；现状：无 `Cache-Control`、`docs/interfaces.md` 未标注，**本轮不改** |
 | N14 | Annex F 降级构造 | — | **范围外**（§0.4），不预留代码位/开关 |
 
-**代码级一致性（C1–C11，见 §3.2）**：全部未处理；其中 **C1 已定方案**（删除 `pprIds`，PPR 只走管理 API / `profiles.ppr_ids`，见 §10.6），其余见 §10.6 的处理计划。
+**代码级一致性（C1–C11，见 §3.2）**：**C1/C2/C3/C4/C5/C7/C9/C11 已处理**；**C6/C10 并入 N13、C7 并入 N15**；**C8 登记为已知边界**（§10.6）。
 
 **本轮新增的范围收敛项**：**N6/N10 明确不做**（§8.4 决策 11、§10.3 步骤 2.4），状态记为 `—`（范围外），不再作为“以后再说”的备选项。
 
@@ -977,15 +977,17 @@ esim42 `02` §7.2 与 `06` §13.1 给出的顺序，与第一轮的 M1–M4 **�
 - **步骤 4.5 — N9【暂不做】**（用户决定）：本轮**不**新增 `internal/metrics` 的 Histogram 类型，也不新增 `rsp42_admin_http_request_duration_seconds{route,method,status}` / `rsp42_es2p_http_request_duration_seconds{function}`。SLO 看板暂以现有计数器/仪表与外部探针替代；若将来重启，`route` 标签须用 chi 的 `RoutePattern()` 模板以避免高基数。此提示不构成待办。
 - **N10【不做】**：见步骤 2.4（随 N6 一并范围外）。
 
-### 10.6 并行：C 清单（代码级一致性）
+### 10.6 并行：C 清单（代码级一致性）—— **已全部处理**
 
-- **C1【已定】**：**删除** ES2+ `downloadOrder` 的私有 body 成员 `pprIds`（`internal/api/es2plus/handlers.go` 的请求结构与 PPR 覆盖分支）；PPR **只走管理 API / `profiles.ppr_ids`**；`config/config.example.yaml` 中“订单可覆盖 pprIds”的注释一并删除；`docs/interfaces.md` 与 openapi 不再声明该私有扩展。
-- **C2**：`resolveProfileType` 对不含 `/` 的值不再静默，记审计/指标 `profileType-unparsed`。
-- **C3 / C4**：拆分 `internal/rsp/errors.go` 中 `8.2.1/3.8`（池耗尽 vs 租户 `profile_quota` 用尽）与 `8.2.6/3.7` 的语义错位。
-- **C5**：修正 `internal/asn1/doc.go` 的过期陈述，与 N11/N12 同批；与 `TODO.md` §3.1 合并。
-- **C6 / C7 / C10 / C11**：分别并入 N13 / N15。
-- **C8**：`internal/asn1/tlv.go` 对 BER 不定长与长度字段 >4 字节的拒绝 —— **先核查真实样本**是否出现不定长编码，再决定“实现支持”或“登记为已知边界 + 影响面”（本轮不预设结论）。
-- **C9**：`bf1f`(df-5gprose)/`bf22`(ssim) 在 `TODO.md` 登记为**明确范围外**（对应 §0.4）。
+- **C1【已落地】**：**删除** ES2+ `downloadOrder` 的私有 body 成员 `pprIds`（`internal/api/es2plus/handlers.go` 的请求结构与 PPR 覆盖分支已移除）；PPR **只走管理 API / `profiles.ppr_ids`**；`config/config.example.yaml` 的“订单可覆盖”注释已改；`docs/operations.md`/`docs/coverage.md` 同步。
+- **C2【已落地】**：`resolveProfileType` 返回 `parsed` 标志；未解析时计数 `rsp42_es2p_profile_type_unparsed_total{tenant}` 并写审计（`function=downloadOrder`，`detail.warning=profileType-unparsed`，`subject` 为分配到的 ICCID）。
+- **C3【已落地】**：`8.2.1/3.8` 拆为三条有效码 —— 配额/无可用 Profile → `8.2.5/3.7`（新增 `CodeNoMoreProfileAvailable`）；ICCID 不可用（占用/阻塞/创建冲突）→ `8.2.1/3.3`（新增 `CodeICCIDInUse` + `service.ErrICCIDInUse`）；其余 → `8.2/4.2`。
+- **C4【已落地】**：`CodeProfileUpdateFailed` 由 `8.2.6/3.7` 改为 `8.2/4.2`（Profile / Execution Error）。
+- **C5【已落地】**：`internal/asn1/doc.go` 改为准确描述；上层直接 import `bertlv` 的收紧仍登记在 `TODO.md` §3.1。
+- **C6 / C10 / C11【已落地】**：并入 N13（`File.Body()` 的 offset、约束校验）与 N15（服务位/GFSTE 职责边界注释）；值域校验（C10）依赖逐文件默认表，**该表未编码**，登记在 `TODO.md` §2-2。
+- **C7【已落地】**：并入 N15（`ber-tlv`）。
+- **C8【已核查并登记】**：`testdata/upp` 全部 TS.48 向量与 SGP.26 证书均以定长编码解析通过，无不定长样本；登记为已知边界（`TODO.md` §2-6 / §4.3），出现真实样本再评估。
+- **C9【已登记】**：`bf1f`(df-5gprose)/`bf22`(ssim) 在 `TODO.md` 记为**明确范围外**（对应 §0.4）；N13 另对带 `mandated` 的非 V2.3.1 PE 给 warning。
 
 ### 10.7 迁移文件
 

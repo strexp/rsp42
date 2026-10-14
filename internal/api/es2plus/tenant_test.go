@@ -188,3 +188,45 @@ func TestES2PlusUnmappedRequesterUsesPlatformDefault(t *testing.T) {
 	require.NoError(t, err)
 	require.Empty(t, p.TenantID)
 }
+
+// TestES2PlusAllocationErrorCodes pins C3: quota exhaustion and an unusable
+// ICCID are distinguishable from a generic allocation failure.
+func TestES2PlusAllocationErrorCodes(t *testing.T) {
+	ctx := context.Background()
+
+	// Quota exhausted (limit 0) -> 8.2.5/3.7 No more Profile available.
+	client, _ := newServerWith(t, func(h *es2plus.Handler, st *store.Store) {
+		zero := 0
+		h.Inventory.ProfileQuota = func(tenant string) (*int, error) { return &zero, nil }
+		h.Inventory.CountProfiles = func(tenant string) (int, error) { return 0, nil }
+	})
+	_, err := client.DownloadOrderWith(ctx, "", "", "operational", es2plus.CallOptions{})
+	var se *es2plus.StatusError
+	require.ErrorAs(t, err, &se)
+	require.True(t, se.IsCode("8.2.5", "3.7"), "got %v", err)
+
+	// An ICCID that is already in use -> 8.2.1/3.3 Already in Use.
+	client2, st2 := newServerWith(t, nil)
+	first, err := client2.DownloadOrderWith(ctx, "", "", "operational", es2plus.CallOptions{})
+	require.NoError(t, err)
+	_, err = client2.DownloadOrderWith(ctx, "", first.ICCID, "other", es2plus.CallOptions{})
+	require.ErrorAs(t, err, &se)
+	require.True(t, se.IsCode("8.2.1", "3.3"), "got %v", err)
+	_ = st2
+}
+
+// TestES2PlusUnparsedProfileTypeAudited pins C2: an opaque profileType is
+// recorded instead of silently falling back to the version-selected template.
+func TestES2PlusUnparsedProfileTypeAudited(t *testing.T) {
+	client, st := newServerWith(t, func(h *es2plus.Handler, st *store.Store) {
+		h.AuditRepo = st.Audit
+	})
+	dl, err := client.DownloadOrderWith(context.Background(), "", "", "operational", es2plus.CallOptions{})
+	require.NoError(t, err)
+
+	entries, err := st.Audit.ListBySubject(dl.ICCID, 10)
+	require.NoError(t, err)
+	require.NotEmpty(t, entries)
+	require.Equal(t, "downloadOrder", entries[0].Function)
+	require.Contains(t, entries[0].DetailJSON, "profileType-unparsed")
+}

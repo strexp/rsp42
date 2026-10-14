@@ -51,30 +51,43 @@ func (c Code) Status(message string) *StatusCode {
 
 // Named status codes used across the ES2+/ES9+/ES11/ES12 interfaces.
 var (
-	CodeInvalidRequest      = Code{"8.1", "1.2"}
-	CodeVerificationFailed  = Code{"8.1", "6.1"}
-	CodeCertChainFailed     = Code{"8.1.3", "6.1"}
-	CodeEIDNotPermitted     = Code{"8.1.4", "6.1"}
-	CodeProfileLoadFailed   = Code{"8.2", "3.7"}
-	CodeInputRefused        = Code{"8.2.1", "1.2"}
-	CodeProfileNotEligible  = Code{"8.2.6", "3.8"}
-	CodeAllocateFailed      = Code{"8.2.1", "3.8"}
-	CodeProfileUpdateFailed = Code{"8.2.6", "3.7"}
-	CodeInvalidTransition   = Code{"8.2.6", "3.5"}
-	CodeConfirmationCode    = Code{"8.2.7", "6.4"}
-	CodeChallengeInvalid    = Code{"8.8.1", "1.2"}
-	CodeSMDPAddress         = Code{"8.8.1", "3.8"}
-	CodeCIUnsupported       = Code{"8.8.2", "3.1"}
-	CodeUnsupportedCurve    = Code{"8.8.5", "4.10"}
-	CodeES12BadRequest      = Code{"8.9", "1.2"}
-	CodeES12Upstream        = Code{"8.9", "5.1"}
-	CodeDSChallengeInvalid  = Code{"8.9.1", "1.2"}
-	CodeDSAddress           = Code{"8.9.1", "3.8"}
-	CodeDSCIUnsupported     = Code{"8.9.2", "3.1"}
-	CodeDSAuthFailed        = Code{"8.9.3", "3.1"}
-	CodeEventIDInUse        = Code{"8.9.5", "3.3"}
-	CodeEventNotFound       = Code{"8.9.5", "3.9"}
-	CodeUnknownTransaction  = Code{"8.10.1", "3.9"}
+	CodeInvalidRequest     = Code{"8.1", "1.2"}
+	CodeVerificationFailed = Code{"8.1", "6.1"}
+	CodeCertChainFailed    = Code{"8.1.3", "6.1"}
+	CodeEIDNotPermitted    = Code{"8.1.4", "6.1"}
+	CodeProfileLoadFailed  = Code{"8.2", "3.7"}
+	CodeInputRefused       = Code{"8.2.1", "1.2"}
+	CodeProfileNotEligible = Code{"8.2.6", "3.8"}
+	// CodeAllocateFailed is a generic DownloadOrder allocation failure
+	// (Profile / Execution Error). Pool or quota exhaustion uses the more
+	// specific CodeNoMoreProfileAvailable, and an ICCID conflict uses
+	// CodeICCIDInUse (C3).
+	CodeAllocateFailed = Code{"8.2", "4.2"}
+	// CodeProfileUpdateFailed is a failed Profile/order write (Profile /
+	// Execution Error). The previous 8.2.6/3.7 mixed the Matching ID subject
+	// with an inapplicable reason (C4).
+	CodeProfileUpdateFailed = Code{"8.2", "4.2"}
+	// CodeNoMoreProfileAvailable is Table 24's 8.2.5/3.7: no Profile of the
+	// requested Profile Type is available (pool/quota exhaustion).
+	CodeNoMoreProfileAvailable = Code{"8.2.5", "3.7"}
+	// CodeICCIDInUse is 8.2.1/3.3: the Profile identified by the ICCID is not
+	// available (already in use, blocked or otherwise not issuable).
+	CodeICCIDInUse         = Code{"8.2.1", "3.3"}
+	CodeInvalidTransition  = Code{"8.2.6", "3.5"}
+	CodeConfirmationCode   = Code{"8.2.7", "6.4"}
+	CodeChallengeInvalid   = Code{"8.8.1", "1.2"}
+	CodeSMDPAddress        = Code{"8.8.1", "3.8"}
+	CodeCIUnsupported      = Code{"8.8.2", "3.1"}
+	CodeUnsupportedCurve   = Code{"8.8.5", "4.10"}
+	CodeES12BadRequest     = Code{"8.9", "1.2"}
+	CodeES12Upstream       = Code{"8.9", "5.1"}
+	CodeDSChallengeInvalid = Code{"8.9.1", "1.2"}
+	CodeDSAddress          = Code{"8.9.1", "3.8"}
+	CodeDSCIUnsupported    = Code{"8.9.2", "3.1"}
+	CodeDSAuthFailed       = Code{"8.9.3", "3.1"}
+	CodeEventIDInUse       = Code{"8.9.5", "3.3"}
+	CodeEventNotFound      = Code{"8.9.5", "3.9"}
+	CodeUnknownTransaction = Code{"8.10.1", "3.9"}
 
 	// CodeProfileVersionNotSupported is returned when no UPP template is
 	// compatible with the eUICC's advertised SAIP versions (N12). SGP.22 has no

@@ -135,8 +135,16 @@ const (
 const svcMax = SvcProfileBP256
 
 // RebuildMandatoryServices derives the mandatory-services list from the PEs
-// actually present in the profile. It is a best-effort recomputation (the
-// GFSTE list is left untouched).
+// actually present in the profile (USIM/ISIM/CSIM/EAP presence and the AKA
+// algorithm, including the TUAK key length). It is a best-effort recomputation
+// and covers the services the ProfileElements can imply.
+//
+// Responsibility boundary (C11): this function only writes the
+// eUICC-Mandatory-services BIT STRING of the ProfileHeader. The
+// eUICC-Mandatory-GFSTEList is a separate structure owned exclusively by
+// RebuildMandatoryGFSTEList below; neither function touches the other's data.
+// Adding a service constant therefore does NOT make it auto-set unless the
+// corresponding PE is derived here.
 func (s *Sequence) RebuildMandatoryServices() error {
 	h, err := ParseHeader(s.Header())
 	if err != nil {

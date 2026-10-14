@@ -141,8 +141,9 @@ attribution uses `functionRequesterIdentifier`), and rsp42-side rate limiting /
 
 Multiple SGP.26 certificate variants can be served by one deployment by listing
 additional certificate sets under `certs.identities`; the identity whose CI the
-eUICC proposes is selected automatically. `profiles.ppr_ids` and the order-level
-`pprIds` populate the Profile Policy Rules, and the UPP template is selected from
+eUICC proposes is selected automatically. `profiles.ppr_ids` populates the
+Profile Policy Rules (the ES2+ DownloadOrder body cannot override them, C1), and
+the UPP template is selected from
 the eUICC's advertised profile version unless the order (or the tenant default)
 pins one.
 
