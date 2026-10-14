@@ -256,18 +256,19 @@ func requesterPairs(pairs []config.RequesterTenantConfig) []service.RequesterTen
 
 // newMetricsRegistry builds the process metrics registry with the metric help
 // text declared up front (so the series exist even before the first event).
+//
+// The vocabulary of the packages that emit metrics is declared by those
+// packages (service.DescribeMetrics, es2plus.DescribeMetrics); only the metrics
+// the composition root itself maintains are described here. The registry refuses
+// an undeclared name, so a missing declaration fails loudly.
 func newMetricsRegistry() *metrics.Registry {
 	reg := metrics.NewRegistry()
-	reg.Describe("rsp42_progress_notifications_total", metrics.Counter,
-		"ES2+ download-progress notifications by tenant, notification point and status.")
+	service.DescribeMetrics(reg)
+	es2plus.DescribeMetrics(reg)
 	reg.Describe("rsp42_session_gc_total", metrics.Counter, "Expired download sessions removed.")
 	reg.Describe("rsp42_iccid_reservation_gc_total", metrics.Counter, "Expired ICCID pool reservations reclaimed.")
 	reg.Describe("rsp42_iccid_pool", metrics.Gauge, "ICCID pool entries by state (tenant=all).")
 	reg.Describe("rsp42_es2p_callback_queue", metrics.Gauge, "Outbound ES2+ callback rows by status.")
-	reg.Describe("rsp42_es12_register_failures_total", metrics.Counter,
-		"SM-DS event registration failures by tenant.")
-	reg.Describe("rsp42_acr_requests_total", metrics.Counter,
-		"ES2+ HandleAcrRequest confirmations by tenant and outcome (allowed|refused|error).")
 	return reg
 }
 

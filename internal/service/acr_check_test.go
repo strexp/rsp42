@@ -9,7 +9,6 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"rsp42/internal/metrics"
 	"rsp42/internal/rsp"
 	"rsp42/internal/store"
 )
@@ -61,7 +60,7 @@ func TestACRCheckerOutcomes(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			st := newACRCheckerStore(t)
-			reg := metrics.NewRegistry()
+			reg := newServiceMetricsRegistry()
 			op := &fakeACROperator{err: tc.err}
 			c := &ACRChecker{Operator: op, Metrics: reg, Audit: st.Audit}
 
@@ -96,7 +95,7 @@ func TestACRCheckerOutcomes(t *testing.T) {
 // may wrap the refusal; classification must survive it.
 func TestACRCheckerRefusalIsRecognisedThroughWrapping(t *testing.T) {
 	st := newACRCheckerStore(t)
-	reg := metrics.NewRegistry()
+	reg := newServiceMetricsRegistry()
 	refusal := &rsp.ACRRefusedError{SubjectCode: "8.2.1", ReasonCode: "1.2"}
 	c := &ACRChecker{
 		Operator: &fakeACROperator{err: errors.Join(errors.New("es2plus: wrapper"), refusal)},

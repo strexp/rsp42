@@ -9,7 +9,6 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"rsp42/internal/config"
-	"rsp42/internal/metrics"
 	"rsp42/internal/service"
 	"rsp42/internal/store"
 )
@@ -61,7 +60,7 @@ func TestWireOperatorES2PIndependence(t *testing.T) {
 
 			cmae := &service.CMAE{}
 			notifs := &service.NotificationService{}
-			reg := metrics.NewRegistry()
+			reg := newMetricsRegistry()
 
 			queue, err := wireOperatorES2P(tc.cfg, "2.999.10", cmae, notifs, st, reg, slog.Default())
 			require.NoError(t, err)

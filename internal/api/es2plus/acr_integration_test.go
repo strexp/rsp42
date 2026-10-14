@@ -13,7 +13,6 @@ import (
 
 	"rsp42/internal/api/es2plus"
 	"rsp42/internal/api/mock"
-	"rsp42/internal/metrics"
 	"rsp42/internal/rsp"
 	"rsp42/internal/service"
 	"rsp42/internal/store"
@@ -31,7 +30,7 @@ func TestACRCheckerAgainstMockOperator(t *testing.T) {
 	st, err := store.Open("file:" + filepath.Join(t.TempDir(), "acr.db"))
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = st.Close() })
-	reg := metrics.NewRegistry()
+	reg := newES2PMetricsRegistry()
 
 	client := es2plus.NewCallbackClient("", "2.999.10", nil)
 	client.ACRURL = srv.URL + "/gsma/rsp2/es2plus/handleAcrRequest"

@@ -33,6 +33,7 @@ func TestRegistryRender(t *testing.T) {
 
 func TestHandlerRunsCollectors(t *testing.T) {
 	reg := NewRegistry()
+	reg.Describe("rsp42_collected", Gauge, "Value produced by the collector.")
 	calls := 0
 	h := Handler(reg, func(r *Registry) {
 		calls++
@@ -46,4 +47,37 @@ func TestHandlerRunsCollectors(t *testing.T) {
 	require.Equal(t, 1, calls)
 	require.Contains(t, rec.Body.String(), "rsp42_collected 42")
 	require.Contains(t, rec.Header().Get("Content-Type"), "text/plain")
+}
+
+// TestUndeclaredMetricPanics pins that a typo fails loudly instead of creating
+// an undeclared series with no type or help text.
+func TestUndeclaredMetricPanics(t *testing.T) {
+	reg := NewRegistry()
+	require.PanicsWithValue(t, "metrics: undeclared metric rsp42_typo (call Describe first)", func() {
+		reg.Inc("rsp42_typo", nil)
+	})
+	require.Panics(t, func() { reg.Set("rsp42_typo", nil, 1) })
+}
+
+// TestLabelValueEscaping pins the Prometheus escaping rules: only backslash,
+// double quote and line feed are escaped. Go's %q would emit \x escapes (e.g.
+// for a NUL byte), which Prometheus does not define.
+func TestLabelValueEscaping(t *testing.T) {
+	reg := NewRegistry()
+	reg.Describe("rsp42_escaped_total", Counter, "Escaping.")
+
+	reg.Inc("rsp42_escaped_total", map[string]string{"tenant": "a\"b"})
+	out := reg.Render()
+	require.Contains(t, out, `rsp42_escaped_total{tenant="a\"b"} 1`)
+
+	reg.Inc("rsp42_escaped_total", map[string]string{"tenant": "back\\slash"})
+	require.Contains(t, reg.Render(), `tenant="back\\slash"`)
+
+	reg.Inc("rsp42_escaped_total", map[string]string{"tenant": "line\nfeed"})
+	require.Contains(t, reg.Render(), `tenant="line\nfeed"`)
+
+	// A NUL byte stays literal rather than becoming \x00.
+	reg.Inc("rsp42_escaped_total", map[string]string{"tenant": "nul\x00byte"})
+	require.Contains(t, reg.Render(), "tenant=\"nul\x00byte\"")
+	require.NotContains(t, reg.Render(), `\x00`)
 }

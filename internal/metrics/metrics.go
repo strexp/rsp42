@@ -55,13 +55,15 @@ func (r *Registry) Describe(name string, kind Kind, help string) {
 func (r *Registry) Inc(name string, labels map[string]string) { r.Add(name, labels, 1) }
 
 // Add adds delta to a counter or gauge.
+//
+// The metric must have been declared with Describe: an undeclared name is a
+// programming error (a typo would otherwise create a series nobody declared,
+// with no type or help text, and silently drop the intended metric), so it
+// panics with the offending name.
 func (r *Registry) Add(name string, labels map[string]string, delta float64) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	if _, ok := r.meta[name]; !ok {
-		r.meta[name] = Counter
-		r.order = append(r.order, name)
-	}
+	r.mustDeclared(name)
 	key := labelKey(labels)
 	if r.values[name] == nil {
 		r.values[name] = map[string]float64{}
@@ -69,18 +71,22 @@ func (r *Registry) Add(name string, labels map[string]string, delta float64) {
 	r.values[name][key] += delta
 }
 
-// Set assigns a gauge value.
+// Set assigns a gauge value. Like Add it panics for an undeclared metric.
 func (r *Registry) Set(name string, labels map[string]string, value float64) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	if _, ok := r.meta[name]; !ok {
-		r.meta[name] = Gauge
-		r.order = append(r.order, name)
-	}
+	r.mustDeclared(name)
 	if r.values[name] == nil {
 		r.values[name] = map[string]float64{}
 	}
 	r.values[name][labelKey(labels)] = value
+}
+
+// mustDeclared panics when name was never described. The caller holds the lock.
+func (r *Registry) mustDeclared(name string) {
+	if _, ok := r.meta[name]; !ok {
+		panic("metrics: undeclared metric " + name + " (call Describe first)")
+	}
 }
 
 // Render produces the Prometheus text exposition.
@@ -140,10 +146,20 @@ func labelKey(labels map[string]string) string {
 		if i > 0 {
 			b.WriteByte(',')
 		}
-		fmt.Fprintf(&b, "%s=%q", k, labels[k])
+		fmt.Fprintf(&b, "%s=\"%s\"", k, escapeLabelValue(labels[k]))
 	}
 	b.WriteByte('}')
 	return b.String()
+}
+
+// escapeLabelValue escapes a label value for the Prometheus exposition format.
+// Only backslash, double quote and line feed are escaped; Go's %q would also
+// emit \x escapes, which Prometheus does not understand.
+func escapeLabelValue(v string) string {
+	if !strings.ContainsAny(v, "\\\"\n") {
+		return v
+	}
+	return strings.NewReplacer(`\`, `\\`, `"`, `\"`, "\n", `\n`).Replace(v)
 }
 
 func formatFloat(v float64) string {
