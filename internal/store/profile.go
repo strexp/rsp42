@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 )
 
@@ -12,7 +13,7 @@ type ProfileRepo struct{ db *sql.DB }
 
 const profileCols = `id, iccid, imsi, profile_type, eid, state, matching_id, cc_hash, cc_required,
 	smds_address, release_flag, download_attempts, cc_attempts, upp_template, ppr_ids, personalization,
-	created_at, updated_at, installed_at, error_reason`
+	created_at, updated_at, installed_at, error_reason, batch_id`
 
 func scanProfile(sc interface {
 	Scan(dest ...any) error
@@ -22,10 +23,14 @@ func scanProfile(sc interface {
 	var ccHash, pprIds []byte
 	var ccReq, relFlag int
 	var created, updated int64
-	var installed sql.NullInt64
+	var installed, batchID sql.NullInt64
 	if err := sc.Scan(&p.ID, &p.ICCID, &imsi, &ptype, &eid, &p.State, &matching, &ccHash, &ccReq,
-		&smds, &relFlag, &p.DownloadAttempts, &p.CCAttempts, &upp, &pprIds, &pers, &created, &updated, &installed, &errReason); err != nil {
+		&smds, &relFlag, &p.DownloadAttempts, &p.CCAttempts, &upp, &pprIds, &pers, &created, &updated, &installed, &errReason, &batchID); err != nil {
 		return nil, err
+	}
+	if batchID.Valid {
+		v := batchID.Int64
+		p.BatchID = &v
 	}
 	p.IMSI = imsi.String
 	p.ProfileType = ptype.String
@@ -58,11 +63,11 @@ func (r *ProfileRepo) Create(p *Profile) (int64, error) {
 	res, err := r.db.Exec(`INSERT INTO profiles
 		(iccid, imsi, profile_type, eid, state, matching_id, cc_hash, cc_required, smds_address,
 		 release_flag, download_attempts, cc_attempts, upp_template, ppr_ids, personalization,
-		 created_at, updated_at, error_reason)
-		VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+		 created_at, updated_at, error_reason, batch_id)
+		VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
 		p.ICCID, nullStr(p.IMSI), nullStr(p.ProfileType), nullStr(p.EID), string(p.State), nullStr(p.MatchingID),
 		p.CCHash, boolInt(p.CCRequired), nullStr(p.SMDSAddress), boolInt(p.ReleaseFlag),
-		p.DownloadAttempts, p.CCAttempts, nullStr(p.UPPTemplate), p.PPRIds, nullStr(p.Personalization), now, now, nullStr(p.ErrorReason))
+		p.DownloadAttempts, p.CCAttempts, nullStr(p.UPPTemplate), p.PPRIds, nullStr(p.Personalization), now, now, nullStr(p.ErrorReason), p.BatchID)
 	if err != nil {
 		return 0, fmt.Errorf("store: create profile: %w", err)
 	}
@@ -116,17 +121,92 @@ func (r *ProfileRepo) List() ([]*Profile, error) {
 	return out, rows.Err()
 }
 
+// ProfileFilter constrains a profile listing (all fields optional).
+type ProfileFilter struct {
+	State   string // exact state
+	EID     string // exact EID
+	ICCID   string // ICCID prefix
+	Query   string // substring over iccid/imsi/eid/matching_id
+	BatchID *int64 // profiles belonging to a download batch
+}
+
+// ListFiltered returns a page of profiles and the total matching count. sort is
+// one of "created_at", "updated_at", "iccid", "state" (optionally prefixed with
+// '-'); anything else falls back to newest-first by created_at.
+func (r *ProfileRepo) ListFiltered(f ProfileFilter, limit, offset int, sort string) ([]*Profile, int, error) {
+	var where []string
+	var args []any
+	if f.State != "" {
+		where, args = append(where, "state = ?"), append(args, f.State)
+	}
+	if f.EID != "" {
+		where, args = append(where, "eid = ?"), append(args, f.EID)
+	}
+	if f.ICCID != "" {
+		where, args = append(where, "iccid LIKE ?"), append(args, f.ICCID+"%")
+	}
+	if f.Query != "" {
+		where = append(where, "(iccid LIKE ? OR imsi LIKE ? OR eid LIKE ? OR matching_id LIKE ?)")
+		q := "%" + f.Query + "%"
+		args = append(args, q, q, q, q)
+	}
+	if f.BatchID != nil {
+		where, args = append(where, "batch_id = ?"), append(args, *f.BatchID)
+	}
+	clause := ""
+	if len(where) > 0 {
+		clause = " WHERE " + strings.Join(where, " AND ")
+	}
+
+	var total int
+	if err := r.db.QueryRow("SELECT COUNT(*) FROM profiles"+clause, args...).Scan(&total); err != nil {
+		return nil, 0, err
+	}
+
+	rows, err := r.db.Query("SELECT "+profileCols+" FROM profiles"+clause+profileOrder(sort)+" LIMIT ? OFFSET ?",
+		append(args, limit, offset)...)
+	if err != nil {
+		return nil, 0, err
+	}
+	defer func() { _ = rows.Close() }()
+	var out []*Profile
+	for rows.Next() {
+		p, err := scanProfile(rows)
+		if err != nil {
+			return nil, 0, err
+		}
+		out = append(out, p)
+	}
+	return out, total, rows.Err()
+}
+
+func profileOrder(sort string) string {
+	dir := "DESC"
+	col := "created_at"
+	if strings.HasPrefix(sort, "-") {
+		dir, sort = "ASC", sort[1:]
+	}
+	switch sort {
+	case "created_at", "updated_at", "iccid", "state", "installed_at":
+		col = sort
+	case "":
+	default:
+		return " ORDER BY created_at DESC"
+	}
+	return " ORDER BY " + col + " " + dir
+}
+
 // Update writes all mutable fields of p.
 func (r *ProfileRepo) Update(p *Profile) error {
 	p.UpdatedAt = time.Now().UTC()
 	_, err := r.db.Exec(`UPDATE profiles SET
 		imsi=?, profile_type=?, eid=?, state=?, matching_id=?, cc_hash=?, cc_required=?, smds_address=?,
 		release_flag=?, download_attempts=?, cc_attempts=?, upp_template=?, ppr_ids=?, personalization=?,
-		updated_at=?, installed_at=?, error_reason=? WHERE id=?`,
+		updated_at=?, installed_at=?, error_reason=?, batch_id=? WHERE id=?`,
 		nullStr(p.IMSI), nullStr(p.ProfileType), nullStr(p.EID), string(p.State), nullStr(p.MatchingID),
 		p.CCHash, boolInt(p.CCRequired), nullStr(p.SMDSAddress), boolInt(p.ReleaseFlag),
 		p.DownloadAttempts, p.CCAttempts, nullStr(p.UPPTemplate), p.PPRIds, nullStr(p.Personalization),
-		p.UpdatedAt.Unix(), nullTime(p.InstalledAt), nullStr(p.ErrorReason), p.ID)
+		p.UpdatedAt.Unix(), nullTime(p.InstalledAt), nullStr(p.ErrorReason), p.BatchID, p.ID)
 	if err != nil {
 		return fmt.Errorf("store: update profile: %w", err)
 	}

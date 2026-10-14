@@ -4,6 +4,9 @@ import (
 	"database/sql"
 	"embed"
 	"fmt"
+	"os"
+	"path/filepath"
+	"strings"
 
 	_ "modernc.org/sqlite"
 
@@ -24,10 +27,14 @@ type Store struct {
 	Callbacks *CallbackRepo
 	Regs      *RegistrationRepo
 	Audit     *AuditRepo
+	UPP       *UPPRepo
+	Perso     *PersonalizationRepo
+	Batch     *BatchRepo
 }
 
 // Open opens the SQLite database at dsn and applies all migrations.
 func Open(dsn string) (*Store, error) {
+	ensureDSNDir(dsn)
 	db, err := sql.Open("sqlite", dsn)
 	if err != nil {
 		return nil, fmt.Errorf("store: open: %w", err)
@@ -58,8 +65,26 @@ func Open(dsn string) (*Store, error) {
 	s.Callbacks = &CallbackRepo{db: db}
 	s.Regs = &RegistrationRepo{db: db}
 	s.Audit = &AuditRepo{db: db}
+	s.UPP = &UPPRepo{db: db}
+	s.Perso = &PersonalizationRepo{db: db}
+	s.Batch = &BatchRepo{db: db}
 	return s, nil
 }
 
 // Close closes the underlying database.
 func (s *Store) Close() error { return s.DB.Close() }
+
+// ensureDSNDir creates the parent directory of a file-backed DSN so that SQLite
+// does not fail when e.g. `db/rsp42-smdpp.db` is configured but `db/` is absent.
+func ensureDSNDir(dsn string) {
+	p := strings.TrimPrefix(dsn, "file:")
+	if i := strings.IndexByte(p, '?'); i >= 0 {
+		p = p[:i]
+	}
+	if p == "" || p == ":memory:" || strings.HasPrefix(p, ":memory:") {
+		return
+	}
+	if dir := filepath.Dir(p); dir != "" && dir != "." {
+		_ = os.MkdirAll(dir, 0o755)
+	}
+}

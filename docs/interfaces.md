@@ -60,7 +60,25 @@ Failures use `header.functionExecutionStatus.status = "Failed"` with
 `8.10.1/3.9` unknown transaction, `8.2.7/6.4` confirmation code invalid,
 `8.9.5/3.3` EventID in use, `8.9.5/3.9` event not found.
 
-## Admin
+## Management API (admin listener)
 
-`rsp42 admin migrate|rekey|profile|session|activation-code|smds|es2p|mock-operator`
+A BSS/OSS-facing management API is served on the admin listener under
+`/admin/api/v1` (JSON; no UI). It has no authentication and must be deployed on a
+trusted network. `GET /admin/api/v1/openapi.json` returns a compact description.
+
+| Area | Endpoints |
+|---|---|
+| Profiles | `GET/POST /profiles`, `GET/PATCH/DELETE /profiles/{iccid}`, `POST /profiles/{iccid}/confirm\|cancel\|release`, `POST /profiles/{iccid}/activation-code`, `GET /profiles/{iccid}/timeline`, `POST /profiles/bulk` |
+| Download batches | `GET/POST /batches`, `GET/DELETE /batches/{id}`, `GET /batches/{id}/items`, `POST /batches/{id}/confirm\|cancel` |
+| UPP registry | `GET/POST /upp`, `GET/DELETE /upp/{name}`, `GET /upp/{name}/bytes`, `POST /upp/{name}/activate\|deactivate` |
+| Personalization | `GET /personalization`, `GET/PUT/DELETE /personalization/{iccid}` (`?reveal=1` includes K/OPc), `POST /personalization/import` |
+| Audit log | `GET /audit` (`interface`, `function`, `subject`, `actor`, `outcome`, `since`, `until`, `page`, `size`) |
+
+Profile listings accept `state`, `eid`, `iccid` (prefix), `q` (substring),
+`page`, `size`, `sort`. Mutations are recorded in `audit_log` with
+`interface=admin`.
+
+## Admin CLI
+
+`rsp42 admin migrate|rekey|profile|session|gc|upp|personalization|activation-code|smds|es2p|mock-operator`
 (see `rsp42 admin help`).

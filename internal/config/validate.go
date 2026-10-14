@@ -120,20 +120,6 @@ func (c *Config) validateDP() error {
 			return fmt.Errorf("profiles.ppr_ids entry %d out of range [0,2]", id)
 		}
 	}
-	if !dirExists(c.Profiles.UPPDir) {
-		return fmt.Errorf("profiles.upp_dir %q does not exist", c.Profiles.UPPDir)
-	}
-	if c.PersonalizationEnabled() {
-		switch c.Profiles.Personalization.Source.Kind {
-		case "", "file", "csv":
-			if c.Profiles.Personalization.Source.Path != "" && !fileExists(c.Profiles.Personalization.Source.Path) {
-				return fmt.Errorf("profiles.personalization.source.path %q does not exist", c.Profiles.Personalization.Source.Path)
-			}
-		case "static":
-		default:
-			return fmt.Errorf("profiles.personalization.source.kind %q unsupported", c.Profiles.Personalization.Source.Kind)
-		}
-	}
 	if err := validateKEKConfig(&c.KMS); err != nil {
 		return err
 	}
@@ -220,9 +206,6 @@ func (c *Config) validateDS() error {
 	}
 	return nil
 }
-
-// PersonalizationEnabled reports whether the personalization engine is active.
-func (c *Config) PersonalizationEnabled() bool { return c.Profiles.Personalization.Enabled }
 
 func validCurve(s string) bool {
 	switch s {

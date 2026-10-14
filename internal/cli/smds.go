@@ -100,7 +100,7 @@ func cmdSMDS(prog string, args []string) int {
 		log.Error("es12 listener", "err", err)
 		return 1
 	}
-	admin, err := buildServer(log, "admin", cfg.SMDS.Server.Bind, cfg.SMDS.Server.Admin, api.NewAdminRouter(log, func() bool { return true }))
+	admin, err := buildServer(log, "admin", cfg.SMDS.Server.Bind, cfg.SMDS.Server.Admin, api.NewAdminRouter(log, func() bool { return true }, nil))
 	if err != nil {
 		log.Error("admin listener", "err", err)
 		return 1

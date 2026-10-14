@@ -66,11 +66,19 @@ The `rsp42` binary provides both roles with equal standing:
 
 ```sh
 cp config/config.example.yaml config/config.yaml
+make seed                                        # import UPP templates + personalization (db/)
 ./bin/rsp42 smdpp --config config/config.yaml    # SM-DP+ role (ES9+ :8443, ES2+ :8444)
 ./bin/rsp42 smds  --config config/config.yaml    # SM-DS  role (ES11 :9443, ES12 :9444)
 ```
 
-Health endpoints are exposed on the admin port (`/healthz`, `/readyz`).
+UPP templates and personalization live in the database and are seeded with the
+CLI (`make seed`); they can be re-imported at any time without a restart.
+
+Health endpoints are exposed on the admin port (`/healthz`, `/readyz`), which
+also serves a BSS/OSS-facing management API under `/admin/api/v1` (profiles,
+download batches, UPP registry, personalization; see `docs/interfaces.md` and
+`GET /admin/api/v1/openapi.json`). It has no authentication; deploy it on a
+trusted network.
 
 Configuration is a single YAML file; every value can be overridden through
 `RSP42_`-prefixed environment variables (see `config/config.example.yaml`).

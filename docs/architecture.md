@@ -27,6 +27,7 @@ internal/saip/personalization personalization engine + data sources
 internal/store                SQLite + goose migrations + repositories
 internal/service              business logic (CMAE, orders, sessions, SM-DS, …)
 internal/api                  HTTP routers and handlers (ES2+/ES9+/ES11/ES12)
+internal/api/admin            management API (profiles, batches, UPP, personalization)
 internal/audit                structured audit sinks
 internal/activationcode       activation codes + QR
 ```
@@ -50,6 +51,14 @@ store, config, logging}`; the low-level packages never depend on `api`.
   and the CLI is split into `server`/`smdpp`/`smds`/`admin*`.
 - **Explicit**: no global mutable state; sensitive session columns have a
   dedicated field/column; status codes are named `rsp.Code` values.
+- **UPP registry**: SAIP templates live in the `upp_templates` table (blob +
+  SAIP version + SHA-256) and are resolved through `service.UPPStore`; they are
+  seeded with `rsp42 admin upp import --dir` (no `upp_dir` in the config), so the
+  SM-DP+ does not touch the filesystem at request time.
+- **Per-ICCID personalization**: values live in the `personalization` table and
+  are resolved through `service.PersonalizationResolver` (K/OPc encrypted at
+  rest); seeded with `rsp42 admin personalization import --file`. This replaced a
+  single global cursor that raced under concurrent downloads.
 
 
 ## Download flow (ES2+ → ES9+)

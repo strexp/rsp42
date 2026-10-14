@@ -44,13 +44,15 @@ func newTestHandler(t *testing.T) (*Handler, *cert.Manager) {
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = st.Close() })
 
+	_, err = service.ImportUPPTemplates("../../../testdata/upp", st.UPP)
+	require.NoError(t, err)
+
 	cmae, err := service.NewCMAE(service.CMAEConfig{
 		FQDN: "testsmdpplus1.example.com", OID: "2.999.10", HostID: make([]byte, 8),
 		TransactionIDLen: 16, MaxDownloadAttempts: 5, MaxCCAttempts: 3,
 		SessionTTL: 30 * time.Minute, DownloadTTL: 24 * time.Hour,
 	}, certs, service.NewSessionService(st.Sessions, provider, 30*time.Minute), st.Profiles,
-		&personalization.StaticSource{Items: []*personalization.Data{{IMSI: "001010123456063"}}},
-		"../../../testdata/upp", "TS48v1_A.der", &personalization.Engine{Algorithm: "milenage"}, slog.Default())
+		nil, st.UPP, "TS48v1_A.der", &personalization.Engine{Algorithm: "milenage"}, slog.Default())
 	require.NoError(t, err)
 	return New(slog.Default(), cmae), certs
 }

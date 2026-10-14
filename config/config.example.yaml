@@ -70,21 +70,16 @@ certs:
   #     dp_pb: "SM-DP+/DPpb"
 
 profiles:
-  upp_dir: "testdata/upp"
+  # Optional registry template name used when the eUICC's profile version does
+  # not select one. Empty = highest active template.
+  # UPP templates and per-ICCID personalization live in the database and are
+  # seeded with `rsp42 admin upp import` / `rsp42 admin personalization import`.
+  default_upp: ""
   repository: "sqlite"
   store:
-    dsn: "file:rsp42.db?_pragma=journal_mode(WAL)&_pragma=busy_timeout(5000)"
+    dsn: "file:db/rsp42-smdpp.db?_pragma=journal_mode(WAL)&_pragma=busy_timeout(5000)"
   personalization:
-    enabled: true
     default_algorithm: "milenage"
-    source:
-      kind: "csv"
-      path: "testdata/personalization/profiles.csv"
-      mapping:
-        iccid: "iccid"
-        imsi: "imsi"
-        k: "k"
-        opc: "opc"
     iccid_pool_prefix: "8900012"
     imsi_pool_prefix: "00101"
   # Profile Policy Rules attached to downloaded profiles (SGP.22 §2.4a).
@@ -145,7 +140,7 @@ smds:
     admin:
       port: 9100
   store:
-    dsn: "file:rsp42-smds.db?_pragma=journal_mode(WAL)&_pragma=busy_timeout(5000)"
+    dsn: "file:db/rsp42-smds.db?_pragma=journal_mode(WAL)&_pragma=busy_timeout(5000)"
 
 kms:
   provider: "file"

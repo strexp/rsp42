@@ -94,9 +94,12 @@ type CertsConfig struct {
 	Identities []CertsConfig `mapstructure:"identities"`
 }
 
-// ProfilesConfig configures the UPP template store and personalization.
+// ProfilesConfig configures the UPP template registry and personalization.
+// Both are stored in the database and seeded via `rsp42 admin`.
 type ProfilesConfig struct {
-	UPPDir          string                `mapstructure:"upp_dir"`
+	// DefaultUPP pins a registry template name used when the eUICC's profile
+	// version does not select one.
+	DefaultUPP      string                `mapstructure:"default_upp"`
 	Repository      string                `mapstructure:"repository"`
 	Store           StoreConfig           `mapstructure:"store"`
 	Personalization PersonalizationConfig `mapstructure:"personalization"`
@@ -111,20 +114,12 @@ type StoreConfig struct {
 	DSN string `mapstructure:"dsn"`
 }
 
-// PersonalizationConfig configures the personalization engine.
+// PersonalizationConfig configures the personalization engine. Per-ICCID values
+// live in the database; they are seeded with `rsp42 admin personalization import`.
 type PersonalizationConfig struct {
-	Enabled          bool                  `mapstructure:"enabled"`
-	DefaultAlgorithm string                `mapstructure:"default_algorithm"`
-	Source           PersonalizationSource `mapstructure:"source"`
-	ICCIDPoolPrefix  string                `mapstructure:"iccid_pool_prefix"`
-	IMSIPoolPrefix   string                `mapstructure:"imsi_pool_prefix"`
-}
-
-// PersonalizationSource describes where personalization data comes from.
-type PersonalizationSource struct {
-	Kind    string            `mapstructure:"kind"`
-	Path    string            `mapstructure:"path"`
-	Mapping map[string]string `mapstructure:"mapping"`
+	DefaultAlgorithm string `mapstructure:"default_algorithm"`
+	ICCIDPoolPrefix  string `mapstructure:"iccid_pool_prefix"`
+	IMSIPoolPrefix   string `mapstructure:"imsi_pool_prefix"`
 }
 
 // NotificationsConfig configures outbound ES2+ callbacks.

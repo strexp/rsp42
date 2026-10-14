@@ -7,9 +7,6 @@ import (
 	"crypto/rand"
 	"crypto/x509"
 	"fmt"
-	"os"
-	"path/filepath"
-	"strings"
 
 	"rsp42/internal/crypto"
 	"rsp42/internal/rsp"
@@ -209,60 +206,28 @@ func (c *CMAE) buildStoreMetadataWithSSD(profile *store.Profile, ssd []byte) ([]
 	return req.Encode(), nil
 }
 
-// pickUPP returns the best UPP template for the eUICC's advertised profile
-// version: the greatest major.minor not exceeding it. It returns "" when the
-// version is unknown or no template qualifies.
+// pickUPP returns the name of the best UPP template for the eUICC's advertised
+// profile version (the greatest SAIP version not exceeding it), resolved from
+// the template registry. It returns "" when the version is unknown or no
+// template qualifies.
 func (c *CMAE) pickUPP(supported []byte) string {
-	if len(supported) < 2 {
+	if c.UPP == nil || len(supported) < 2 {
 		return ""
 	}
-	major, minor := int(supported[0]), int(supported[1])
-	entries, err := os.ReadDir(c.UPPDir)
-	if err != nil {
+	tpl, err := c.UPP.SelectBest(int(supported[0]), int(supported[1]))
+	if err != nil || tpl == nil {
 		return ""
 	}
-	best := ""
-	bestMaj, bestMin := -1, -1
-	for _, e := range entries {
-		fname := e.Name()
-		if e.IsDir() || !strings.HasSuffix(fname, ".der") || strings.Contains(fname, "UNIQUE") {
-			continue
-		}
-		mj, mn, ok := uppVersion(filepath.Join(c.UPPDir, fname))
-		if !ok {
-			continue
-		}
-		if mj > major || (mj == major && mn > minor) {
-			continue // eUICC does not support this SAIP version
-		}
-		if mj > bestMaj || (mj == bestMaj && mn > bestMin) {
-			best, bestMaj, bestMin = fname, mj, mn
-		}
-	}
-	return best
+	return tpl.Name
 }
 
-// uppVersion reads the SAIP version from a UPP template's ProfileHeader.
-func uppVersion(path string) (int, int, bool) {
-	raw, err := os.ReadFile(path)
-	if err != nil {
-		return 0, 0, false
-	}
-	seq, err := saip.ParseUPP(raw)
-	if err != nil {
-		return 0, 0, false
-	}
-	h, err := saip.ParseHeader(seq.Header())
-	if err != nil {
-		return 0, 0, false
-	}
-	return int(h.Major), int(h.Minor), true
-}
-
-// loadUPP loads, personalizes and encodes the UPP template for a profile. The
-// operator may pin a template on the order; otherwise the template selected for
-// the session (from the eUICC's profile version) is used.
+// loadUPP loads, personalizes and encodes the UPP template for a profile from
+// the registry. The operator may pin a template on the order; otherwise the
+// template selected for the session (from the eUICC's profile version) is used.
 func (c *CMAE) loadUPP(profile *store.Profile, sess *store.Session) ([]byte, error) {
+	if c.UPP == nil {
+		return nil, fmt.Errorf("no UPP template registry configured")
+	}
 	name := profile.UPPTemplate
 	if name == "" && sess != nil {
 		name = sess.UPPTemplate
@@ -270,47 +235,44 @@ func (c *CMAE) loadUPP(profile *store.Profile, sess *store.Session) ([]byte, err
 	if name == "" {
 		name = c.DefaultUPP
 	}
-	if name == "" {
-		entries, err := os.ReadDir(c.UPPDir)
+	var tpl *store.UPPTemplate
+	var err error
+	if name != "" {
+		tpl, err = c.UPP.GetByName(name)
 		if err != nil {
-			return nil, fmt.Errorf("read upp dir: %w", err)
+			return nil, fmt.Errorf("UPP template %q: %w", name, err)
 		}
-		for _, e := range entries {
-			if !e.IsDir() && strings.HasSuffix(e.Name(), ".der") && !strings.Contains(e.Name(), "UNIQUE") {
-				name = e.Name()
-				break
-			}
+	} else {
+		tpl, err = c.UPP.Any()
+		if err != nil {
+			return nil, fmt.Errorf("no UPP template available: %w", err)
 		}
 	}
-	if name == "" {
-		return nil, fmt.Errorf("no UPP template available")
-	}
-	raw, err := os.ReadFile(filepath.Join(c.UPPDir, name))
+	seq, err := saip.ParseUPP(tpl.Bytes)
 	if err != nil {
 		return nil, err
 	}
-	seq, err := saip.ParseUPP(raw)
-	if err != nil {
-		return nil, err
-	}
-	if c.Source != nil {
-		data, err := c.Source.Next()
+
+	// The download order owns the ICCID: it is what StoreMetadata carries, so
+	// the personalized profile must always use the same value. Per-ICCID
+	// personalization values are merged on top when present.
+	data := &personalization.Data{ICCID: profile.ICCID}
+	if c.Personalization != nil {
+		pd, err := c.Personalization.Resolve(profile.ICCID)
 		if err != nil {
 			return nil, err
 		}
-		if data != nil {
-			// The download order owns the ICCID: it is what StoreMetadata
-			// carries, so the personalized profile must use the same value even
-			// if the personalization source supplies a different one.
+		if pd != nil {
+			data = pd
 			data.ICCID = profile.ICCID
-			eng := c.Engine
-			if eng == nil {
-				eng = &personalization.Engine{}
-			}
-			if err := eng.Apply(seq, data); err != nil {
-				return nil, err
-			}
 		}
+	}
+	eng := c.Engine
+	if eng == nil {
+		eng = &personalization.Engine{}
+	}
+	if err := eng.Apply(seq, data); err != nil {
+		return nil, err
 	}
 	return seq.Encode(), nil
 }

@@ -10,7 +10,11 @@ TODO.md
 *.test
 *.out
 
+# local configuration instance (copy config.example.yaml)
+config/config.yaml
+
 # local databases and audit output
+/db/
 *.db
 *.db-wal
 *.db-shm

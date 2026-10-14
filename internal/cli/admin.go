@@ -27,6 +27,12 @@ func cmdAdmin(prog string, args []string) int {
 		return cmdProfile(prog, rest)
 	case "session":
 		return cmdSession(prog, rest)
+	case "gc":
+		return cmdGC(prog, rest)
+	case "upp":
+		return cmdUPP(prog, rest)
+	case "personalization":
+		return cmdPersonalization(prog, rest)
 	case "activation-code":
 		return cmdActivationCode(rest)
 	case "smds":
@@ -50,9 +56,12 @@ Usage:
   %s admin rekey             [--config FILE]               re-encrypt sensitive columns
   %s admin profile list|show [--config FILE] [--iccid X]   inspect the profile inventory
   %s admin session gc        [--config FILE]               garbage-collect expired sessions
+  %s admin gc                [--config FILE] [--keep 720h] delete stale notifications/orders/audit
+  %s admin upp list|import   [--config FILE] [--dir DIR]   list / import UPP templates
+  %s admin personalization list|import|delete              manage per-ICCID personalization
   %s admin activation-code   --fqdn F --matching-id M      generate an activation code (and QR)
   %s admin smds event list|delete                           inspect SM-DS events
   %s admin es2p downloadOrder|confirmOrder|cancelOrder|releaseProfile
   %s admin mock-operator     [--addr HOST:PORT]            run the test-only mock Operator
-`, prog, prog, prog, prog, prog, prog, prog, prog, prog)
+`, prog, prog, prog, prog, prog, prog, prog, prog, prog, prog, prog, prog)
 }

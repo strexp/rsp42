@@ -9,7 +9,10 @@ import (
 	"os"
 	"time"
 
+	"github.com/go-chi/chi/v5"
+
 	"rsp42/internal/api"
+	adminapi "rsp42/internal/api/admin"
 	"rsp42/internal/api/es2plus"
 	"rsp42/internal/api/es9plus"
 	"rsp42/internal/api/middleware"
@@ -62,11 +65,7 @@ func cmdSMDpp(prog string, args []string) int {
 		log.Error("bad smdpp.host_id", "err", err)
 		return 1
 	}
-	src, err := personalization.NewSource(cfg.Profiles.Personalization.Source.Kind, cfg.Profiles.Personalization.Source.Path, cfg.Profiles.Personalization.Source.Mapping, nil)
-	if err != nil {
-		log.Error("personalization source", "err", err)
-		return 1
-	}
+	perso := service.NewPersonalizationService(st.Perso, provider)
 	cmae, err := service.NewCMAE(service.CMAEConfig{
 		FQDN:                cfg.SMDpp.FQDN,
 		OID:                 cfg.SMDpp.OID,
@@ -77,7 +76,7 @@ func cmdSMDpp(prog string, args []string) int {
 		SessionTTL:          cfg.SMDpp.SessionTTL.Duration(),
 		DownloadTTL:         cfg.SMDpp.DownloadTTL.Duration(),
 		PPRIds:              rsp.PPRIDBits(cfg.Profiles.PPRIds),
-	}, certs, sessions, st.Profiles, src, cfg.Profiles.UPPDir, "", &personalization.Engine{Algorithm: cfg.Profiles.Personalization.DefaultAlgorithm}, log)
+	}, certs, sessions, st.Profiles, perso, st.UPP, cfg.Profiles.DefaultUPP, &personalization.Engine{Algorithm: cfg.Profiles.Personalization.DefaultAlgorithm}, log)
 	if err != nil {
 		log.Error("cmae", "err", err)
 		return 1
@@ -166,7 +165,12 @@ func cmdSMDpp(prog string, args []string) int {
 		log.Error("es2p listener", "err", err)
 		return 1
 	}
-	admin, err := buildServer(log, "admin", cfg.Server.Bind, cfg.Server.Admin, api.NewAdminRouter(log, func() bool { return true }))
+	adminH := &adminapi.Handler{
+		Log: log, Profiles: st.Profiles, Orders: orders, Inventory: inventory,
+		UPP: st.UPP, Perso: perso, Audit: st.Audit, Batch: st.Batch,
+		OrderRepo: st.Orders, Notifs: st.Notifs, FQDN: cfg.SMDpp.FQDN, OID: cfg.SMDpp.OID,
+	}
+	admin, err := buildServer(log, "admin", cfg.Server.Bind, cfg.Server.Admin, api.NewAdminRouter(log, func() bool { return true }, func(r chi.Router) { adminapi.Mount(r, adminH) }))
 	if err != nil {
 		log.Error("admin listener", "err", err)
 		return 1

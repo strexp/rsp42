@@ -37,15 +37,15 @@ type CMAEConfig struct {
 // CMAE implements the SM-DP+ ES9+ authentication and download flow (SGP.22
 // §5.6). The shared handshake logic lives in cmaeCore.
 type CMAE struct {
-	Cfg        CMAEConfig
-	Certs      *cert.Manager
-	Sessions   *SessionService
-	Profiles   ProfileStore
-	Source     personalization.Source
-	UPPDir     string
-	DefaultUPP string
-	Engine     *personalization.Engine
-	Log        *slog.Logger
+	Cfg             CMAEConfig
+	Certs           *cert.Manager
+	Sessions        *SessionService
+	Profiles        ProfileStore
+	Personalization PersonalizationResolver
+	UPP             UPPStore
+	DefaultUPP      string
+	Engine          *personalization.Engine
+	Log             *slog.Logger
 	// Notify, when set, delivers ES2+ progress notifications (SGP.22 §5.3.5).
 	Notify OperatorCallback
 	// ACRCheck, when set, calls the Operator's ES2+.HandleAcrRequest to confirm
@@ -56,13 +56,16 @@ type CMAE struct {
 }
 
 // NewCMAE builds an SM-DP+ CMAE using CERT.DPauth for server signatures.
-func NewCMAE(cfg CMAEConfig, certs *cert.Manager, sessions *SessionService, profiles ProfileStore, src personalization.Source, uppDir, defaultUPP string, engine *personalization.Engine, log *slog.Logger) (*CMAE, error) {
+func NewCMAE(cfg CMAEConfig, certs *cert.Manager, sessions *SessionService, profiles ProfileStore, perso PersonalizationResolver, upp UPPStore, defaultUPP string, engine *personalization.Engine, log *slog.Logger) (*CMAE, error) {
 	if certs.DPAuth() == nil || certs.DPAuthKey() == nil {
-		return nil, fmt.Errorf("cmae: CERT.DPauth/SK.DPauth not configured")
+		return nil, fmt.Errorf("cmae: CERT.DPAuth/SK.DPAuth not configured")
+	}
+	if upp == nil {
+		return nil, fmt.Errorf("cmae: UPP template store not configured")
 	}
 	c := &CMAE{
 		Cfg: cfg, Certs: certs, Sessions: sessions, Profiles: profiles,
-		Source: src, UPPDir: uppDir, DefaultUPP: defaultUPP, Engine: engine, Log: log,
+		Personalization: perso, UPP: upp, DefaultUPP: defaultUPP, Engine: engine, Log: log,
 	}
 	c.core = newCMAECore(cfg.FQDN, certs.DPAuth(), certs.DPAuthKey(), certs, sessions, cfg.TransactionIDLen, cfg.SessionTTL, false, log)
 	return c, nil

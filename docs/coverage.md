@@ -41,8 +41,9 @@ scope. §5.3.6/§5.3.7 are VOID in v2.7.
 | Notification handling (install/enable/disable/delete) | §3.5 | ✅ (euiccSignPIR / euiccNotificationSignature verified; unauthenticated notifications are recorded but not acted on) |
 | Certificate chain, role OIDs, EUM nameConstraints/EIN | §4.5.2 | ✅ (expiry checked; CRL out of scope) |
 | Multiple CI identities (SGP.26 variants) | §4.5.2 | ✅ (`certs.identities`; selected by `euiccCiPKIdToBeUsed`) |
-| SAIP personalization (ICCID/IMSI/K/OPc/PIN/PUK/ADM/SPN/…) | §5.5.3 / SAIP | ✅ common params; mandatory-services + GFSTE list recomputed |
-| UPP template selection by eUICC profile version | §5.5.3 | ✅ (`euiccInfo2.profileVersion`; order override wins) |
+| SAIP personalization (ICCID/IMSI/K/OPc/PIN/PUK/ADM/SPN/…) | §5.5.3 / SAIP | ✅ per-ICCID (DB-backed, K/OPc encrypted at rest); mandatory-services + GFSTE list recomputed |
+| UPP template registry (DB, hot-updatable) | — | ✅ (`upp_templates`; import via `admin upp import`) |
+| UPP template selection by eUICC profile version | §5.5.3 | ✅ (registry lookup by `euiccInfo2.profileVersion`; order override wins) |
 | Activation Code Retrieval (ACR) | §4.9 | ✅ response metadata + ES2+ caller-side `HandleAcrRequest` |
 | Profile Policy Rules (pprIds) | §5.3 | ✅ populated from order `pprIds` / `profiles.ppr_ids` |
 | `otherCertsInChain` | §6.5.2 | ✅ parsed and chained between EUM and CI |

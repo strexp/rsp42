@@ -8,7 +8,7 @@ LDFLAGS     := -s -w
 SGP26_SRC ?= https://www.gsma.com/solutions-and-impact/technologies/esim/wp-content/uploads/2025/01/SGP.26_v3.0.2-2026_files_v2.zip
 UPP_SRC   ?= https://github.com/osmocom/pysim/archive/refs/heads/master.tar.gz
 
-.PHONY: all build test vet lint fmt tidy clean run-smdpp run-smds migrate testdata ci
+.PHONY: all build test vet lint fmt tidy clean run-smdpp run-smds migrate testdata seed ci
 
 all: build
 
@@ -31,7 +31,7 @@ lint: ## run golangci-lint (must be installed)
 	golangci-lint run
 
 clean: ## remove build output and local databases
-	rm -rf $(BIN_DIR) *.db *.db-wal *.db-shm audit.log
+	rm -rf $(BIN_DIR) db *.db *.db-wal *.db-shm audit.log
 
 run-smdpp: build ## run the SM-DP+ role
 	$(RSP42) smdpp --config $(CONFIG)
@@ -45,5 +45,9 @@ migrate: build ## apply database migrations
 testdata: ## extract SGP.26 certificates and TS.48 UPP templates
 	@test -n "$(UPP_SRC)" || { echo "error: set UPP_SRC=<TS.48 UPP tree, .zip or .tar.gz>"; exit 1; }
 	./scripts/extract-testdata.sh --sgp26 "$(SGP26_SRC)" --upp "$(UPP_SRC)"
+
+seed: build ## import UPP templates and personalization into the database
+	$(RSP42) admin upp import --config $(CONFIG) --dir testdata/upp
+	$(RSP42) admin personalization import --config $(CONFIG) --file testdata/personalization/profiles.csv
 
 ci: build vet test ## what CI runs

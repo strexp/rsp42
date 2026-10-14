@@ -103,13 +103,17 @@ func setupCMAE(t *testing.T) (*CMAE, *store.Store) {
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = st.Close() })
 
+	// UPP templates live in the registry; seed it from the test fixtures.
+	_, err = ImportUPPTemplates("../../testdata/upp", st.UPP)
+	require.NoError(t, err)
+
+	perso := NewPersonalizationService(st.Perso, provider)
 	cmae, err := NewCMAE(CMAEConfig{
 		FQDN: testFQDN, OID: testOID, HostID: make([]byte, 8),
 		TransactionIDLen: 16, MaxDownloadAttempts: 5, MaxCCAttempts: 3,
 		SessionTTL: 30 * time.Minute, DownloadTTL: 24 * time.Hour,
 	}, certs, NewSessionService(st.Sessions, provider, 30*time.Minute), st.Profiles,
-		&personalization.StaticSource{Items: []*personalization.Data{{IMSI: "001010123456063"}}},
-		"../../testdata/upp", "TS48v1_A.der", &personalization.Engine{Algorithm: "milenage"}, slog.Default())
+		perso, st.UPP, "TS48v1_A.der", &personalization.Engine{Algorithm: "milenage"}, slog.Default())
 	require.NoError(t, err)
 	return cmae, st
 }
@@ -465,13 +469,17 @@ func TestPickUPPSelectsCompatibleVersion(t *testing.T) {
 	require.Empty(t, cmae.pickUPP([]byte{1, 0, 0}))
 }
 
-func TestLoadUPPUsesOrderICCID(t *testing.T) {
-	cmae, _ := setupCMAE(t)
-	// The personalization source carries a different ICCID; the order's ICCID
-	// must win so the UPP stays consistent with StoreMetadata.
-	cmae.Source = &personalization.StaticSource{Items: []*personalization.Data{{
-		ICCID: "89000199999999999999", IMSI: "001010123456063",
-	}}}
+func TestLoadUPPAppliesPersonalization(t *testing.T) {
+	cmae, st := setupCMAE(t)
+	provider, err := kms.NewFileProviderFromKEK(testKEK)
+	require.NoError(t, err)
+	perso := NewPersonalizationService(st.Perso, provider)
+	require.NoError(t, perso.Put(&personalization.Data{
+		ICCID: "89000123456789012341", IMSI: "001010123456063", SPN: "TESTSPN",
+	}))
+
+	// Even without a record the order's ICCID must be applied; here a record
+	// exists, so both the ICCID and the IMSI/SPN are written.
 	profile := &store.Profile{ICCID: "89000123456789012341"}
 	sess := &store.Session{UPPTemplate: "TS48v1_A.der"}
 
@@ -482,6 +490,10 @@ func TestLoadUPPUsesOrderICCID(t *testing.T) {
 	h, err := saip.ParseHeader(seq.Header())
 	require.NoError(t, err)
 	require.Equal(t, mustICCIDHeader(t, profile.ICCID), h.ICCID)
+
+	imsi := seq.FindFile(saip.FIDIMSI)
+	require.NotNil(t, imsi)
+	require.Equal(t, personalization.EncodeIMSI("001010123456063"), imsi.Body())
 }
 
 func TestBuildStoreMetadataPPR(t *testing.T) {

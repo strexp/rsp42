@@ -59,8 +59,9 @@ func NewES12Router(log *slog.Logger, h *es12.Handler) chi.Router {
 	return r
 }
 
-// NewAdminRouter builds the shared admin router exposing health endpoints.
-func NewAdminRouter(log *slog.Logger, ready func() bool) chi.Router {
+// NewAdminRouter builds the shared admin router exposing health endpoints and,
+// when register is non-nil, the management API.
+func NewAdminRouter(log *slog.Logger, ready func() bool, register func(chi.Router)) chi.Router {
 	r := base(log)
 	r.Get("/healthz", func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "text/plain")
@@ -77,5 +78,8 @@ func NewAdminRouter(log *slog.Logger, ready func() bool) chi.Router {
 		w.WriteHeader(http.StatusOK)
 		_, _ = w.Write([]byte("ready\n"))
 	})
+	if register != nil {
+		register(r)
+	}
 	return r
 }

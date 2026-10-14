@@ -35,6 +35,7 @@ type Profile struct {
 	CCAttempts       int
 	UPPTemplate      string
 	PPRIds           []byte // PprIds BIT STRING content bytes
+	BatchID          *int64
 	Personalization  string
 	CreatedAt        time.Time
 	UpdatedAt        time.Time
