@@ -16,7 +16,6 @@ import (
 
 	"rsp42/internal/api/common"
 	"rsp42/internal/api/middleware"
-	"rsp42/internal/metrics"
 	"rsp42/internal/rsp"
 	"rsp42/internal/service"
 	"rsp42/internal/store"
@@ -27,6 +26,25 @@ type OrderAuditor interface {
 	Insert(tenant, iccid, eid, matchingID, action, requestJSON, resultJSON string) error
 }
 
+// AuditWriter records protocol-level ES2+ failures (ES2+ answers HTTP 200 with a
+// Failed status for some functions, so the audit middleware cannot see them).
+type AuditWriter interface {
+	Insert(e *store.AuditEntry) error
+}
+
+// UPPValidator checks that a "<tenant>/<template>" profileType resolves to a
+// registered template. It is defined here so the handler does not depend on the
+// concrete SQLite repository.
+type UPPValidator interface {
+	GetForTenant(tenant, name string) (*store.UPPTemplate, error)
+}
+
+// MetricCounter counts interface-level events. It is the subset of
+// *metrics.Registry the ES2+ handler uses.
+type MetricCounter interface {
+	Inc(name string, labels map[string]string)
+}
+
 // Handler holds the ES2+ handler dependencies.
 type Handler struct {
 	Log       *slog.Logger
@@ -34,19 +52,19 @@ type Handler struct {
 	Orders    *service.OrderService
 	Inventory *service.Inventory
 	// UPP, when set, is used to validate a "<tenant>/<template>" profileType.
-	UPP *store.UPPRepo
+	UPP UPPValidator
 	// RequesterTenants maps header.functionRequesterIdentifier to a tenant
 	// (decision 3). A nil resolver means "everything is the platform default".
 	RequesterTenants *service.TenantResolver
 	// Idem, when set, enables Idempotency-Key replay on the write functions
 	// whose resend semantics SGP.22 does not define.
-	Idem *store.IdempotencyRepo
+	Idem middleware.IdempotencyStore
 	// OrderAudit, when set, records each order action.
 	OrderAudit OrderAuditor
 	// Metrics, when set, counts ES12 registration failures.
-	Metrics *metrics.Registry
+	Metrics MetricCounter
 	// AuditRepo, when set, records ES12 registration failures.
-	AuditRepo *store.AuditRepo
+	AuditRepo AuditWriter
 	// ACRHandler, when set, is invoked for handleAcrRequest.
 	ACRHandler func(req AcrRequest) (*AcrResponse, error)
 	// Registrar, when set, registers an SM-DS event on ConfirmOrder.
