@@ -13,10 +13,10 @@ import (
 	"rsp42/internal/api"
 	"rsp42/internal/api/es12"
 	"rsp42/internal/api/es2plus"
-	"rsp42/internal/api/mock"
 	"rsp42/internal/iccid"
 	"rsp42/internal/service"
 	"rsp42/internal/store"
+	"rsp42/internal/testutil/mockoperator"
 	"time"
 )
 
@@ -131,7 +131,7 @@ func TestES2PlusCancelOrder(t *testing.T) {
 }
 
 func TestMockOperatorCallback(t *testing.T) {
-	op := mock.NewOperator()
+	op := mockoperator.NewOperator()
 	srv := httptest.NewServer(op.Handler())
 	defer srv.Close()
 

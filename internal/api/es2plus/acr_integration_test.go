@@ -12,10 +12,10 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"rsp42/internal/api/es2plus"
-	"rsp42/internal/api/mock"
 	"rsp42/internal/rsp"
 	"rsp42/internal/service"
 	"rsp42/internal/store"
+	"rsp42/internal/testutil/mockoperator"
 )
 
 // TestACRCheckerAgainstMockOperator closes the G13 loop in one process: the
@@ -23,7 +23,7 @@ import (
 // test-only mock Operator. It asserts the operator is actually called, that a
 // refusal is classified as a refusal, and that both outcomes are observable.
 func TestACRCheckerAgainstMockOperator(t *testing.T) {
-	operator := mock.NewOperator()
+	operator := mockoperator.NewOperator()
 	srv := httptest.NewServer(operator.Handler())
 	t.Cleanup(srv.Close)
 

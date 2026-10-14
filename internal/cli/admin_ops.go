@@ -9,10 +9,10 @@ import (
 
 	"rsp42/internal/activationcode"
 	"rsp42/internal/api/es2plus"
-	"rsp42/internal/api/mock"
 	"rsp42/internal/config"
 	"rsp42/internal/service"
 	"rsp42/internal/store"
+	"rsp42/internal/testutil/mockoperator"
 )
 
 func cmdActivationCode(args []string) int {
@@ -162,7 +162,7 @@ func cmdMockOperator(args []string) int {
 	if err := fs.Parse(args); err != nil {
 		return 2
 	}
-	op := mock.NewOperator()
+	op := mockoperator.NewOperator()
 	fmt.Printf("mock operator listening on http://%s\n", *addr)
 	if err := http.ListenAndServe(*addr, op.Handler()); err != nil {
 		fmt.Fprintln(os.Stderr, err)
