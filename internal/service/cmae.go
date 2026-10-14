@@ -3,14 +3,12 @@ package service
 import (
 	"context"
 	stdcrypto "crypto"
-	"crypto/rand"
 	"crypto/x509"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
-	"strings"
 	"time"
 
 	"rsp42/internal/activationcode"
@@ -332,10 +330,4 @@ func mapDPStatus(err error) error {
 		return rsp.CodeEIDNotPermitted.Status(err.Error())
 	}
 	return err
-}
-
-func randomToken() string {
-	b := make([]byte, 8)
-	_, _ = rand.Read(b)
-	return strings.ToUpper(hex.EncodeToString(b))
 }

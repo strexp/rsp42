@@ -55,3 +55,19 @@ type RegistrationStore interface {
 type NotificationStore interface {
 	Insert(n *store.Notification) error
 }
+
+// CascadeClient forwards event registration/deletion to a Root SM-DS (ES15).
+//
+// ES15 is structurally identical to ES12 and targets the Root SM-DS ES12 routes;
+// the Alternative SM-DS authenticates with CERT.DS.TLS instead of CERT.DP.TLS,
+// and the Root side handles those requests in the ES12 handler, which
+// distinguishes the caller role from the mTLS client certificate. There is
+// therefore no separate ES15 HTTP package: SMDSCClient is the ES15 client and
+// api/es12 is the root-side handler.
+type CascadeClient interface {
+	Register(eid, rspServerAddress, eventID string, forwardingIndicator bool, meta EventMeta) error
+	Delete(eid, eventID string, meta EventMeta) error
+	// ErrNotFound reports whether an error means "event not found" (ignorable
+	// during cascaded deletion).
+	IsNotFound(err error) bool
+}
