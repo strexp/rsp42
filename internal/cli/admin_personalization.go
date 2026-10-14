@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"os"
 
-	"rsp42/internal/config"
 	"rsp42/internal/service"
 	"rsp42/internal/store"
 )
@@ -25,7 +24,7 @@ func cmdPersonalization(prog string, args []string) int {
 	if err := fs.Parse(args[1:]); err != nil {
 		return 2
 	}
-	cfg, err := config.Load(*cfgPath, config.RoleDP)
+	cfg, err := loadConfig(*cfgPath)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		return 1

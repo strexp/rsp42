@@ -12,7 +12,13 @@ import (
 	"rsp42/internal/store"
 )
 
-func loadConfig(path string) (*config.Config, error) { return config.Load(path, config.RolePreflight) }
+// loadConfig reads the configuration with the database-only validation profile:
+// admin tooling runs on hosts that have no server TLS certificate material, so
+// cert/listener/FQDN checks are skipped and the commands that need keys fail
+// precisely when they build the KMS provider.
+func loadConfig(path string) (*config.Config, error) {
+	return config.Load(path, config.RoleAdminStore)
+}
 
 // dbTarget is one database selected by --db.
 type dbTarget struct {
@@ -172,7 +178,7 @@ func cmdProfile(prog string, args []string) int {
 	if err := fs.Parse(args[1:]); err != nil {
 		return 2
 	}
-	cfg, err := config.Load(*cfgPath, config.RoleDP)
+	cfg, err := loadConfig(*cfgPath)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		return 1

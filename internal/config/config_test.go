@@ -71,6 +71,46 @@ func TestEnvOverrideCoversEveryKey(t *testing.T) {
 	require.False(t, cfg.Certs.AllowExpiredTestCerts)
 }
 
+// TestValidateStoreProfile pins RoleAdminStore: a database-only admin command
+// must run on a host without server certificate material (the previous code
+// validated RoleDP/RolePreflight, so `admin iccid list` required smdpp.fqdn/oid
+// and every certificate file to be present), while the invariants that matter
+// to every role are still enforced.
+func TestValidateStoreProfile(t *testing.T) {
+	chdirRepo(t)
+	cfg, err := Load(exampleConfig, RolePreflight)
+	require.NoError(t, err)
+
+	// Strip everything a running server needs but an admin command does not.
+	cfg.SMDpp.FQDN = ""
+	cfg.SMDpp.OID = ""
+	cfg.SMDpp.HostID = ""
+	cfg.Certs.RootDir = filepath.Join(t.TempDir(), "missing")
+	cfg.KMS.KEKHex = ""
+	cfg.KMS.KEKFile = ""
+	cfg.Log.Level = "verbose" // still a common check
+
+	require.Error(t, cfg.Validate(RoleAdminStore), "log.level is a shared check")
+	cfg.Log.Level = "info"
+
+	require.NoError(t, cfg.Validate(RoleAdminStore))
+	require.Error(t, cfg.Validate(RoleDP), "the server role still requires identities")
+
+	// The SQLite-only decision (§8.4 decision 7) applies here too.
+	cfg.Profiles.Repository = "postgres"
+	require.Error(t, cfg.Validate(RoleAdminStore))
+	cfg.Profiles.Repository = "sqlite"
+
+	// So does the SAIP version list the template importer relies on.
+	cfg.Profiles.AllowedSAIPVersions = []string{"not-a-version"}
+	require.Error(t, cfg.Validate(RoleAdminStore))
+	cfg.Profiles.AllowedSAIPVersions = []string{"2.3"}
+
+	// And the store DSNs.
+	cfg.Profiles.Store.DSN = ""
+	require.Error(t, cfg.Validate(RoleAdminStore))
+}
+
 // TestConfigKeysCoverSchema guards the reflection-based key enumeration: it
 // must not silently produce an empty or truncated list.
 func TestConfigKeysCoverSchema(t *testing.T) {

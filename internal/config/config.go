@@ -384,6 +384,13 @@ const (
 	RoleDP
 	// RoleDS validates the SM-DS process configuration.
 	RoleDS
+	// RoleAdminStore validates only what a database-only admin command needs:
+	// the log settings, the SQLite-only repository setting and the store DSNs.
+	// It deliberately skips the certificate, listener, FQDN/OID and KMS material
+	// checks, so operational tooling (migrate, GC, ICCID pool, template import,
+	// personalization import) runs on a host that has no server TLS material.
+	// Commands that do need KMS fail precisely when they build the provider.
+	RoleAdminStore
 )
 
 func fileExists(p string) bool {

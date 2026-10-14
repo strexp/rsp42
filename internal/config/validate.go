@@ -9,7 +9,6 @@ import (
 	"strings"
 
 	"rsp42/internal/asn1"
-	"rsp42/internal/saipver"
 )
 
 // Validate checks the configuration for the given role and returns an
@@ -23,6 +22,8 @@ func (c *Config) Validate(role Role) error {
 		return c.validateDP()
 	case RoleDS:
 		return c.validateDS()
+	case RoleAdminStore:
+		return c.validateStore()
 	case RolePreflight:
 		if err := c.validateDP(); err != nil {
 			return fmt.Errorf("sm-dp+ config: %w", err)
@@ -37,20 +38,11 @@ func (c *Config) Validate(role Role) error {
 }
 
 func (c *Config) validateCommon() error {
-	switch c.Log.Level {
-	case "debug", "info", "warn", "error":
-	default:
-		return fmt.Errorf("log.level %q invalid (want debug|info|warn|error)", c.Log.Level)
+	if err := c.Log.Validate(); err != nil {
+		return err
 	}
-	switch c.Log.Format {
-	case "json", "text":
-	default:
-		return fmt.Errorf("log.format %q invalid (want json|text)", c.Log.Format)
-	}
-	switch c.KMS.Provider {
-	case "file":
-	default:
-		return fmt.Errorf("kms.provider %q invalid (want file)", c.KMS.Provider)
+	if err := c.KMS.Validate(); err != nil {
+		return err
 	}
 	if err := validateCORS(c.SMDpp.Server.CORS); err != nil {
 		return fmt.Errorf("smdpp.server.cors: %w", err)
@@ -61,7 +53,28 @@ func (c *Config) validateCommon() error {
 	return nil
 }
 
-// validateCORS rejects empty origin entries.
+// validateStore is the validation profile of the database-only admin commands
+// (RoleAdminStore). It keeps the checks that protect shared invariants — the
+// SQLite-only decision (docs/esim42-integration-gaps.md §8.4 decision 7) and the
+// SAIP version list the template importer relies on — and skips everything that
+// is only meaningful to a running server.
+func (c *Config) validateStore() error {
+	if err := c.Log.Validate(); err != nil {
+		return err
+	}
+	if err := c.Profiles.Validate(); err != nil {
+		return err
+	}
+	if strings.TrimSpace(c.Profiles.Store.DSN) == "" {
+		return fmt.Errorf("profiles.store.dsn is required")
+	}
+	if strings.TrimSpace(c.SMDS.Store.DSN) == "" {
+		return fmt.Errorf("smds.store.dsn is required")
+	}
+	return nil
+}
+
+// ValidateCORS rejects empty origin entries.
 func validateCORS(c CORSConfig) error {
 	for i, o := range c.AllowedOrigins {
 		if strings.TrimSpace(o) == "" {
@@ -138,34 +151,12 @@ func (c *Config) validateDP() error {
 			return fmt.Errorf("certs.identities[%d]: CI cert not found at %s", i, ci)
 		}
 	}
-	switch c.Profiles.Repository {
-	case "sqlite":
-	case "":
-		return fmt.Errorf("profiles.repository must be set to \"sqlite\"")
-	default:
-		return fmt.Errorf("profiles.repository %q is not supported: rsp42 only implements SQLite "+
-			"(PostgreSQL and multi-replica deployments are deliberate non-goals, "+
-			"see docs/esim42-integration-gaps.md §8.4)", c.Profiles.Repository)
+	if err := c.Profiles.Validate(); err != nil {
+		return err
 	}
 	for i, m := range s.ES2P.RequesterTenants {
 		if strings.TrimSpace(m.Requester) == "" {
 			return fmt.Errorf("smdpp.es2p.requester_tenants[%d].requester must not be empty", i)
-		}
-	}
-	for i, raw := range c.Profiles.AllowedSAIPVersions {
-		if _, err := saipver.Parse(raw); err != nil {
-			return fmt.Errorf("profiles.allowed_saip_versions[%d]: %w", i, err)
-		}
-	}
-	if ttl := c.Profiles.Personalization.ReserveTTL; ttl < 0 {
-		return fmt.Errorf("profiles.personalization.reserve_ttl must be >= 0")
-	}
-	if ttl := c.Profiles.Personalization.IdempotencyTTL; ttl < 0 {
-		return fmt.Errorf("profiles.personalization.idempotency_ttl must be >= 0")
-	}
-	for _, id := range c.Profiles.PPRIds {
-		if id < 0 || id > 2 {
-			return fmt.Errorf("profiles.ppr_ids entry %d out of range [0,2]", id)
 		}
 	}
 	if err := validateKEKConfig(&c.KMS); err != nil {
