@@ -176,6 +176,39 @@ func TestInventoryPoolViaFakeStore(t *testing.T) {
 	require.Equal(t, 1, repo.Creates)
 }
 
+// TestInventoryClaimFailureRollsBackProfile pins the pool consistency fix: a
+// failed claim must not leave a profile row behind, otherwise the reservation
+// lapses and ReleaseExpired hands the same ICCID out again while the profile
+// still references it.
+func TestInventoryClaimFailureRollsBackProfile(t *testing.T) {
+	const iccid = "89000123456789012348"
+	pool := newFakeICCIDPool(iccid)
+	pool.FailClaim = errors.New("pool is on fire")
+	repo := newFakeProfileStore()
+	inv := NewInventory(repo, "8900012", "00101")
+	inv.Pool = pool
+
+	_, err := inv.Allocate(AllocateRequest{Tenant: "carrier-a", ProfileType: "operational"})
+	require.ErrorContains(t, err, "pool is on fire")
+	require.Equal(t, 1, repo.Deletes, "the profile row must be rolled back when the claim fails")
+	require.Zero(t, len(repo.byICCID), "no profile may reference an unclaimed ICCID")
+}
+
+// TestInventoryReserveReleaseFailureSurfaces pins that a failed release of an
+// unusable reservation is reported instead of silently leaking the ICCID.
+func TestInventoryReserveReleaseFailureSurfaces(t *testing.T) {
+	const iccid = "89000123456789012349"
+	pool := newFakeICCIDPool(iccid)
+	pool.FailSetState = errors.New("state write failed")
+	repo := newFakeProfileStore()
+	repo.FailNew = errors.New("insert failed")
+	inv := NewInventory(repo, "8900012", "00101")
+	inv.Pool = pool
+
+	_, err := inv.Allocate(AllocateRequest{Tenant: "carrier-a", ProfileType: "operational"})
+	require.ErrorContains(t, err, "state write failed")
+}
+
 // TestVersionHelpersViaFakes is a guard on the interface shape used above: the
 // resolution API takes a version set, not a scalar (N11 reservation).
 func TestVersionHelpersViaFakes(t *testing.T) {

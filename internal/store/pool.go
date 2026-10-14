@@ -172,10 +172,16 @@ func (r *PoolRepo) Claim(iccid string, profileID int64) error {
 
 // ReleaseExpired returns lapsed reservations to the pool. It returns how many
 // entries were reclaimed.
+//
+// An entry that already owns a profile (profile_id is set) is never reclaimed:
+// doing so would hand the same ICCID out again while a profile still references
+// it. A claim that failed leaves the reservation without a profile_id, and is
+// reclaimed here.
 func (r *PoolRepo) ReleaseExpired(now time.Time) (int64, error) {
 	res, err := r.db.Exec(`UPDATE iccid_pool SET state = 'available', eid = NULL, reference = NULL,
 		profile_id = NULL, allocated_at = NULL, reserved_until = NULL
-		WHERE state = 'allocated' AND reserved_until IS NOT NULL AND reserved_until < ?`, now.Unix())
+		WHERE state = 'allocated' AND reserved_until IS NOT NULL AND reserved_until < ?
+		  AND profile_id IS NULL`, now.Unix())
 	if err != nil {
 		return 0, err
 	}

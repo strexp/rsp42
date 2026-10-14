@@ -56,7 +56,7 @@ func (r *EventRepo) Insert(e *EventRecord) (int64, error) {
 		nullStr(e.RootEventID), e.RegisteredAt.Unix(), expires,
 		nullStr(e.TenantID), nullStr(e.ICCID), nullStr(e.MatchingID))
 	if err != nil {
-		if isUniqueViolation(err) {
+		if IsUniqueViolation(err) {
 			return 0, ErrEventIDInUse
 		}
 		return 0, err
@@ -72,26 +72,6 @@ func (r *EventRepo) Insert(e *EventRecord) (int64, error) {
 // ErrEventIDInUse indicates that an EventID is already (or was previously) used
 // by the same caller for the same EID.
 var ErrEventIDInUse = errors.New("store: event id already in use")
-
-func isUniqueViolation(err error) bool {
-	if err == nil {
-		return false
-	}
-	return contains(err.Error(), "UNIQUE constraint failed") || contains(err.Error(), "constraint failed")
-}
-
-func contains(s, sub string) bool {
-	return len(s) >= len(sub) && (s == sub || indexOf(s, sub) >= 0)
-}
-
-func indexOf(s, sub string) int {
-	for i := 0; i+len(sub) <= len(s); i++ {
-		if s[i:i+len(sub)] == sub {
-			return i
-		}
-	}
-	return -1
-}
 
 // GetByKey returns a record regardless of deletion (for reuse checks).
 func (r *EventRepo) GetByKey(eid, eventID, callerOID string) (*EventRecord, error) {

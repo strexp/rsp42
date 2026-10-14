@@ -16,10 +16,12 @@ type ProfileStore interface {
 	Delete(iccid string) error
 }
 
-// ProfileCreator creates profiles and looks them up for resend detection.
+// ProfileCreator creates profiles, looks them up for resend detection, and
+// removes one again when a later allocation step fails (the ICCID pool claim).
 type ProfileCreator interface {
 	Create(p *store.Profile) (int64, error)
 	GetByICCID(iccid string) (*store.Profile, error)
+	Delete(iccid string) error
 }
 
 // SessionStore persists RSP sessions.

@@ -173,7 +173,9 @@ func (inv *Inventory) Allocate(req AllocateRequest) (*store.Profile, error) {
 		if _, err := inv.Profiles.Create(p); err != nil {
 			return nil, fmt.Errorf("%w: ICCID %s is not available: %w", ErrICCIDInUse, iccid, err)
 		}
-		inv.claim(iccid, p.ID)
+		if err := inv.claimReservation(p); err != nil {
+			return nil, err
+		}
 		return p, nil
 	}
 
@@ -184,15 +186,25 @@ func (inv *Inventory) Allocate(req AllocateRequest) (*store.Profile, error) {
 	// Prefer an operator-imported ICCID from the tenant's pool when one is
 	// available. A failed profile insert returns the reservation to the pool.
 	if inv.Pool != nil {
-		if iccid, err := inv.Pool.Reserve(req.Tenant, req.EID, req.Reference, inv.ReserveTTL); err == nil {
+		iccid, err := inv.Pool.Reserve(req.Tenant, req.EID, req.Reference, inv.ReserveTTL)
+		switch {
+		case err == nil:
 			p := newProfile(iccid)
-			if _, err := inv.Profiles.Create(p); err == nil {
-				inv.claim(iccid, p.ID)
-				return p, nil
+			if _, cerr := inv.Profiles.Create(p); cerr != nil {
+				// The reservation is useless; hand it back so the ICCID is not
+				// parked behind a profile that does not exist.
+				if rerr := inv.Pool.SetState(iccid, "available", ""); rerr != nil {
+					return nil, fmt.Errorf("service: release reservation %s: %w", iccid, rerr)
+				}
 			} else {
-				_ = inv.Pool.SetState(iccid, "available", "")
+				if cerr := inv.claimReservation(p); cerr != nil {
+					return nil, cerr
+				}
+				return p, nil
 			}
-		} else if !errors.Is(err, store.ErrNotFound) {
+		case errors.Is(err, store.ErrNotFound):
+			// No pooled ICCID for this tenant: fall through to generation.
+		default:
 			return nil, err
 		}
 	}
@@ -204,20 +216,29 @@ func (inv *Inventory) Allocate(req AllocateRequest) (*store.Profile, error) {
 		}
 		p := newProfile(iccid)
 		if _, err := inv.Profiles.Create(p); err != nil {
-			continue // ICCID collision; retry
+			if store.IsUniqueViolation(err) {
+				continue // ICCID collision: try the next candidate
+			}
+			return nil, fmt.Errorf("service: create profile %s: %w", iccid, err)
 		}
 		return p, nil
 	}
 	return nil, fmt.Errorf("service: could not allocate a unique ICCID")
 }
 
-// claim clears a pool reservation deadline once the ICCID is attached to a
-// profile. Missing pool entries are ignored (generated ICCIDs are not pooled).
-func (inv *Inventory) claim(iccid string, profileID int64) {
+// claimReservation attaches a freshly created profile to its pool entry. When
+// the claim fails the profile row is removed again: the reservation would
+// otherwise lapse and ReleaseExpired could hand the same ICCID out a second
+// time while a profile still referenced it.
+func (inv *Inventory) claimReservation(p *store.Profile) error {
 	if inv.Pool == nil {
-		return
+		return nil
 	}
-	_ = inv.Pool.Claim(iccid, profileID)
+	if err := inv.Pool.Claim(p.ICCID, p.ID); err != nil {
+		_ = inv.Profiles.Delete(p.ICCID)
+		return fmt.Errorf("service: claim ICCID %s: %w", p.ICCID, err)
+	}
+	return nil
 }
 
 // canonicalICCID normalizes and validates an operator-supplied ICCID: a single

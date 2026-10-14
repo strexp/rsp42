@@ -142,3 +142,41 @@ func TestPoolBlockedICCIDAndClaim(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, "blocked", state)
 }
+
+// TestReleaseExpiredSkipsOwnedEntries pins the pool invariant that an entry
+// which already owns a profile is never reclaimed by the reservation GC, even
+// if a reservation deadline is still present: re-issuing it would hand out an
+// ICCID that a profile row still references.
+func TestReleaseExpiredSkipsOwnedEntries(t *testing.T) {
+	st, err := Open("file:" + filepath.Join(t.TempDir(), "expired.db"))
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = st.Close() })
+
+	_, _, _, err = st.Pool.ImportRange("carrier-a", "8900012000000000000", "8900012000000000099", "")
+	require.NoError(t, err)
+
+	entries, _, err := st.Pool.ListPage("available", "", nil, 2, 0)
+	require.NoError(t, err)
+	require.Len(t, entries, 2)
+	owned, lapsed := entries[0].ICCID, entries[1].ICCID
+
+	// Simulate the state the guard defends against: an allocated entry that
+	// owns a profile AND still carries a lapsed reservation deadline.
+	past := time.Now().UTC().Add(-time.Hour).Unix()
+	_, err = st.DB.Exec(`UPDATE iccid_pool SET state='allocated', profile_id=42, reserved_until=? WHERE iccid=?`, past, owned)
+	require.NoError(t, err)
+	_, err = st.DB.Exec(`UPDATE iccid_pool SET state='allocated', profile_id=NULL, reserved_until=? WHERE iccid=?`, past, lapsed)
+	require.NoError(t, err)
+
+	n, err := st.Pool.ReleaseExpired(time.Now().UTC())
+	require.NoError(t, err)
+	require.EqualValues(t, 1, n, "only the unowned reservation may be reclaimed")
+
+	state, err := st.Pool.State(owned)
+	require.NoError(t, err)
+	require.Equal(t, "allocated", state, "an entry owning a profile must stay allocated")
+
+	state, err = st.Pool.State(lapsed)
+	require.NoError(t, err)
+	require.Equal(t, "available", state, "a lapsed unowned reservation must be reclaimed")
+}

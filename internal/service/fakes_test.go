@@ -204,6 +204,9 @@ type fakeICCIDPool struct {
 	available []string
 	state     map[string]string
 	Reserves  int
+	// FailClaim / FailSetState inject a storage failure into the pool path.
+	FailClaim    error
+	FailSetState error
 }
 
 func newFakeICCIDPool(available ...string) *fakeICCIDPool {
@@ -222,11 +225,17 @@ func (f *fakeICCIDPool) Reserve(tenant, eid, reference string, ttl time.Duration
 }
 
 func (f *fakeICCIDPool) Claim(iccid string, profileID int64) error {
+	if f.FailClaim != nil {
+		return f.FailClaim
+	}
 	f.state[iccid] = "allocated"
 	return nil
 }
 
 func (f *fakeICCIDPool) SetState(iccid, state, note string) error {
+	if f.FailSetState != nil {
+		return f.FailSetState
+	}
 	f.state[iccid] = state
 	return nil
 }
