@@ -523,9 +523,29 @@
 
 ### 阶段 3：接口与契约收口（进行中）
 
-- 已完成：`saipver`/`iccid` 叶子包（`store`/`config` 不再 import `rsp`）；`RoleAdminStore` 与分段校验（`LogConfig`/`KMSConfig`/`ProfilesConfig` 各自的 `Validate()`，`validateCommon`/`validateDP` 委托，CLI 数据库类命令不再要求证书/FQDN）；`internal/api/asn1bind` 收敛 HTTP 分发。
-- 待办：`admin`/`es12`/`es2plus`/`api/middleware`/`audit` 的消费方接口；`Options`/`Deps` 注入以消除 68 个「构造后字段赋值」；`asn1.Find/FindAll/First` 暴露解析错误；`rsp` 错误词汇统一到 `rsp.Code`；`StoreMetadataRequest` 解码补齐；`CancelSessionResponseFromTLV` 改返回 error；`kms.Provider` 拆 `SignerLoader`/`Sealer`；`asn1` 去掉 bertlv 别名；`profiles` 分段校验的剩余部分；`admin_ops.go` 的混合命令拆分与配置profile。
+已完成（按提交顺序）：
 
-### 阶段 4：目录与组合根拆分（未开始）
+| 提交 | 内容 |
+|---|---|
+| `2629a96` | `saipver`/`iccid` 叶子包；`store`/`config` 不再 import `rsp` |
+| `9305542` | `RoleAdminStore` + 分段校验（`LogConfig`/`KMSConfig`/`ProfilesConfig` 各自 `Validate()`，`validateCommon`/`validateDP` 委托），CLI 数据库类命令不再要求证书/FQDN |
+| `907efa4` | `asn1.Find/FindAll/First` 契约写明并新增 `FindErr`；`splitChoice` 返回解析错误并在 4 个解码器传播；`CancelSessionResponseFromTLV` 改 `(int64, bool)`；`StoreMetadataRequest` 解码补齐（往返测试断言重编码一致） |
+| `efeb252` | `asn1.Tag` 改为 `[]byte`、`Builder` 改为本包不透明类型（bertlv 仅剩 `construct.go` 一个 import）；`kms.Provider` 拆 `SignerLoader`/`Sealer`，cert 用前者、session/personalization 用后者 |
+| `30c1664` | `middleware.IdempotencyStore`、`audit.AuditSink`、`es12.AuditWriter` 由消费方定义，配 typed-nil 守卫与编译期断言 |
+| `8beaac1` | `es2plus` 的 `UPPValidator`/`AuditWriter`/`MetricCounter`/`IdempotencyStore` 接口 |
+| `e35ca88` | 删除 doc-only 的 `internal/api/es15`，doc 并入 `service.CascadeClient` |
+
+待办：`admin.Handler` 的 12 个具体 repo 字段收口（需与阶段 4 的包拆分一起做）；`Options`/`Deps` 注入以消除「构造后字段赋值」（跨结构体 68 个导出可变字段）；`rsp` 错误词汇统一到 `rsp.Code`；`admin_ops.go` 混合命令拆分与配置 profile；`jsonschema/v6`/`yaml.v3` 去留；`es2plus` 与 `service/smdsc.go` 重试循环合并。
+
+### 阶段 4：目录与组合根拆分（进行中）
+
+- 已完成：`internal/api/es15` 删除（doc-only 包）。
+- 待办：`cli` 组合根拆分（`server.go` 5 职责、`cmdSMDpp` 207 行、命令注册表）、`admin/ds.go` → `internal/api/dsadmin`（需先把 admin 的 JSON 响应 helper 抽到共享包）、`es2plus` 客户端代码 → `internal/client/es2p`、`store`/`service`/`saip`/`rsp`/`cert` 的文件级拆分、`internal/api/mock` 移出生产二进制。
 
 ### 阶段 5：测试与工程化收尾（未开始）
+
+### 执行期间确认的额外结论
+
+- `asn1.Marshal`（bertlv）在内容 >65535 字节或构造型 tag 带原始内容时 panic；`rsp.tlvBytes` 因此必须保留（已加测试与注释）。
+- `DecodeStoreMetadataRequest` 原本无生产调用方且丢失 5 组字段，现补齐并加了往返测试。
+- `internal/api/es15` 只有包注释、无任何 import，已删除。
