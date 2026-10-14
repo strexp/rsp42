@@ -48,11 +48,12 @@ func cmdSMDpp(prog string, args []string) int {
 	st, cmae, notifs := dp.st, dp.cmae, dp.notifs
 	orders, inventory, perso, reg := dp.orders, dp.inventory, dp.perso, dp.metrics
 
-	es2pHandler := es2plus.New(log, st.Profiles, orders, inventory)
-	es2pHandler.UPP = st.UPP
-	es2pHandler.Idem = st.Idem
-	es2pHandler.AuditRepo = st.Audit
-	es2pHandler.RequesterTenants = requesterResolver(cfg.SMDpp.ES2P.RequesterTenants, log)
+	es2pHandler := es2plus.New(es2plus.Deps{
+		Log: log, Profiles: st.Profiles, Orders: orders, Inventory: inventory,
+		UPP: st.UPP, Idem: st.Idem, AuditRepo: st.Audit,
+		RequesterTenants: requesterResolver(cfg.SMDpp.ES2P.RequesterTenants, log),
+		OrderAudit:       st.Orders,
+	})
 
 	// The Operator-facing ES2+ client is shared by the progress callbacks and
 	// the ACR confirmation, but the two are independently configured.
@@ -68,8 +69,6 @@ func cmdSMDpp(prog string, args []string) int {
 			}
 		})
 	}
-	es2pHandler.OrderAudit = st.Orders
-
 	if cfg.SMDpp.ES12.Enabled && cfg.SMDpp.ES12.SMDSAddress != "" {
 		hc, err := mtlsClient(cfg.SMDpp.ES12.TLS)
 		if err != nil {
@@ -84,7 +83,7 @@ func cmdSMDpp(prog string, args []string) int {
 			Log:         log,
 		}
 		es2pHandler.Registrar = reg
-		notifs.Registrar = reg
+		notifs.Deps.Registrar = reg
 	}
 	es9pHandler := es9plus.New(log, cmae)
 	es9pHandler.Notifs = notifs

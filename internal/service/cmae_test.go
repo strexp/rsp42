@@ -281,7 +281,7 @@ func readFile(t *testing.T, p string) []byte {
 func TestNotificationInstalled(t *testing.T) {
 	_, st := setupCMAE(t)
 	orders := NewOrderService(st.Profiles)
-	notifs := NewNotificationService(slog.Default(), st.Notifs, st.Profiles, orders)
+	notifs := NewNotificationService(NotificationDeps{Log: slog.Default(), Notifs: st.Notifs, Profiles: st.Profiles, Orders: orders})
 
 	inv := NewInventory(st.Profiles, "8900012", "00101")
 	profile, err := inv.Allocate(AllocateRequest{EID: testEID, ProfileType: "operational"})
@@ -305,7 +305,7 @@ func TestNotificationInstalled(t *testing.T) {
 		TransactionID: strings.ToUpper(hex.EncodeToString(txn)),
 		State:         "downloaded", ProfileID: profile.ID, EuiccCert: euiccCertDER,
 	}))
-	notifs.Sessions = ss
+	notifs.Deps.Sessions = ss
 	gotPoint := 0
 	notifs.Callback = func(_ context.Context, info ProgressInfo) error {
 		gotPoint = info.NotificationPointID
@@ -353,7 +353,7 @@ func testCertificateManager(t *testing.T) *cert.Manager {
 func TestNotificationInstallRejectsBadSignature(t *testing.T) {
 	_, st := setupCMAE(t)
 	orders := NewOrderService(st.Profiles)
-	notifs := NewNotificationService(slog.Default(), st.Notifs, st.Profiles, orders)
+	notifs := NewNotificationService(NotificationDeps{Log: slog.Default(), Notifs: st.Notifs, Profiles: st.Profiles, Orders: orders})
 
 	profile, err := NewInventory(st.Profiles, "8900012", "00101").Allocate(AllocateRequest{EID: testEID, ProfileType: "operational"})
 	require.NoError(t, err)
@@ -373,7 +373,7 @@ func TestNotificationInstallRejectsBadSignature(t *testing.T) {
 		State:         "downloaded", ProfileID: profile.ID,
 		EuiccCert: readFile(t, testRoot+"/eUICC/CERT_EUICC_NIST.der"),
 	}))
-	notifs.Sessions = ss
+	notifs.Deps.Sessions = ss
 
 	meta := tlv([]byte{0xbf, 0x2f}, testutil.Concat(
 		tlv([]byte{0x80}, []byte{0x01}),
@@ -402,8 +402,8 @@ func TestNotificationInstallRejectsBadSignature(t *testing.T) {
 func TestNotificationOtherSignedVerification(t *testing.T) {
 	_, st := setupCMAE(t)
 	orders := NewOrderService(st.Profiles)
-	notifs := NewNotificationService(slog.Default(), st.Notifs, st.Profiles, orders)
-	notifs.Certs = testCertificateManager(t)
+	notifs := NewNotificationService(NotificationDeps{Log: slog.Default(), Notifs: st.Notifs, Profiles: st.Profiles, Orders: orders})
+	notifs.Deps.Certs = testCertificateManager(t)
 
 	profile, err := NewInventory(st.Profiles, "8900012", "00101").Allocate(AllocateRequest{EID: testEID, ProfileType: "operational"})
 	require.NoError(t, err)

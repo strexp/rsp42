@@ -106,9 +106,10 @@ func bootstrapDP(cfg *config.Config, log *slog.Logger) (*dpGraph, error) {
 	g.cmae.Audit = st.Audit
 	g.cmae.Metrics = g.metrics
 
-	g.notifs = service.NewNotificationService(log, st.Notifs, st.Profiles, g.orders)
-	g.notifs.Sessions = g.sessions
-	g.notifs.Certs = certs
+	g.notifs = service.NewNotificationService(service.NotificationDeps{
+		Log: log, Notifs: st.Notifs, Profiles: st.Profiles, Orders: g.orders,
+		Sessions: g.sessions, Certs: certs,
+	})
 	return g, nil
 }
 

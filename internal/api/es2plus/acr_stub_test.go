@@ -20,7 +20,7 @@ import (
 // (service.ACRChecker); nothing wires ACRHandler yet.
 func TestHandleAcrRequestNotConfiguredIsJSON(t *testing.T) {
 	log := slog.New(slog.NewTextHandler(httptest.NewRecorder(), nil))
-	h := es2plus.New(log, nil, nil, nil)
+	h := es2plus.New(es2plus.Deps{Log: log})
 	srv := httptest.NewServer(api.NewES2PRouter(log, h, api.Options{}))
 	defer srv.Close()
 

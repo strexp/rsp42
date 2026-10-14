@@ -73,28 +73,40 @@ func progressFor(p *store.Profile, eid string, pointID int, status string) Progr
 
 // NotificationService processes ES9+.HandleNotification payloads and drives
 // operator callbacks (SGP.22 §3.5).
-type NotificationService struct {
-	Log       *slog.Logger
-	Notifs    NotificationStore
-	Profiles  ProfileStore
-	Orders    *OrderService
+// NotificationDeps is the complete dependency set of the notification handler.
+// Callback is the exception: it is the outbound ES2+ queue, which is built from
+// this service (and the CMAE), so it is installed after construction by the
+// composition root's callback wiring.
+type NotificationDeps struct {
+	Log      *slog.Logger
+	Notifs   NotificationStore
+	Profiles ProfileStore
+	Orders   *OrderService
+	// Sessions, Certs and Registrar, when set, are used while handling an
+	// installation: session cleanup, eUICC chain validation and SM-DS event
+	// deletion.
 	Sessions  *SessionService
 	Certs     *cert.Manager
-	Callback  OperatorCallback
 	Registrar *Registrar
 }
 
-// NewNotificationService builds a NotificationService.
-func NewNotificationService(log *slog.Logger, notifs NotificationStore, profiles ProfileStore, orders *OrderService) *NotificationService {
-	return &NotificationService{Log: log, Notifs: notifs, Profiles: profiles, Orders: orders}
+type NotificationService struct {
+	Deps     NotificationDeps
+	Callback OperatorCallback
 }
 
+// NewNotificationService builds the handler with its dependencies wired.
+func NewNotificationService(d NotificationDeps) *NotificationService {
+	return &NotificationService{Deps: d}
+}
+
+// NewNotificationService builds a NotificationService.
 // HandlePendingNotification processes a PendingNotification (SGP.22 §5.6.4).
 func (n *NotificationService) HandlePendingNotification(ctx context.Context, raw []byte) error {
 	pn, err := rsp.DecodePendingNotification(raw)
 	if err != nil {
-		if n.Log != nil {
-			n.Log.Warn("handleNotification decode", "err", err)
+		if n.Deps.Log != nil {
+			n.Deps.Log.Warn("handleNotification decode", "err", err)
 		}
 		return err
 	}
@@ -114,14 +126,14 @@ func (n *NotificationService) handleInstallation(ctx context.Context, pir *rsp.P
 	txn := strings.ToUpper(hex.EncodeToString(pir.Data.TransactionID))
 	var profile *store.Profile
 	sigOK := false
-	if n.Sessions != nil {
-		if sess, err := n.Sessions.Get(txn); err == nil {
+	if n.Deps.Sessions != nil {
+		if sess, err := n.Deps.Sessions.Get(txn); err == nil {
 			// euiccSignPIR is signed over ProfileInstallationResultData (BF27) with
 			// SK.EUICC.ECDSA; verify it against the session eUICC certificate
 			// (SGP.22 §2.5.6 / §2.6.7.2).
 			sigOK = verifyPIRSignature(sess.EuiccCert, pir)
 			if sess.ProfileID != 0 {
-				profile, _ = n.Profiles.GetByID(sess.ProfileID)
+				profile, _ = n.Deps.Profiles.GetByID(sess.ProfileID)
 			}
 		}
 	}
@@ -134,8 +146,8 @@ func (n *NotificationService) handleInstallation(ctx context.Context, pir *rsp.P
 	if !sigOK {
 		// The installation result could not be authenticated. Record it but do
 		// not act on it (no profile state change).
-		if n.Log != nil {
-			n.Log.Warn("euiccSignPIR verification failed; notification ignored", "txn", txn)
+		if n.Deps.Log != nil {
+			n.Deps.Log.Warn("euiccSignPIR verification failed; notification ignored", "txn", txn)
 		}
 		n.record(&store.Notification{
 			EID: eidOf(profile), Operation: "install", ICCID: iccid,
@@ -147,12 +159,12 @@ func (n *NotificationService) handleInstallation(ctx context.Context, pir *rsp.P
 	fr := pir.Data.FinalResult
 	if fr != nil && profile != nil {
 		if fr.Success {
-			if _, err := n.Orders.MarkInstalled(profile.ICCID); err != nil && n.Log != nil {
-				n.Log.Warn("mark installed", "iccid", profile.ICCID, "err", err)
+			if _, err := n.Deps.Orders.MarkInstalled(profile.ICCID); err != nil && n.Deps.Log != nil {
+				n.Deps.Log.Warn("mark installed", "iccid", profile.ICCID, "err", err)
 			}
-			if n.Registrar != nil && profile.EID != "" {
-				if err := n.Registrar.DeleteForEID(profile.EID, progressMeta(profile)); err != nil && n.Log != nil {
-					n.Log.Warn("ES12 delete event on install", "eid", profile.EID, "err", err)
+			if n.Deps.Registrar != nil && profile.EID != "" {
+				if err := n.Deps.Registrar.DeleteForEID(profile.EID, progressMeta(profile)); err != nil && n.Deps.Log != nil {
+					n.Deps.Log.Warn("ES12 delete event on install", "eid", profile.EID, "err", err)
 				}
 			}
 		} else {
@@ -160,8 +172,8 @@ func (n *NotificationService) handleInstallation(ctx context.Context, pir *rsp.P
 			switch fr.ErrorReason {
 			case 11: // installFailedDueToInterruption
 			default:
-				if _, err := n.Orders.MarkError(profile.ICCID, "install failed"); err != nil && n.Log != nil {
-					n.Log.Warn("mark error", "iccid", profile.ICCID, "err", err)
+				if _, err := n.Deps.Orders.MarkError(profile.ICCID, "install failed"); err != nil && n.Deps.Log != nil {
+					n.Deps.Log.Warn("mark error", "iccid", profile.ICCID, "err", err)
 				}
 			}
 		}
@@ -171,8 +183,8 @@ func (n *NotificationService) handleInstallation(ctx context.Context, pir *rsp.P
 		EID: eidOf(profile), Operation: "install", ICCID: iccid,
 		TransactionID: txn, SignatureOK: true, Processed: true,
 	})
-	if n.Sessions != nil {
-		_ = n.Sessions.Delete(txn)
+	if n.Deps.Sessions != nil {
+		_ = n.Deps.Sessions.Delete(txn)
 	}
 	n.notify(ctx, progressFor(profile, eidOf(profile), 4, "Executed-Success"))
 	return nil
@@ -182,18 +194,18 @@ func (n *NotificationService) handleInstallation(ctx context.Context, pir *rsp.P
 // (BF27) using the eUICC certificate from the download session.
 
 func (n *NotificationService) record(notif *store.Notification) {
-	if n.Notifs == nil {
+	if n.Deps.Notifs == nil {
 		return
 	}
-	_ = n.Notifs.Insert(notif)
+	_ = n.Deps.Notifs.Insert(notif)
 }
 
 func (n *NotificationService) notify(ctx context.Context, info ProgressInfo) {
 	if n.Callback == nil {
 		return
 	}
-	if err := n.Callback(ctx, info); err != nil && n.Log != nil {
-		n.Log.Warn("operator callback failed", "point", info.NotificationPointID, "err", err)
+	if err := n.Callback(ctx, info); err != nil && n.Deps.Log != nil {
+		n.Deps.Log.Warn("operator callback failed", "point", info.NotificationPointID, "err", err)
 	}
 }
 

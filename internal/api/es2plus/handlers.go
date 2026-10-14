@@ -46,13 +46,19 @@ type MetricCounter interface {
 	Inc(name string, labels map[string]string)
 }
 
-// Handler holds the ES2+ handler dependencies.
-type Handler struct {
+// Deps is the complete ES2+ handler dependency set, so the handler cannot be
+// constructed half-wired. The two late-bound hooks stay out of it on purpose:
+//
+//   - Registrar registers SM-DS events and is installed once the ES12 client
+//     exists (its construction needs the SM-DP+ identity, not this handler);
+//   - ACRHandler serves the inbound handleAcrRequest stub and is unused by
+//     rsp42 itself (ACR is performed outbound).
+type Deps struct {
 	Log       *slog.Logger
 	Profiles  service.ProfileStore
 	Orders    *service.OrderService
 	Inventory *service.Inventory
-	// UPP, when set, is used to validate a "<tenant>/<template>" profileType.
+	// UPP validates a "<tenant>/<template>" profileType.
 	UPP UPPValidator
 	// RequesterTenants maps header.functionRequesterIdentifier to a tenant
 	// (decision 3). A nil resolver means "everything is the platform default".
@@ -66,16 +72,19 @@ type Handler struct {
 	Metrics MetricCounter
 	// AuditRepo, when set, records ES12 registration failures.
 	AuditRepo AuditWriter
+}
+
+// Handler serves the ES2+ interface.
+type Handler struct {
+	Deps
 	// ACRHandler, when set, is invoked for handleAcrRequest.
 	ACRHandler func(req AcrRequest) (*AcrResponse, error)
 	// Registrar, when set, registers an SM-DS event on ConfirmOrder.
 	Registrar *service.Registrar
 }
 
-// New returns a new ES2+ handler.
-func New(log *slog.Logger, profiles service.ProfileStore, orders *service.OrderService, inv *service.Inventory) *Handler {
-	return &Handler{Log: log, Profiles: profiles, Orders: orders, Inventory: inv}
-}
+// New returns a new ES2+ handler with its dependencies wired.
+func New(d Deps) *Handler { return &Handler{Deps: d} }
 
 // Mount registers the ES2+ routes on r.
 func Mount(r chi.Router, h *Handler) {

@@ -37,8 +37,10 @@ func newServerWith(t *testing.T, configure func(h *es2plus.Handler, st *store.St
 	orders := service.NewOrderService(st.Profiles)
 	inventory := service.NewInventory(st.Profiles, "8900012", "00101")
 	inventory.Pool = st.Pool
-	h := es2plus.New(slog.Default(), st.Profiles, orders, inventory)
-	h.OrderAudit = st.Orders
+	h := es2plus.New(es2plus.Deps{
+		Log: slog.Default(), Profiles: st.Profiles, Orders: orders, Inventory: inventory,
+		OrderAudit: st.Orders,
+	})
 	if configure != nil {
 		configure(h, st)
 	}

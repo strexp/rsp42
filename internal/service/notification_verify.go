@@ -32,8 +32,8 @@ func (n *NotificationService) handleOtherSigned(o *rsp.OtherSignedNotification) 
 	var profile *store.Profile
 	if len(o.Notification.ICCID) > 0 {
 		iccid = iccidDecimal(o.Notification.ICCID)
-		if iccid != "" && n.Profiles != nil {
-			profile, _ = n.Profiles.GetByICCID(iccid)
+		if iccid != "" && n.Deps.Profiles != nil {
+			profile, _ = n.Deps.Profiles.GetByICCID(iccid)
 		}
 	}
 
@@ -41,8 +41,8 @@ func (n *NotificationService) handleOtherSigned(o *rsp.OtherSignedNotification) 
 	// (NotificationMetadata, BF2F) with SK.EUICC.ECDSA (SGP.22 §5.7.9). The eUICC
 	// and EUM certificates are carried in the notification itself.
 	ok := n.verifyOtherSigned(o)
-	if !ok && n.Log != nil {
-		n.Log.Warn("euiccNotificationSignature verification failed; notification ignored")
+	if !ok && n.Deps.Log != nil {
+		n.Deps.Log.Warn("euiccNotificationSignature verification failed; notification ignored")
 	}
 	// The usage of enable/disable/delete notifications is operator-defined
 	// (SGP.22 §3.5); record them faithfully with their verification outcome.
@@ -69,7 +69,7 @@ func (n *NotificationService) verifyOtherSigned(o *rsp.OtherSignedNotification) 
 	if err != nil {
 		return false
 	}
-	if n.Certs != nil && n.Certs.CI() != nil {
+	if n.Deps.Certs != nil && n.Deps.Certs.CI() != nil {
 		if len(o.EumCertificate) == 0 {
 			return false
 		}
@@ -77,9 +77,9 @@ func (n *NotificationService) verifyOtherSigned(o *rsp.OtherSignedNotification) 
 		if err != nil {
 			return false
 		}
-		ci := n.Certs.CIByAKI(eum.AuthorityKeyId)
+		ci := n.Deps.Certs.CIByAKI(eum.AuthorityKeyId)
 		if ci == nil {
-			ci = n.Certs.CI()
+			ci = n.Deps.Certs.CI()
 		}
 		if err := validateEUICCChain(euicc, eum, nil, ci, ci.SubjectKeyId); err != nil {
 			return false
