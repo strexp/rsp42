@@ -521,7 +521,7 @@
 3. `saip` 的 PE 注册表保留了旧的 4 处不一致（bf1f/bf22 无名字但有 post-baseline 名、post-baseline 模板 PE 非 singleton 等），只统一存储方式，不改数据；唯一可见变化是 singleton 错误改为按描述符顺序确定输出（错误集合不变）。
 4. 阶段 2 未做的两项：`jsonschema/v6`/`yaml.v3` 依赖的去留决策（需确认是否接入请求校验，见阶段 2 第 10 条）、`es2plus` 与 `service/smdsc.go` 的重试循环合并。
 
-### 阶段 3：接口与契约收口（进行中）
+### 阶段 3：接口与契约收口（基本完成）
 
 已完成（按提交顺序）：
 
@@ -535,7 +535,14 @@
 | `8beaac1` | `es2plus` 的 `UPPValidator`/`AuditWriter`/`MetricCounter`/`IdempotencyStore` 接口 |
 | `e35ca88` | 删除 doc-only 的 `internal/api/es15`，doc 并入 `service.CascadeClient` |
 
-待办：`admin.Handler` 的 12 个具体 repo 字段收口（需与阶段 4 的包拆分一起做）；`Options`/`Deps` 注入以消除「构造后字段赋值」（跨结构体 68 个导出可变字段）；`rsp` 错误词汇统一到 `rsp.Code`；`admin_ops.go` 混合命令拆分与配置 profile；`jsonschema/v6`/`yaml.v3` 去留；`es2plus` 与 `service/smdsc.go` 重试循环合并。
+已完成（本轮追加）：
+
+| 提交 | 内容 |
+|---|---|
+| `ccde6b7` | `admin.Handler` 的 15 个具体类型（12 个 SQLite repo + 3 个 service）收口为消费方接口（`TenantStore`/`ProfileStore`/`UPPStore`/`AuditStore`/`BatchStore`/`OrderStore`/`NotificationStore`/`SessionStore`/`PoolStore`/`CallbackStore`/`OrderTransitions`/`Allocator`/`PersonalizationStore`/`SAIPVersionChecker`/`middleware.IdempotencyStore`），配编译期断言；新增 `Handler.Validate()` 与 `dsadmin.Config.Validate()` 并在两个组合根启动时调用，把「未接线」从「有时 501、有时 panic」变成启动期错误；可选策略（Audit/Idem/AllowedSAIP）显式化 |
+| `f94ca96` | `admin_ops.go` 的 4 个互不相关命令拆到各自文件；SM-DS 事件命令改用数据库-only 校验 profile 并自行要求 `smds.role`/`smds.fqdn` |
+
+待办：`Options`/`Deps` 注入以消除 `es2plus.Handler`/`CMAE`/`NotificationService` 的「构造后字段赋值」；`rsp` 错误词汇统一到 `rsp.Code`；`jsonschema/v6`/`yaml.v3` 去留（需用户决策）；`es2plus` 与 `service/smdsc.go` 重试循环合并。
 
 ### 阶段 4：目录与组合根拆分（进行中）
 
@@ -550,7 +557,14 @@
 | `d1fd0f6` | `cli/server.go` 按职责拆为 `listener.go`/`run.go`/`kmsload.go`；`serveAll` 的信号处理改为循环，第二次信号强制退出（原先第二次信号被忽略、卡住的进程只能 SIGKILL） |
 | `316a1dc` | 删除 admin 中因 DS 拆出而失效的 `Events` 依赖 |
 
-待办：`cli` 的 `cmdSMDpp` 组合根拆分与表驱动命令注册表；`es2plus` 客户端代码 → `internal/client/es2p`；`store`/`service`/`saip`/`rsp`/`cert` 的文件级拆分；`admin.Handler` 的 12 个具体 repo 字段收口（现已有 `adminhttp`/`dsadmin` 前置，宜与按资源域拆分一起做）。
+已完成（本轮追加）：
+
+| 提交 | 内容 |
+|---|---|
+| `8ad7eac` | `store/store.go`（名不符实）→ `errors.go` + `sqlutil.go`；`store/models.go` 按聚合拆为 `profile_model.go`/`event_model.go`/`notification_model.go` |
+| `f2afcc8` | `saip/header.go` 拆为 `header.go`（模型/编解码）、`header_services.go`（ServicesList 位策略与 mandatory services 重建）、`gfste.go`（GFSTE 列表、模板 PE 判定、PEName/AKA） |
+
+待办：`cli` 的 `cmdSMDpp`/`cmdSMDS` 组合根拆分与表驱动命令注册表；`es2plus` 客户端代码 → `internal/client/es2p`；`service/`（`helpers.go`、`notification.go`、`upp.go`、`smds_event.go`）与 `rsp/types.go`、`cert/manager.go`、`saip/personalization/personalization.go` 的文件级拆分。
 
 ### 阶段 5：测试与工程化收尾（进行中）
 
