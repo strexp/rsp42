@@ -28,14 +28,15 @@ purpose.
 | `modernc.org/sqlite` | v1.60.1 | BSD-3-Clause | Pure-Go SQLite driver |
 | `github.com/pressly/goose/v3` | v3.28.0 | MIT | Database migrations |
 | `github.com/spf13/viper` | v1.21.0 | MIT | Configuration loading |
-| `gopkg.in/yaml.v3` | v3.0.1 | MIT/Apache-2.0 | YAML parsing |
 | `github.com/google/uuid` | v1.6.0 | BSD-3-Clause | Transaction IDs, request IDs |
 | `github.com/stretchr/testify` | v1.12.1 | MIT | Test assertions |
-| `github.com/santhosh-tekuri/jsonschema/v6` | v6.0.3 | BSD-3-Clause | SGP.22 JSON schema contract tests |
+| `github.com/santhosh-tekuri/jsonschema/v6` | v6.0.3 | BSD-3-Clause | Management-API contract tests: the handlers' responses are validated against the schemas embedded in `internal/api/admin/openapi/openapi.json` |
 | `github.com/skip2/go-qrcode` | v0.0.0-20200617195104-da1b6568686e | MIT | Activation-code QR rendering |
 
 The Go standard library (`crypto/*`, `net/http`, `log/slog`, `encoding/*`) covers
-curves, signatures, TLS, AES-CBC and logging.
+curves, signatures, TLS, AES-CBC and logging. YAML parsing is provided by viper
+(which uses `go.yaml.in/yaml/v3` internally), so `gopkg.in/yaml.v3` is not a
+dependency of its own.
 
 ## Reference-only (not build dependencies)
 

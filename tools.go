@@ -11,6 +11,5 @@ import (
 	_ "github.com/pressly/goose/v3"
 	_ "github.com/santhosh-tekuri/jsonschema/v6"
 	_ "github.com/skip2/go-qrcode"
-	_ "gopkg.in/yaml.v3"
 	_ "modernc.org/sqlite"
 )
