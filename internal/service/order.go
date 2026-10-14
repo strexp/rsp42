@@ -80,8 +80,14 @@ type OrderService struct {
 // NewOrderService builds an OrderService.
 func NewOrderService(repo ProfileStore) *OrderService { return &OrderService{Profiles: repo} }
 
-// Transition loads the profile, checks the transition and persists it.
-func (s *OrderService) Transition(iccid string, to store.ProfileState, mutate func(*store.Profile)) (*store.Profile, error) {
+// Transition loads the profile, checks the transition and persists the result.
+//
+// mutate runs on every call, including a protocol resend where the profile
+// already holds the target state (CanTransition treats from == to as a legal
+// no-op). It receives whether the state actually moved, so that an attribute
+// update needed on a resend (the confirmation flag, the failure reason) is
+// applied while a non-idempotent counter is only advanced by a real transition.
+func (s *OrderService) Transition(iccid string, to store.ProfileState, mutate func(p *store.Profile, stateChanged bool)) (*store.Profile, error) {
 	p, err := s.Profiles.GetByICCID(iccid)
 	if err != nil {
 		return nil, err
@@ -89,14 +95,14 @@ func (s *OrderService) Transition(iccid string, to store.ProfileState, mutate fu
 	if err := AssertTransition(p.State, to); err != nil {
 		return nil, err
 	}
-	if p.State == to {
-		return p, nil // idempotent
-	}
+	stateChanged := p.State != to
 	p.State = to
 	if mutate != nil {
-		mutate(p)
+		mutate(p, stateChanged)
 	}
-	if to == store.StateInstalled {
+	// InstalledAt records the first installation; a duplicate notification must
+	// not move it forward.
+	if to == store.StateInstalled && p.InstalledAt == nil {
 		now := time.Now().UTC()
 		p.InstalledAt = &now
 	}
@@ -116,13 +122,14 @@ func (s *OrderService) Link(iccid string) (*store.Profile, error) {
 	return s.Transition(iccid, store.StateLinked, nil)
 }
 
-// Confirm moves Allocated/Linked -> Confirmed or Released.
+// Confirm moves Allocated/Linked -> Confirmed or Released. A resend refreshes
+// the release flag even when the state does not move.
 func (s *OrderService) Confirm(iccid string, release bool) (*store.Profile, error) {
 	to := store.StateConfirmed
 	if release {
 		to = store.StateReleased
 	}
-	return s.Transition(iccid, to, func(p *store.Profile) { p.ReleaseFlag = release })
+	return s.Transition(iccid, to, func(p *store.Profile, _ bool) { p.ReleaseFlag = release })
 }
 
 // Release moves Confirmed -> Released.
@@ -130,19 +137,27 @@ func (s *OrderService) Release(iccid string) (*store.Profile, error) {
 	return s.Transition(iccid, store.StateReleased, nil)
 }
 
-// MarkDownloaded moves Released -> Downloaded (or stays Downloaded).
+// MarkDownloaded moves Released -> Downloaded. The download attempt counter is
+// only advanced by a real transition: the counter itself is owned by
+// CMAE.registerDownloadAttempt (SGP.22 §3.1.3 step 3).
 func (s *OrderService) MarkDownloaded(iccid string) (*store.Profile, error) {
-	return s.Transition(iccid, store.StateDownloaded, func(p *store.Profile) { p.DownloadAttempts++ })
+	return s.Transition(iccid, store.StateDownloaded, func(p *store.Profile, stateChanged bool) {
+		if stateChanged {
+			p.DownloadAttempts++
+		}
+	})
 }
 
-// MarkInstalled moves Downloaded -> Installed.
+// MarkInstalled moves Downloaded -> Installed. InstalledAt is only set on the
+// first installation.
 func (s *OrderService) MarkInstalled(iccid string) (*store.Profile, error) {
 	return s.Transition(iccid, store.StateInstalled, nil)
 }
 
-// MarkError moves Downloaded -> Error.
+// MarkError moves Downloaded/Released -> Error. A resend (including one for an
+// already-failed profile) records the latest reason.
 func (s *OrderService) MarkError(iccid, reason string) (*store.Profile, error) {
-	return s.Transition(iccid, store.StateError, func(p *store.Profile) { p.ErrorReason = reason })
+	return s.Transition(iccid, store.StateError, func(p *store.Profile, _ bool) { p.ErrorReason = reason })
 }
 
 // Cancel moves any active (or Error) state to Available or Unavailable. The

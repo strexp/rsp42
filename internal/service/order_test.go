@@ -3,6 +3,7 @@ package service
 import (
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
 
@@ -142,4 +143,96 @@ func TestEventRepoReuseForbidden(t *testing.T) {
 	// Another caller may use the same EventID.
 	_, err = s.Events.Insert(&store.EventRecord{EID: rec.EID, EventID: "E1", RSPServerAddress: "dp2", CallerOID: "2.999.11"})
 	require.NoError(t, err)
+}
+
+// seedLinkedProfile creates an Available profile and drives it to Linked.
+func seedLinkedProfile(t *testing.T, s *store.Store, svc *OrderService, iccid string) {
+	t.Helper()
+	_, err := s.Profiles.Create(&store.Profile{ICCID: iccid, State: store.StateAvailable})
+	require.NoError(t, err)
+	_, err = svc.Link(iccid)
+	require.NoError(t, err)
+}
+
+// TestTransitionResendAppliesMutate is the regression test for the idempotent
+// branch that returned before running mutate: a duplicate installation
+// notification must still record the failure reason, and the change must be
+// persisted rather than only applied to the in-memory copy.
+func TestTransitionResendAppliesMutate(t *testing.T) {
+	s := newTestStore(t)
+	svc := NewOrderService(s.Profiles)
+	const iccid = "89000123456789012341"
+	seedLinkedProfile(t, s, svc, iccid)
+
+	_, err := svc.Confirm(iccid, true)
+	require.NoError(t, err)
+
+	p, err := svc.MarkError(iccid, "first failure")
+	require.NoError(t, err)
+	require.Equal(t, store.StateError, p.State)
+	require.Equal(t, "first failure", p.ErrorReason)
+
+	// Resend: Error -> Error is a legal no-op, but the reason must be refreshed.
+	p, err = svc.MarkError(iccid, "second failure")
+	require.NoError(t, err)
+	require.Equal(t, store.StateError, p.State)
+	require.Equal(t, "second failure", p.ErrorReason)
+
+	got, err := s.Profiles.GetByICCID(iccid)
+	require.NoError(t, err)
+	require.Equal(t, "second failure", got.ErrorReason, "resend mutation must be persisted")
+}
+
+// TestTransitionResendKeepsInstalledAt pins that a duplicate installation
+// notification does not move the installation timestamp.
+func TestTransitionResendKeepsInstalledAt(t *testing.T) {
+	s := newTestStore(t)
+	svc := NewOrderService(s.Profiles)
+	const iccid = "89000123456789012342"
+	seedLinkedProfile(t, s, svc, iccid)
+
+	_, err := svc.Confirm(iccid, true)
+	require.NoError(t, err)
+	_, err = svc.MarkDownloaded(iccid)
+	require.NoError(t, err)
+
+	first, err := svc.MarkInstalled(iccid)
+	require.NoError(t, err)
+	require.NotNil(t, first.InstalledAt)
+
+	// Pin a distinctive past timestamp so that "unchanged" is unambiguous even
+	// though SQLite stores whole seconds.
+	loaded, err := s.Profiles.GetByICCID(iccid)
+	require.NoError(t, err)
+	past := time.Unix(1_000_000_000, 0).UTC()
+	loaded.InstalledAt = &past
+	require.NoError(t, s.Profiles.Update(loaded))
+
+	again, err := svc.MarkInstalled(iccid)
+	require.NoError(t, err)
+	require.NotNil(t, again.InstalledAt)
+	require.Equal(t, past.Unix(), again.InstalledAt.Unix(),
+		"a duplicate notification must not move InstalledAt")
+}
+
+// TestTransitionAttemptCounterOnlyOnStateChange pins that the download attempt
+// counter is advanced by a real transition only; the counter is owned by
+// CMAE.registerDownloadAttempt.
+func TestTransitionAttemptCounterOnlyOnStateChange(t *testing.T) {
+	s := newTestStore(t)
+	svc := NewOrderService(s.Profiles)
+	const iccid = "89000123456789012343"
+	seedLinkedProfile(t, s, svc, iccid)
+
+	_, err := svc.Confirm(iccid, true)
+	require.NoError(t, err)
+
+	p, err := svc.MarkDownloaded(iccid)
+	require.NoError(t, err)
+	require.Equal(t, 1, p.DownloadAttempts)
+
+	// Downloaded -> Downloaded is a legal no-op and must not inflate the counter.
+	p, err = svc.MarkDownloaded(iccid)
+	require.NoError(t, err)
+	require.Equal(t, 1, p.DownloadAttempts)
 }
