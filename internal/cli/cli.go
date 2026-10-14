@@ -9,51 +9,73 @@ import (
 	"os"
 )
 
+// defaultConfigPath is the configuration location every command defaults to.
+const defaultConfigPath = "config/config.yaml"
+
+// command is one CLI subcommand. The table drives both dispatch and the usage
+// text, so a command cannot be added or renamed without the help output
+// following, and the shared flags come from one place.
+type command struct {
+	name    string
+	usage   string
+	summary string
+	run     func(prog string, args []string) int
+}
+
+// topLevelCommands is the rsp42 command table.
+var topLevelCommands = []command{
+	{name: "smdpp", usage: "smdpp   [--config FILE]", summary: "run the SM-DP+ role", run: cmdSMDpp},
+	{name: "smds", usage: "smds    [--config FILE]", summary: "run the SM-DS role", run: cmdSMDS},
+	{name: "admin", usage: "admin   <command>", summary: "administrative commands", run: cmdAdmin},
+	{name: "version", usage: "version", summary: "print build information",
+		run: func(string, []string) int { return cmdVersion(os.Stdout) }},
+}
+
 // Main dispatches the rsp42 command line. It returns a process exit code.
 func Main(prog string, args []string) int {
 	if len(args) == 0 {
 		usage(os.Stderr, prog)
 		return 2
 	}
-	cmd := args[0]
-	rest := args[1:]
-	switch cmd {
-	case "smdpp":
-		return cmdSMDpp(prog, rest)
-	case "smds":
-		return cmdSMDS(prog, rest)
-	case "admin":
-		return cmdAdmin(prog, rest)
-	case "version", "--version", "-version":
-		return cmdVersion(os.Stdout)
-	case "help", "--help", "-h":
+	if isHelp(args[0]) {
 		usage(os.Stdout, prog)
 		return 0
+	}
+	for _, c := range topLevelCommands {
+		if c.name == args[0] {
+			return c.run(prog, args[1:])
+		}
+	}
+	fmt.Fprintf(os.Stderr, "%s: unknown command %q\n", prog, args[0])
+	usage(os.Stderr, prog)
+	return 2
+}
+
+// isHelp reports the conventional help spellings.
+func isHelp(arg string) bool {
+	switch arg {
+	case "help", "--help", "-h", "-help":
+		return true
 	default:
-		fmt.Fprintf(os.Stderr, "%s: unknown command %q\n", prog, cmd)
-		usage(os.Stderr, prog)
-		return 2
+		return false
 	}
 }
 
 func usage(w io.Writer, prog string) {
-	_, _ = fmt.Fprintf(w, `%s - SM-DP+ and SM-DS for SGP.22
-
-Usage:
-  %s smdpp   [--config FILE]   run the SM-DP+ role
-  %s smds    [--config FILE]   run the SM-DS role
-  %s admin   <command>         administrative commands
-  %s version                   print build information
-
+	_, _ = fmt.Fprintf(w, "%s - SM-DP+ and SM-DS for SGP.22\n\nUsage:\n", prog)
+	for _, c := range topLevelCommands {
+		_, _ = fmt.Fprintf(w, "  %s %-24s %s\n", prog, c.usage, c.summary)
+	}
+	_, _ = fmt.Fprintf(w, `
 The SM-DP+ and SM-DS roles have equal standing; neither is the default.
 
 Run "%s admin help" for the list of admin commands.
-`, prog, prog, prog, prog, prog, prog)
+`, prog)
 }
 
 // globalFlags registers the flags common to the serve/smds commands.
-func globalFlags(prog string, args []string) (cfgPath *string, fs *flag.FlagSet) {
+func globalFlags(prog string, _ []string) (cfgPath *string, fs *flag.FlagSet) {
 	fs = flag.NewFlagSet(prog, flag.ContinueOnError)
-	cfgPath = fs.String("config", "config/config.yaml", "path to the YAML configuration file")
+	cfgPath = fs.String("config", defaultConfigPath, "path to the YAML configuration file")
 	return cfgPath, fs
 }
