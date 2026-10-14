@@ -1,14 +1,31 @@
 # Multi-stage build: compile the static rsp42 binary, then run it on Alpine with
 # the dn42 root CA preinstalled for outbound *.dn42 TLS.
+#
+# The base images are pinned to the Go minor in go.mod (1.27) and to a specific
+# Alpine release, so a moving :latest tag cannot silently change the toolchain or
+# the runtime libc. They stay overridable as build args for a deliberate bump:
+#   docker build --build-arg GO_IMAGE=golang:1.28-bookworm .
 
-FROM golang:latest AS build
+ARG GO_IMAGE=golang:1.27-bookworm
+ARG RUNTIME_IMAGE=alpine:3.22
+
+FROM ${GO_IMAGE} AS build
+
+# Build metadata for `rsp42 version`. It is passed in because .dockerignore
+# excludes .git, so the Makefile's git-derived defaults are unavailable here.
+ARG VERSION=dev
+ARG COMMIT=none
+ARG DATE=unknown
+
 WORKDIR /src
 COPY go.mod go.sum ./
 RUN go mod download
 COPY . .
-RUN CGO_ENABLED=0 go build -trimpath -ldflags "-s -w" -o /out/rsp42 ./cmd/rsp42
+# Same entry point as a local build, so the image binary and `make build` cannot
+# diverge in flags or version metadata.
+RUN CGO_ENABLED=0 make build BIN_DIR=/out VERSION="${VERSION}" COMMIT="${COMMIT}" DATE="${DATE}"
 
-FROM alpine:latest
+FROM ${RUNTIME_IMAGE}
 RUN apk add --no-cache ca-certificates
 # Vendored dn42 root CA (CC0); see docs/operations.md.
 COPY deploy/dn42-root-ca.crt /usr/local/share/ca-certificates/dn42-root-ca.crt

@@ -2,7 +2,21 @@ GO          ?= go
 BIN_DIR     ?= bin
 RSP42       := $(BIN_DIR)/rsp42
 CONFIG      ?= config/config.yaml
-LDFLAGS     := -s -w
+
+# Build metadata, injected into internal/version so that `rsp42 version` reports
+# the revision it was built from. The Docker build passes these as build args
+# because .dockerignore excludes .git.
+VERSION     ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
+COMMIT      ?= $(shell git rev-parse --short HEAD 2>/dev/null || echo none)
+DATE        ?= $(shell date -u +%Y-%m-%dT%H:%M:%SZ)
+VERSION_PKG := rsp42/internal/version
+LDFLAGS     := -s -w \
+	-X $(VERSION_PKG).Version=$(VERSION) \
+	-X $(VERSION_PKG).Commit=$(COMMIT) \
+	-X $(VERSION_PKG).Date=$(DATE)
+# BUILD_FLAGS is the single definition of how the binary is compiled; the
+# container build invokes `make build` so the two cannot diverge.
+BUILD_FLAGS := -trimpath
 
 # Test-data sources (override SGP26_SRC with a local path to avoid downloading).
 SGP26_SRC ?= https://www.gsma.com/solutions-and-impact/technologies/esim/wp-content/uploads/2025/01/SGP.26_v3.0.2-2026_files_v2.zip
@@ -13,7 +27,7 @@ UPP_SRC   ?= https://github.com/osmocom/pysim/archive/refs/heads/master.tar.gz
 all: build
 
 build: ## build the rsp42 binary (provides both smdpp and smds roles)
-	$(GO) build -ldflags "$(LDFLAGS)" -o $(RSP42) ./cmd/rsp42
+	$(GO) build $(BUILD_FLAGS) -ldflags "$(LDFLAGS)" -o $(RSP42) ./cmd/rsp42
 
 test: ## run all tests
 	$(GO) test ./...
