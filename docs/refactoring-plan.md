@@ -542,7 +542,17 @@
 | `ccde6b7` | `admin.Handler` 的 15 个具体类型（12 个 SQLite repo + 3 个 service）收口为消费方接口（`TenantStore`/`ProfileStore`/`UPPStore`/`AuditStore`/`BatchStore`/`OrderStore`/`NotificationStore`/`SessionStore`/`PoolStore`/`CallbackStore`/`OrderTransitions`/`Allocator`/`PersonalizationStore`/`SAIPVersionChecker`/`middleware.IdempotencyStore`），配编译期断言；新增 `Handler.Validate()` 与 `dsadmin.Config.Validate()` 并在两个组合根启动时调用，把「未接线」从「有时 501、有时 panic」变成启动期错误；可选策略（Audit/Idem/AllowedSAIP）显式化 |
 | `f94ca96` | `admin_ops.go` 的 4 个互不相关命令拆到各自文件；SM-DS 事件命令改用数据库-only 校验 profile 并自行要求 `smds.role`/`smds.fqdn` |
 
-待办：`Options`/`Deps` 注入以消除 `es2plus.Handler`/`CMAE`/`NotificationService` 的「构造后字段赋值」；`rsp` 错误词汇统一到 `rsp.Code`；`jsonschema/v6`/`yaml.v3` 去留（需用户决策）；`es2plus` 与 `service/smdsc.go` 重试循环合并。
+已完成（本轮追加）：
+
+| 提交 | 内容 |
+|---|---|
+| `eca17a3` | `es2plus.Deps` 与 `service.NotificationDeps`：两个对象的依赖全部经构造器传入，仅保留两个有循环依赖的钩子字段（`Registrar` 需 ES12 客户端、`Callback` 是「由本服务构造」的出站队列），原因写在类型注释里 |
+| `30dc3f5` | `service.CMAEDeps` 取代 9 个位置参数 + 3 个事后赋值；`es2p.QueueOptions` 让回调队列的 tunable（次数/批量/退避/时钟/指标/URL 覆盖）构造期确定，零值即生产默认，测试可用同一接缝做即时重试 |
+| `fb0d470` | 删除只写不读的 `EventService.Log` 字段 |
+
+「重试循环合并」无需执行：原重复的一份是 `es2plus/client.go` 中被删除的 `HandleDownloadProgressInfo`；现存的两条路径机制不同（`SMDSCClient` 的请求内重试 vs 回调队列的数据库持久化重试），强行合并会混淆语义。
+
+「rsp 错误词汇统一」已基本达成：`cmaeCore` 已把证书链/签名/EID/CI 失败分类为 `cmCertChain`/`cmSignature`/`cmEID`/`cmCI`，再映射到 `rsp.Code`；剩余落不到 SGP.22 状态码的是会话存储/KMS 等基础设施故障，把它们映射成协议码反而会误导调用方，因此保留为「未分类」（JSON 回退 8.1/6.1，ASN.1 回退 127 undefinedError，均为规范内的兜底）。
 
 ### 阶段 4：目录与组合根拆分（进行中）
 
@@ -568,7 +578,15 @@
 | `d5e9bab` | `service/notification.go` 拆为 `notification.go`（DTO+编排）/`notification_verify.go`（PIR/OtherSigned 验签）/`iccid_decode.go`；`service/helpers.go` 拆为 `cert_verify.go` + `confirmation.go` |
 | `fc2187f` | `rsp/types.go`（468 行、12 个结构）拆为 `fields.go`、`euicc_info.go`、`signed.go`、`response_decode.go` |
 
-待办：`es2plus` 客户端代码 → `internal/client/es2p`；`cert/manager.go`（516 行）、`saip/personalization/personalization.go`（639 行）、`service/upp.go`/`smds_event.go` 的文件级拆分；`cmdSMDS` 是否需要与 DP 对称的 graph 抽取（当前 153 行尚可读）。
+已完成（本轮追加）：
+
+| 提交 | 内容 |
+|---|---|
+| `de88ea6` | `cert/manager.go`（516 行/39 函数）拆为 `manager.go`（类型+Load+访问器）、`loader.go`、`validate.go`、`identity.go` |
+| `f09d78e` | `saip/personalization/personalization.go`（628 行）拆为 `personalization.go`（模型+Engine）、`apply_sdkeys.go`、`apply_values.go`、`fields_codec.go` |
+| `f470dc2` | ES2+ 客户端（`client.go`/`clientlib.go`/`callback.go`）移到 `internal/client/es2p`，与 ES12/ES15 客户端（`service/smdsc.go`）位置一致；服务端包不再拥有出站客户端 |
+
+待办：`service/upp.go`/`smds_event.go` 的文件级拆分；`cmdSMDS` 是否需要与 DP 对称的 graph 抽取（当前 153 行尚可读）。
 
 ### 阶段 5：测试与工程化收尾（进行中）
 
