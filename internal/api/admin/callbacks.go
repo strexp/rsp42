@@ -50,10 +50,6 @@ func toCallbackView(c *store.Callback) callbackView {
 // letter is invisible: the delivery status of a download/install would be lost
 // with no way to inspect or re-drive it.
 func (h *Handler) listCallbacks(w http.ResponseWriter, r *http.Request) {
-	if h.Callbacks == nil {
-		adminhttp.WriteErr(w, http.StatusNotImplemented, "callback queue not configured")
-		return
-	}
 	q := r.URL.Query()
 	page, size := adminhttp.ParsePage(r)
 	filter := store.CallbackFilter{
@@ -81,10 +77,6 @@ func (h *Handler) listCallbacks(w http.ResponseWriter, r *http.Request) {
 
 // retryCallback re-queues one dead-lettered callback.
 func (h *Handler) retryCallback(w http.ResponseWriter, r *http.Request) {
-	if h.Callbacks == nil {
-		adminhttp.WriteErr(w, http.StatusNotImplemented, "callback queue not configured")
-		return
-	}
 	id, err := adminhttp.ParseID(chi.URLParam(r, "id"))
 	if err != nil {
 		adminhttp.WriteErr(w, http.StatusBadRequest, "invalid callback id")
@@ -112,10 +104,6 @@ func (h *Handler) retryCallback(w http.ResponseWriter, r *http.Request) {
 
 // retryDeadCallbacks re-queues a batch of dead-lettered callbacks.
 func (h *Handler) retryDeadCallbacks(w http.ResponseWriter, r *http.Request) {
-	if h.Callbacks == nil {
-		adminhttp.WriteErr(w, http.StatusNotImplemented, "callback queue not configured")
-		return
-	}
 	var req struct {
 		Tenant string `json:"tenant"`
 		Before string `json:"before"`

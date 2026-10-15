@@ -113,20 +113,16 @@ func (h *Handler) getBatch(w http.ResponseWriter, r *http.Request) {
 		adminhttp.WriteErr(w, http.StatusNotFound, "unknown batch")
 		return
 	}
-	// State breakdown for the batch's profiles.
+	// State breakdown for the batch's profiles: one grouped count instead of
+	// one filtered list per state.
 	counts := map[string]int{}
-	for _, s := range []store.ProfileState{
-		store.StateAvailable, store.StateAllocated, store.StateLinked, store.StateConfirmed,
-		store.StateReleased, store.StateDownloaded, store.StateInstalled, store.StateError, store.StateUnavailable,
-	} {
-		_, total, err := h.Profiles.ListFiltered(store.ProfileFilter{BatchID: &id, State: string(s)}, 1, 0, "")
-		if err != nil {
-			adminhttp.WriteErr(w, http.StatusInternalServerError, err.Error())
-			return
-		}
-		if total > 0 {
-			counts[string(s)] = total
-		}
+	stats, err := h.Profiles.Stats(store.ProfileFilter{BatchID: &id}, "state")
+	if err != nil {
+		adminhttp.WriteErr(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	for _, sc := range stats {
+		counts[sc.Key] = sc.Count
 	}
 	adminhttp.WriteJSON(w, http.StatusOK, map[string]any{"batch": toBatchView(b), "states": counts})
 }

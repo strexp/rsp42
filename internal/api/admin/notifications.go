@@ -24,10 +24,6 @@ type notificationView struct {
 // listNotifications exposes received ES9+ notifications directly (previously
 // only reachable through a profile timeline).
 func (h *Handler) listNotifications(w http.ResponseWriter, r *http.Request) {
-	if h.Notifs == nil {
-		adminhttp.WriteErr(w, http.StatusNotImplemented, "notification store not configured")
-		return
-	}
 	q := r.URL.Query()
 	page, size := adminhttp.ParsePage(r)
 	filter := store.NotificationFilter{ICCID: iccid.Normalize(q.Get("iccid")), EID: q.Get("eid")}

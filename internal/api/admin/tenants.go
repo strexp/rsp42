@@ -36,10 +36,6 @@ func toTenantView(t *store.Tenant) tenantView {
 }
 
 func (h *Handler) listTenants(w http.ResponseWriter, _ *http.Request) {
-	if h.Tenants == nil {
-		adminhttp.WriteErr(w, http.StatusNotImplemented, "tenant registry not configured")
-		return
-	}
 	items, err := h.Tenants.List()
 	if err != nil {
 		adminhttp.WriteErr(w, http.StatusInternalServerError, err.Error())
@@ -53,10 +49,6 @@ func (h *Handler) listTenants(w http.ResponseWriter, _ *http.Request) {
 }
 
 func (h *Handler) getTenant(w http.ResponseWriter, r *http.Request) {
-	if h.Tenants == nil {
-		adminhttp.WriteErr(w, http.StatusNotImplemented, "tenant registry not configured")
-		return
-	}
 	t, err := h.Tenants.Get(chi.URLParam(r, "id"))
 	if err != nil {
 		adminhttp.WriteErr(w, http.StatusNotFound, "unknown tenant")
@@ -80,10 +72,6 @@ type tenantReq struct {
 }
 
 func (h *Handler) upsertTenant(w http.ResponseWriter, r *http.Request) {
-	if h.Tenants == nil {
-		adminhttp.WriteErr(w, http.StatusNotImplemented, "tenant registry not configured")
-		return
-	}
 	var req tenantReq
 	if !adminhttp.ReadJSON(w, r, &req) {
 		return
@@ -142,10 +130,6 @@ func (h *Handler) upsertTenant(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) deleteTenant(w http.ResponseWriter, r *http.Request) {
-	if h.Tenants == nil {
-		adminhttp.WriteErr(w, http.StatusNotImplemented, "tenant registry not configured")
-		return
-	}
 	id := chi.URLParam(r, "id")
 	q := r.URL.Query()
 	force := q.Get("force") == "true" || q.Get("force") == "1"

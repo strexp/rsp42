@@ -136,10 +136,6 @@ func listDSEvents(w http.ResponseWriter, r *http.Request, events EventStore) {
 // mirrors the ES12 registration semantics: an EventID is generated when
 // omitted, and re-using one is a 409.
 func createDSEvent(w http.ResponseWriter, r *http.Request, cfg Config) {
-	if cfg.Events == nil {
-		adminhttp.WriteErr(w, http.StatusNotImplemented, "event store not configured")
-		return
-	}
 	var req struct {
 		EID                 string `json:"eid"`
 		EventID             string `json:"eventId"`
@@ -211,10 +207,6 @@ func createDSEvent(w http.ResponseWriter, r *http.Request, cfg Config) {
 // deleteDSEvent soft-deletes an event (N8). The ES12 delete path keeps the
 // record for audit; this endpoint does the same.
 func deleteDSEvent(w http.ResponseWriter, r *http.Request, cfg Config) {
-	if cfg.Events == nil {
-		adminhttp.WriteErr(w, http.StatusNotImplemented, "event store not configured")
-		return
-	}
 	id, err := adminhttp.ParseID(chi.URLParam(r, "id"))
 	if err != nil {
 		adminhttp.WriteJSON(w, http.StatusBadRequest, adminhttp.ErrorBody("invalid_request", "invalid event id"))
