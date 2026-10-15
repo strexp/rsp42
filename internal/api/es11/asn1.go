@@ -5,6 +5,7 @@ import (
 	"net/http"
 
 	"rsp42/internal/api/asn1bind"
+	"rsp42/internal/hexutil"
 	"rsp42/internal/rsp"
 )
 
@@ -77,7 +78,7 @@ func (h *Handler) asn1Binding(w http.ResponseWriter, r *http.Request) {
 			asn1bind.WriteResponse(w, rsp.AuthenticateClientResponseEs11Error(7))
 			return
 		}
-		res, err := h.DS.AuthenticateClient(asn1bind.HexUpper(req.TransactionID), req.AuthenticateResponse)
+		res, err := h.DS.AuthenticateClient(hexutil.Upper(req.TransactionID), req.AuthenticateResponse)
 		if err != nil {
 			asn1bind.WriteResponse(w, rsp.AuthenticateClientResponseEs11Error(asn1bind.CodeFor(err, dsAuthenticateErrorCodes, 127)))
 			return

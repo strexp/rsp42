@@ -7,6 +7,7 @@ import (
 
 	"rsp42/internal/api/asn1bind"
 	"rsp42/internal/api/common"
+	"rsp42/internal/hexutil"
 	"rsp42/internal/rsp"
 )
 
@@ -137,7 +138,7 @@ func (h *Handler) asn1Authenticate(w http.ResponseWriter, ctx context.Context, i
 		asn1bind.WriteResponse(w, rsp.AuthenticateClientResponseEs9Error(10)) // invalidTransactionId
 		return
 	}
-	res, err := h.CMAE.AuthenticateClient(ctx, asn1bind.HexUpper(req.TransactionID), req.AuthenticateResponse)
+	res, err := h.CMAE.AuthenticateClient(ctx, hexutil.Upper(req.TransactionID), req.AuthenticateResponse)
 	if err != nil {
 		asn1bind.WriteResponse(w, rsp.AuthenticateClientResponseEs9Error(asn1bind.CodeFor(err, authenticateErrorCodes, 127)))
 		return
@@ -157,7 +158,7 @@ func (h *Handler) asn1GetBPP(w http.ResponseWriter, inner []byte) {
 		asn1bind.WriteResponse(w, rsp.GetBoundProfilePackageResponseError(95))
 		return
 	}
-	res, err := h.CMAE.GetBoundProfilePackage(asn1bind.HexUpper(req.TransactionID), req.PrepareDownloadRaw)
+	res, err := h.CMAE.GetBoundProfilePackage(hexutil.Upper(req.TransactionID), req.PrepareDownloadRaw)
 	if err != nil {
 		asn1bind.WriteResponse(w, rsp.GetBoundProfilePackageResponseError(asn1bind.CodeFor(err, getBPPErrorCodes, 127)))
 		return
@@ -172,7 +173,7 @@ func (h *Handler) asn1Cancel(w http.ResponseWriter, inner []byte) {
 		asn1bind.WriteResponse(w, rsp.CancelSessionResponseEs9Error(1))
 		return
 	}
-	if _, _, err := h.CMAE.CancelSession(asn1bind.HexUpper(req.TransactionID), inner); err != nil {
+	if _, _, err := h.CMAE.CancelSession(hexutil.Upper(req.TransactionID), inner); err != nil {
 		asn1bind.WriteResponse(w, rsp.CancelSessionResponseEs9Error(asn1bind.CodeFor(err, cancelErrorCodes, 127)))
 		return
 	}

@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"net/http"
 	"rsp42/internal/api/adminhttp"
+	"rsp42/internal/hexutil"
 	"rsp42/internal/iccid"
-	"strings"
 
 	"github.com/go-chi/chi/v5"
 
@@ -48,10 +48,10 @@ func toPersoView(d *personalization.Data, reveal bool) persoView {
 		Pool: d.ICCID == "",
 	}
 	if reveal {
-		v.K = strings.ToUpper(hex.EncodeToString(d.K))
-		v.OPc = strings.ToUpper(hex.EncodeToString(d.OPc))
-		v.Rotation = strings.ToUpper(hex.EncodeToString(d.RotationConstants))
-		v.Xoring = strings.ToUpper(hex.EncodeToString(d.XoringConstants))
+		v.K = hexutil.Upper(d.K)
+		v.OPc = hexutil.Upper(d.OPc)
+		v.Rotation = hexutil.Upper(d.RotationConstants)
+		v.Xoring = hexutil.Upper(d.XoringConstants)
 	}
 	return v
 }

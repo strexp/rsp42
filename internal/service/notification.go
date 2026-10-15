@@ -2,12 +2,11 @@ package service
 
 import (
 	"context"
-	"encoding/hex"
 	"log/slog"
-	"strings"
 
 	"rsp42/internal/cert"
 	"rsp42/internal/client/es12"
+	"rsp42/internal/hexutil"
 	"rsp42/internal/rsp"
 	"rsp42/internal/store"
 )
@@ -134,7 +133,7 @@ func (n *NotificationService) handleInstallation(ctx context.Context, pir *rsp.P
 	if pir.Data == nil {
 		return nil
 	}
-	txn := strings.ToUpper(hex.EncodeToString(pir.Data.TransactionID))
+	txn := hexutil.Upper(pir.Data.TransactionID)
 	var profile *store.Profile
 	sigOK := false
 	if n.Deps.Sessions != nil {

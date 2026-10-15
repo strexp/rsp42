@@ -14,6 +14,7 @@ import (
 	"fmt"
 	"strings"
 
+	"rsp42/internal/hexutil"
 	"rsp42/internal/saip"
 	"rsp42/internal/saip/personalization"
 )
@@ -72,7 +73,7 @@ func InspectUPP(raw []byte) (*UPPInspection, error) {
 		SHA256:      hex.EncodeToString(sum[:]),
 		Size:        len(raw),
 		ProfileType: hdr.ProfileType,
-		ICCID:       strings.TrimRight(strings.ToUpper(hex.EncodeToString(hdr.ICCID)), "F"),
+		ICCID:       strings.TrimRight(hexutil.Upper(hdr.ICCID), "F"),
 		Services:    hdr.Services(),
 		GFSTE:       hdr.GFSTEList(),
 		Warnings:    []string{},
@@ -85,7 +86,7 @@ func InspectUPP(raw []byte) (*UPPInspection, error) {
 	}
 	present := map[string]bool{}
 	for _, e := range seq.Elements {
-		tag := strings.ToUpper(hex.EncodeToString(e.Tag))
+		tag := hexutil.Upper(e.Tag)
 		present[saip.PEName(e.Tag)] = true
 		out.Elements = append(out.Elements, PEElement{Tag: tag, Name: saip.PEName(e.Tag), Size: len(e.Encode())})
 	}

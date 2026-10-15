@@ -8,6 +8,7 @@ import (
 	"io"
 	"net/http"
 	"rsp42/internal/api/adminhttp"
+	"rsp42/internal/hexutil"
 	"strconv"
 	"strings"
 	"time"
@@ -52,7 +53,7 @@ func (h *Handler) exportProfiles(w http.ResponseWriter, r *http.Request) {
 		}
 		_ = cw.Write([]string{
 			p.ICCID, p.TenantID, p.ExternalRef, p.IMSI, p.ProfileType, p.EID, string(p.State), p.MatchingID,
-			strconv.FormatBool(p.CCRequired), p.SMDSAddress, p.UPPTemplate, hexUpper(p.PPRIds),
+			strconv.FormatBool(p.CCRequired), p.SMDSAddress, p.UPPTemplate, hexutil.Upper(p.PPRIds),
 			strconv.Itoa(p.DownloadAttempts), strconv.Itoa(p.CCAttempts), batch,
 			p.CreatedAt.UTC().Format(time.RFC3339), p.UpdatedAt.UTC().Format(time.RFC3339),
 			installed, p.ErrorReason,
@@ -102,8 +103,8 @@ func (h *Handler) exportPersonalization(w http.ResponseWriter, r *http.Request) 
 			}
 		}
 		_ = cw.Write([]string{
-			d.ICCID, d.IMSI, hexUpper(d.K), hexUpper(d.OPc), d.PIN1, d.PUK1, d.ADM1, d.ADM2,
-			d.SPN, d.Algorithm, hexUpper(d.RotationConstants), hexUpper(d.XoringConstants), keccak,
+			d.ICCID, d.IMSI, hexutil.Upper(d.K), hexutil.Upper(d.OPc), d.PIN1, d.PUK1, d.ADM1, d.ADM2,
+			d.SPN, d.Algorithm, hexutil.Upper(d.RotationConstants), hexutil.Upper(d.XoringConstants), keccak,
 			plmn, d.MSISDN, acc, patches,
 		})
 	}
@@ -229,16 +230,4 @@ func readProfileCSV(r *http.Request) ([]importProfileRecord, error) {
 		})
 	}
 	return out, nil
-}
-
-func hexUpper(b []byte) string {
-	if len(b) == 0 {
-		return ""
-	}
-	const d = "0123456789ABCDEF"
-	out := make([]byte, 0, len(b)*2)
-	for _, x := range b {
-		out = append(out, d[x>>4], d[x&0x0f])
-	}
-	return string(out)
 }

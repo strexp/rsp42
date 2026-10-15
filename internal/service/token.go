@@ -2,14 +2,13 @@ package service
 
 import (
 	"crypto/rand"
-	"encoding/hex"
-	"strings"
+	"rsp42/internal/hexutil"
 )
 
 func randomToken() string {
 	b := make([]byte, 8)
 	_, _ = rand.Read(b)
-	return strings.ToUpper(hex.EncodeToString(b))
+	return hexutil.Upper(b)
 }
 
 // NewEventID returns a fresh "EVT-<token>" event identifier.

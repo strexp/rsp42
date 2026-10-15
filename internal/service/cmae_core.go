@@ -16,6 +16,7 @@ import (
 	"rsp42/internal/asn1"
 	"rsp42/internal/cert"
 	"rsp42/internal/crypto"
+	"rsp42/internal/hexutil"
 	"rsp42/internal/rsp"
 	"rsp42/internal/store"
 )
@@ -187,7 +188,7 @@ func (c *cmaeCore) initiate(euiccChallenge, euiccInfo1 []byte, address string) (
 		return nil, err
 	}
 
-	txnHex := strings.ToUpper(hex.EncodeToString(transactionID))
+	txnHex := hexutil.Upper(transactionID)
 	if err := c.sessions.Put(&store.Session{
 		TransactionID:   txnHex,
 		State:           "initiated",

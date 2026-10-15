@@ -9,10 +9,8 @@
 package asn1bind
 
 import (
-	"encoding/hex"
 	"errors"
 	"net/http"
-	"strings"
 
 	"rsp42/internal/api/common"
 	"rsp42/internal/rsp"
@@ -43,10 +41,6 @@ func DecodeRequest(w http.ResponseWriter, r *http.Request) (rsp.ASN1Function, []
 func WriteResponse(w http.ResponseWriter, inner []byte) {
 	common.WriteASN1(w, rsp.EncodeRemoteProfileProvisioningResponse(inner))
 }
-
-// HexUpper renders transaction-id bytes as the uppercase hex string the service
-// layer (and the JSON binding) expect.
-func HexUpper(b []byte) string { return strings.ToUpper(hex.EncodeToString(b)) }
 
 // SubjectCode returns the subjectCode of a *rsp.StatusCode error, or "" when
 // the error carries no RSP classification.

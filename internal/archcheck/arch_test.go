@@ -36,6 +36,7 @@ var leafPackages = map[string]bool{
 	"internal/kms":     true,
 	"internal/logging": true,
 	"internal/metrics": true,
+	"internal/hexutil": true,
 	"internal/version": true,
 }
 

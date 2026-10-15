@@ -1,10 +1,10 @@
 package admin
 
 import (
-	"encoding/hex"
 	"fmt"
 	"net/http"
 	"rsp42/internal/api/adminhttp"
+	"rsp42/internal/hexutil"
 	"strings"
 
 	"github.com/go-chi/chi/v5"
@@ -57,7 +57,7 @@ func (h *Handler) decodedUPP(w http.ResponseWriter, r *http.Request) {
 	out := decodedUPP{
 		Name: t.Name, Major: int(hdr.Major), Minor: int(hdr.Minor),
 		ProfileType: hdr.ProfileType,
-		ICCID:       strings.TrimRight(strings.ToUpper(hex.EncodeToString(hdr.ICCID)), "F"),
+		ICCID:       strings.TrimRight(hexutil.Upper(hdr.ICCID), "F"),
 		Services:    hdr.Services(),
 		GFSTE:       hdr.GFSTEList(),
 		Elements:    []peInfo{},
@@ -71,7 +71,7 @@ func (h *Handler) decodedUPP(w http.ResponseWriter, r *http.Request) {
 	}
 	for _, e := range seq.Elements {
 		out.Elements = append(out.Elements, peInfo{
-			Tag: strings.ToUpper(hex.EncodeToString(e.Tag)), Name: saip.PEName(e.Tag), Size: len(e.Encode()),
+			Tag: hexutil.Upper(e.Tag), Name: saip.PEName(e.Tag), Size: len(e.Encode()),
 		})
 	}
 	for _, f := range seq.Files() {
