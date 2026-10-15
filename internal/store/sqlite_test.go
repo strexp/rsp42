@@ -68,3 +68,32 @@ func TestOpenAppliesDSNDefaults(t *testing.T) {
 	require.NoError(t, st.DB.QueryRow("PRAGMA busy_timeout").Scan(&timeout))
 	require.Equal(t, 5000, timeout)
 }
+
+// TestMigrationDropsUnusedPoolIMSI pins migration 00012: the column an early
+// "SIM pair" import added is gone, and the columns the pool code uses remain.
+func TestMigrationDropsUnusedPoolIMSI(t *testing.T) {
+	st, err := Open("file:" + filepath.Join(t.TempDir(), "schema.db"))
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = st.Close() })
+
+	rows, err := st.DB.Query("PRAGMA table_info(iccid_pool)")
+	require.NoError(t, err)
+	defer func() { _ = rows.Close() }()
+
+	cols := map[string]bool{}
+	for rows.Next() {
+		var (
+			cid, notnull, pk int
+			name, typ        string
+			dflt             any
+		)
+		require.NoError(t, rows.Scan(&cid, &name, &typ, &notnull, &dflt, &pk))
+		cols[name] = true
+	}
+	require.NoError(t, rows.Err())
+
+	require.False(t, cols["imsi"], "iccid_pool.imsi must be dropped by 00012")
+	require.True(t, cols["reference"], "columns the pool code uses must survive")
+	require.True(t, cols["reserved_until"])
+	require.True(t, cols["profile_id"])
+}
