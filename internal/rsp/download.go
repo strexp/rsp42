@@ -306,12 +306,15 @@ type ReplaceSessionKeysRequest struct {
 	PPKCmac                 []byte
 }
 
-// Encode returns the BF26 encoding of the request.
+// Encode returns the BF26 encoding of the request. RSPDefinitions is an
+// AUTOMATIC TAGS module, so the three untagged members take the context tags
+// 80/81/82 (a real eUICC accepts this form; the earlier generic OCTET STRING
+// tag 04 was rejected - see docs/real-card-test-report.md, R2).
 func (r *ReplaceSessionKeysRequest) Encode() []byte {
 	return asn1.Marshal(asn1.New(asn1.Ctx(38, true),
-		asn1.Octet(r.InitialMacChainingValue),
-		asn1.Octet(r.PPKEnc),
-		asn1.Octet(r.PPKCmac),
+		asn1.Prim(asn1.Ctx(0, false), r.InitialMacChainingValue),
+		asn1.Prim(asn1.Ctx(1, false), r.PPKEnc),
+		asn1.Prim(asn1.Ctx(2, false), r.PPKCmac),
 	))
 }
 

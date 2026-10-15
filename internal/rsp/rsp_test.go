@@ -43,6 +43,20 @@ func hexEq(t *testing.T, want string, got []byte) {
 	require.Equal(t, want, hex.EncodeToString(got))
 }
 
+func TestEncodeReplaceSessionKeysRequest(t *testing.T) {
+	// SGP.22's RSPDefinitions module is AUTOMATIC TAGS, so the three untagged
+	// members of ReplaceSessionKeysRequest take the context tags 80/81/82
+	// rather than the generic OCTET STRING tag 04. A real eUICC accepts only
+	// the 80/81/82 form (docs/real-card-test-report.md, R2).
+	g := golden(t)
+	r := &ReplaceSessionKeysRequest{
+		InitialMacChainingValue: seqBytes(16, 0x22),
+		PPKEnc:                  seqBytes(16, 0x00),
+		PPKCmac:                 seqBytes(16, 0x11),
+	}
+	hexEq(t, g["ReplaceSessionKeysRequest"], r.Encode())
+}
+
 func TestEncodeServerSigned1(t *testing.T) {
 	g := golden(t)
 	s := &ServerSigned1{
