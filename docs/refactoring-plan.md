@@ -337,7 +337,7 @@
 
 ## 8. 结果
 
-- **提交**：35 个提交（阶段 0–4），每个提交前后 `go build ./... && go vet ./... && go test ./...` 全绿，
+- **提交**：25 个提交（阶段 0–4），每个提交前后 `go build ./... && go vet ./... && go test ./...` 全绿，
   `gofmt -l cmd internal` 为空，`golangci-lint run`（仓库配置）0 问题。
 - **结构性成果**
   - `internal/service` 不再 import `net/http`；`internal/cert` 不再 import `internal/config`。
