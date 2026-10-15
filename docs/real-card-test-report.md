@@ -294,3 +294,73 @@ The eUICC carries two test profiles:
 
 Both should be deleted (`profile delete`) before the card is used for anything
 else. The card's notification queue is empty.
+
+## 10. Second pass: re-run on the updated working tree (2026-10-15)
+
+The tree had moved on (the fifth esim42 integration round: in-place re-issue of
+an `Available` ICCID, pool ownership enforced on `downloadOrder`, `smdpAddress`
+in the `confirmOrder` response, `usage.ranges` + `reassign_conflict` for tenants,
+OpenAPI updates). Everything below was re-run against that tree, on a fresh
+database (18 templates, 100 pooled ICCIDs).
+
+**Baseline** - `make build`, `go vet`, `golangci-lint run` clean, `go test ./...`
+29 packages ok.
+
+**Real card** (one continuous pass): ES2+ `downloadOrder` + `confirmOrder` (the
+response now carries `smdpAddress: "testsmdpplus1.example.com"`) -> `lpac profile
+download` -> `es10b_load_bound_profile_package` success -> the Profile installs
+(`89000123450000000003`) -> install notification verified -> SM-DP+ state
+`Installed`. Outbound ES2+ progress notifications: point 3 and point 4 both
+`Executed-Success`.
+
+**ACR-0, full redownload cycle (SGP.22 §3.1.7)** - while the Profile was
+`Installed`: `lpac profile download -m ACR-0-89000123450000000003` produced an
+outbound `ES2+.HandleAcrRequest` (confirmed by the Operator stub,
+`rsp42_acr_requests_total{outcome="allowed"}`), notification point 17, and a
+**rotated MatchingID** (`MATCH-AFF3A057580537E9`). Deleting the Profile on the
+card and processing the delete notification moved the SM-DP+ state
+`Installed -> Released` (the `allow_redownload_after_delete` opt-in), and a
+download with the rotated MatchingID installed it again (`Installed`). The
+Profile timeline shows the whole chain:
+
+```
+order confirmOrder | notification install | audit es2p:handleAcrRequest
+notification delete | notification install | audit es2p:handleAcrRequest
+```
+
+**ACR-1** (`-m ACR-1-...003`, availability check) is the control case: the same
+Operator confirmation and point 17, but the MatchingID is **not** rotated.
+`installedAt` intentionally keeps the first installation timestamp
+(`internal/service/order.go` line 110).
+
+**New behaviours, live**
+
+| Behaviour | Result |
+|---|---|
+| `downloadOrder` naming an ICCID owned by another tenant's pool | `8.2.1/3.3` "belongs to another tenant"; the pool entry keeps its owner (20 available) |
+| `Usage.ranges` in `GET /tenants/{id}` | `{profiles 0, templates 0, poolEntries 20, batches 0, personalization 0, ranges 1}` |
+| `Available` Profile re-issued in place by a later `downloadOrder` | same row (`createdAt` unchanged, IMSI preserved), state back to `Linked`, the cancelled order's `matchingId` cleared |
+| Forced reassignment with a duplicate per-tenant template name | `409 {"code":"conflict","details":{"reason":"reassign_conflict","tables":["upp_templates"]}}`, tenant still exists, nothing migrated |
+
+**ES2+ negatives** - all documented codes reproduced: `8.1/1.2` (malformed
+ICCID, bad `matchingId` charset, bad `finalProfileStatusIndicator`),
+`8.2.5/3.9`, `8.2.5/1.2`, `8.1.1/2.2` (missing `iccid`, missing `releaseFlag`),
+`8.2.6/3.3`, `8.1.1/3.10`, `8.2.6/3.10`, `8.2.1/3.10`, `8.2.1/3.9`;
+`handleDownloadProgressInfo` -> 204. `cancelOrder` on a genuinely `Installed`
+Profile answers `8.2.1/3.3`, while a `Released` Profile (never downloaded) can be
+cancelled and returns to `Available` - both consistent with Table 30.
+
+**Management/UPP/ES12/ASN.1** - OpenAPI 200 (with the F8 fix: `UPPValidation`
+requires only `valid` and declares `error`); `/profiles/stats`, `/audit` page and
+`afterId` cursor, `/callbacks`; `/upp` list (18), `validate` (`valid:true` + 29
+warnings; a parse failure answers `{"error": ..., "valid": false}`), `/schema`
+(19 fields), `/decoded` (30 elements, 201 files), `/bytes` byte-identical to the
+source, `/upp/render` ad-hoc (`rendered:true`, `<ad-hoc>`), `deactivate`/
+`activate`; N16 (`SAIP 3.3` -> `409 saip_version_not_supported`, `maxSupported
+2.3`); ES12 (`confirmOrder` with `smdsAddress` recorded in
+`smds_registrations`); ASN.1 binding (200, `application/x-gsma-rsp-asn1`,
+`A2 { BF39 { A0 ... } }`, i.e. R3 reproduced).
+
+**Card state** - the card now holds three test Profiles (`89000123456789012341`
+from osmo-smdpp, `89000123450000000094` and `89000123450000000003` from rsp42);
+they can all be deleted with `lpac profile delete <iccid>`.
