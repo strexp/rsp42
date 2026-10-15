@@ -260,6 +260,23 @@ func TestResourceResponsesMatchTheDeclaredSchema(t *testing.T) {
 	status, raw = testutil.DoJSON(t, "GET", base+"/upp/contract.der/decoded", nil)
 	require.EqualValues(t, 200, status, string(raw))
 	validateAgainst(t, declaredSchema(t, apiPrefix+"/upp/{name}/decoded", "get", "200"), raw)
+
+	// POST /upp/validate has two documented 200 shapes: a full validation
+	// (inspection/warnings/errors) and a parse failure that carries only
+	// valid/error. Both are driven here so the contract stays honest - a
+	// generated client has to handle the second one.
+	validateSchema := declaredSchema(t, apiPrefix+"/upp/validate", "post", "200")
+	status, raw = testutil.DoJSON(t, "POST", base+"/upp/validate", map[string]any{
+		"data": base64.StdEncoding.EncodeToString(der),
+	})
+	require.EqualValues(t, 200, status, string(raw))
+	validateAgainst(t, validateSchema, raw)
+
+	status, raw = testutil.DoJSON(t, "POST", base+"/upp/validate", map[string]any{
+		"data": base64.StdEncoding.EncodeToString([]byte{0xbf, 0x36, 0x05, 0xde, 0xad, 0xbe, 0xef, 0x00}),
+	})
+	require.EqualValues(t, 200, status, string(raw))
+	validateAgainst(t, validateSchema, raw)
 }
 
 // TestCreateProfileRequestMatchesTheDocumentedSchema validates the request body

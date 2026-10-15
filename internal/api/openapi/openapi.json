@@ -1807,16 +1807,18 @@
         }
       },
       "UPPValidation": {
+        "description": "Result of POST /upp/validate. When the uploaded DER cannot be parsed, only `valid` (false) and `error` are returned; otherwise `inspection`, `warnings` and `errors` are present as well.",
         "type": "object",
         "required": [
-          "valid",
-          "inspection",
-          "warnings",
-          "errors"
+          "valid"
         ],
         "properties": {
           "valid": {
             "type": "boolean"
+          },
+          "error": {
+            "description": "Parse failure; `inspection`, `warnings` and `errors` are absent in this case.",
+            "type": "string"
           },
           "inspection": {
             "$ref": "#/components/schemas/UPPInspection"
