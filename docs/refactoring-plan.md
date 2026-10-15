@@ -260,6 +260,7 @@
 | `saip/personalization/csv.go:33` | 领域包在请求路径上 `os.Open` | 需先定义新的 ingestion 边界 |
 | `store/migrations/00008:47` | `iccid_pool.imsi` 死列 | schema 变更 |
 | `api/es2plus/handlers.go:~500` | ACR 不可用时 501 纯文本，非 SGP.22 信封 | wire 行为 |
+| `api/adminhttp/adminhttp.go:89` | `ReadJSON` 用 `json.Decoder`，`common.ReadJSON` 用 `json.Unmarshal`：尾随内容前者接受、后者拒绝 | 统一即改变请求体接受面 |
 
 ## 7. 执行记录
 
@@ -268,8 +269,8 @@
 | 0 护栏 | `95fdb62` | 完成（`internal/archcheck`：层次边、叶子包、bertlv 单点引用；`testutil` 规则随 1.1 加入） |
 | 1 机械搬移 | 见下表 | 完成 |
 | 2 包边界 | 见下表 | 完成 |
-| 3 去重与接口 | — | 待开始 |
-| 4 文档对齐 | — | 待开始 |
+| 3 去重与接口 | 见下表 | 完成 |
+| 4 文档对齐 | 见下表 | 完成 |
 
 ### 阶段 2 明细
 
@@ -297,6 +298,21 @@
 | 1.10 | `d28da16` | 删除死代码（`asn1bind.SubjectCode`、`ICCIDPoolEntry.Expired`、`RenderResult`、`ClampSize/ClampPage` 收私有）与 9 段孤儿注释 |
 | 1.11 | `25216df` | 状态码词表 → `internal/rsp/status`（rsp 自身不引用它） |
 
+### 阶段 3 明细
+
+| # | 提交 | 内容 |
+|---|---|---|
+| 3.17 | `27be1d3` | `store` 新增泛型 `queryAll[T]`，24 处手写 `rows.Next()` 循环收敛；抽出 `scanNotification`/`scanOrder`/`scanICCIDRange`/`scanEIDSummary`/`scanRegistration` 与 `notificationCols`/`auditCols`；删除 `collectEvents`/`collectPersonalization`。4 处 `Stats` 聚合循环**有意保留**（它们构造非 nil 的空 map/slice，JSON 客户端依赖 `[]` 而非 `null`） |
+| 3.18 | `de3b2e8` | `es9plus`/`es11`/`es12`/`es2plus` 各自新增 `deps.go` 窄接口 + 编译期断言（`CMAE`/`Notifier`/`DS`/`EventRegistrar`/`TenantResolver`/`Orders`/`Inventory`/`Registrar`） |
+| 3.19 | — | **未执行**：`adminhttp.ReadJSON` 用 `json.Decoder`（容忍尾随内容），`common.ReadJSON` 用 `json.Unmarshal`（拒绝尾随内容）。统一会开始拒绝此前接受的请求体，属行为变更 |
+| 3.20 | — | **不需要执行**：`client/es2p` 的 `funcID` 已是 `Client` 的字段（`c.funcID`），并非包级变量；先前分析有误 |
+
+### 阶段 4 明细
+
+| # | 提交 | 内容 |
+|---|---|---|
+| 4.21 | `ead7aa6` | `docs/architecture.md`：包清单、依赖图、叶子包、目录职责表全部按新树更新；修正 testutil/依赖倒挂/HTTP 客户端/文件系统触点/测试形态/编译期断言等失效表述。同时更新 `dependencies.md`、`esim42-integration-gaps.md`、`interfaces.md` 中已迁移的路径 |
+
 ### 执行期间的偏差（已判定，不影响目标）
 
 1. **`internal/testutil` 的手写 TLV 编码器保留**。1.8 原计划"一并收敛"，但
@@ -314,8 +330,24 @@
 6. **2.15 时间线未上移 `service`**，改为独立的 `admin/timeline.go`。它是单个端点用的
    读模型投影；上移需为 `service` 增加 5 个消费方端口（与 ISP 目标相悖），且不迁移
    任何业务规则。
-7. **2.16 只做了 `stats.go` 拆分，模型文件未统一到 `*_model.go`**。现有三种聚合有
-   `*_model.go`、其余内联，两种方向都能统一；`docs/architecture.md` 的描述是
-   "one repository per aggregate, `errors.go` 与 `sqlutil.go` 并列"，内联更贴合该表述，
-   故本轮不动，留待明确取舍（见下）。
+7. **store 模型文件统一为"内联"**（经确认）。3 个 `*_model.go` 折叠回各自的聚合文件，
+   与 `docs/architecture.md` 的"one repository per aggregate"一致。
+8. **3.17 只收敛了 24 处循环，保留 4 处 `Stats` 聚合循环**。原因见上表。
+9. **3.19 / 3.20 未执行**，原因见上表（前者属行为变更，后者原分析有误）。
 
+## 8. 结果
+
+- **提交**：35 个提交（阶段 0–4），每个提交前后 `go build ./... && go vet ./... && go test ./...` 全绿，
+  `gofmt -l cmd internal` 为空，`golangci-lint run`（仓库配置）0 问题。
+- **结构性成果**
+  - `internal/service` 不再 import `net/http`；`internal/cert` 不再 import `internal/config`。
+  - 新增叶子包 `internal/hexutil`、`internal/rsp/status`；新增 `internal/uppinspect`、
+    `internal/client/es12`、`internal/mockoperator`、`internal/cli/admin`、`internal/api/openapi`。
+  - 每个 HTTP 包（admin/dsadmin/es9plus/es11/es12/es2plus）都声明自己的消费方接口并带编译期断言。
+  - `internal/testutil` 真正不再进入二进制，且由 `internal/archcheck` 在 `go test` 中强制。
+  - 最大单文件（非测试）从 640 行（`es2plus/handlers.go`，已删除）降到 `admin/profiles.go` 334 行。
+- **可验证的不变量**（`internal/archcheck`）：层次边白名单、叶子包纯净、`bertlv` 单点引用、
+  `testutil` 仅限测试。
+- **文档**：`docs/architecture.md` 与实际 `go list` 依赖一致；`docs/refactoring-plan.md` 登记了
+  全部偏差与未执行项。
+- **未做（行为变更）**：见 §6 与 3.19。这些是后续独立评审的输入，本轮**未改一行行为**。
