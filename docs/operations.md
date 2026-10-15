@@ -74,9 +74,9 @@ smdpp:            # or smds for the SM-DS
       allowed_origins: ["https://ops.example.com"]   # or ["*"] (dev only)
 ```
 
-An empty list disables CORS. `deploy/demo.html` is a single-file front-end for
-the management API; serve it from an origin listed here (or use `["*"]` in a
-test config).
+An empty list disables CORS. rsp42 ships no browser front-end (the management
+API is BSS/OSS-facing); list here the origin of the front-end that calls it (or
+use `["*"]` in a test config).
 
 ## UPP templates
 

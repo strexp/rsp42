@@ -17,9 +17,9 @@ smdpp:
   enabled: true
   server:
     bind: "0.0.0.0"
-    # Cross-origin access for browser clients (e.g. deploy/demo.html). An empty
-    # list disables CORS; "*" allows any origin (test/dev only — restrict it in
-    # production).
+    # Cross-origin access for browser clients (the management API is called by
+    # the BSS/OSS front-end). An empty list disables CORS; "*" allows any origin
+    # (test/dev only — restrict it in production).
     cors:
       allowed_origins: ["*"]
     es9p:
