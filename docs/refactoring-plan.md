@@ -267,9 +267,19 @@
 |---|---|---|
 | 0 护栏 | `95fdb62` | 完成（`internal/archcheck`：层次边、叶子包、bertlv 单点引用；`testutil` 规则随 1.1 加入） |
 | 1 机械搬移 | 见下表 | 完成 |
-| 2 包边界 | — | 待开始 |
+| 2 包边界 | 见下表 | 完成 |
 | 3 去重与接口 | — | 待开始 |
 | 4 文档对齐 | — | 待开始 |
+
+### 阶段 2 明细
+
+| # | 提交 | 内容 |
+|---|---|---|
+| 2.12 | `7c8052c` | `api/admin/openapi` → `internal/api/openapi`；dsadmin 不再依赖 admin |
+| 2.13 | `fe095a5` | `es2plus/handlers.go`（640 行）拆为 13 个按关注点的文件（同包，字节级照搬） |
+| 2.14 | `7b15290` | 12 个 admin 命令 → `internal/cli/admin`；派发表留在 `internal/cli`；`kms.OpenFileProvider` 取代两处私有 KEK 映射；9 处硬编码配置路径改用 `admin.DefaultConfigPath` |
+| 2.15 | `f54b773` | UPP 字段目录 → `uppinspect.FieldSchema`/`PersonalizationFields`；时间线独立为 `admin/timeline.go`；`getBatch` 复用 `Stats`（9 次查询 → 1）；删除 10 处不可达的 501 分支 |
+| 2.16 | `f863f4f` | `store/stats.go` 按聚合拆分（`Stats` 各自归位，共享的 `StatCount`/`statGroupBy`/`buildWhere` 移入 `sqlutil.go`） |
 
 ### 阶段 1 明细
 
@@ -298,4 +308,14 @@
    但被各自包的测试直接使用；按"零引用才删"的保守口径保留。
 4. **1.11 采用整体迁移（而非在 `rsp` 保留别名）**。因为 `rsp` 自身对状态码零引用，
    迁移后两个包完全解耦；保留别名只能做到"同一实现两个名字"，无法消除 `rsp` 依赖。
+5. **2.14 未引入第三个共享包**。`cli/admin` 只承接命令实现，派发表仍留在
+   `internal/cli`，因此 `Command`/`IsHelp`/默认配置路径无需外移；`DefaultConfigPath`
+   在 `cli/admin` 各存一份常量（值相同），`kms.OpenFileProvider` 消除 KEK 映射重复。
+6. **2.15 时间线未上移 `service`**，改为独立的 `admin/timeline.go`。它是单个端点用的
+   读模型投影；上移需为 `service` 增加 5 个消费方端口（与 ISP 目标相悖），且不迁移
+   任何业务规则。
+7. **2.16 只做了 `stats.go` 拆分，模型文件未统一到 `*_model.go`**。现有三种聚合有
+   `*_model.go`、其余内联，两种方向都能统一；`docs/architecture.md` 的描述是
+   "one repository per aggregate, `errors.go` 与 `sqlutil.go` 并列"，内联更贴合该表述，
+   故本轮不动，留待明确取舍（见下）。
 
