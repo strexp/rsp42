@@ -122,12 +122,8 @@ func upsertPersonalization(db dbtx, p *Personalization) error {
 	return nil
 }
 
-// lookup finds a row by ICCID when set, otherwise by IMSI within the tenant.
-func (r *PersonalizationRepo) lookup(tenant, iccid, imsi string) (*Personalization, error) {
-	return lookupPersonalization(r.db, tenant, iccid, imsi)
-}
-
-// lookupPersonalization is lookup's body, usable inside a transaction.
+// lookupPersonalization finds a row by ICCID when set, otherwise by IMSI within
+// the tenant. It takes the transaction handle so Upsert can run it read-then-write.
 func lookupPersonalization(db dbtx, tenant, iccid, imsi string) (*Personalization, error) {
 	query := "SELECT " + personalizationCols + " FROM personalization WHERE COALESCE(tenant_id,'') = ?"
 	args := []any{tenant}

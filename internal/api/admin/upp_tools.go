@@ -234,7 +234,7 @@ func (h *Handler) renderUPP(w http.ResponseWriter, r *http.Request) {
 		adminhttp.WriteJSON(w, http.StatusBadRequest, adminhttp.ErrorBody("invalid_request", "name or data is required"))
 		return
 	}
-	data, err := req.persoReq.toData("")
+	data, err := req.toData("")
 	if err != nil {
 		adminhttp.WriteErr(w, http.StatusBadRequest, err.Error())
 		return

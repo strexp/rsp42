@@ -208,7 +208,7 @@ func (h *Handler) importPerso(w http.ResponseWriter, r *http.Request) {
 			adminhttp.WriteErr(w, http.StatusBadRequest, fmt.Sprintf("record %d has no iccid", i+1))
 			return
 		}
-		d, err := rec.persoReq.toData(iccid)
+		d, err := rec.toData(iccid)
 		if err != nil {
 			adminhttp.WriteErr(w, http.StatusBadRequest, fmt.Sprintf("record %d: %v", i+1, err))
 			return

@@ -219,21 +219,17 @@ func TestAdminIdempotentCreateProfile(t *testing.T) {
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Idempotency-Key", "create-7")
 
-	first, err := http.DefaultClient.Do(req)
-	require.NoError(t, err)
-	firstRaw := readAll(t, first)
-	require.Equal(t, 201, first.StatusCode)
+	firstStatus, _, firstRaw := doRead(t, req)
+	require.Equal(t, 201, firstStatus)
 
 	req2, err := http.NewRequest("POST", base+"/profiles", strings.NewReader(mustJSON(t, body)))
 	require.NoError(t, err)
 	req2.Header.Set("Content-Type", "application/json")
 	req2.Header.Set("Idempotency-Key", "create-7")
-	second, err := http.DefaultClient.Do(req2)
-	require.NoError(t, err)
-	secondRaw := readAll(t, second)
-	require.Equal(t, 201, second.StatusCode)
+	secondStatus, secondHeader, secondRaw := doRead(t, req2)
+	require.Equal(t, 201, secondStatus)
 	require.JSONEq(t, firstRaw, secondRaw)
-	require.Equal(t, "true", second.Header.Get("Idempotency-Replayed"))
+	require.Equal(t, "true", secondHeader.Get("Idempotency-Replayed"))
 
 	status, raw := testutil.DoJSON(t, "GET", base+"/profiles", nil)
 	require.Equal(t, 200, status)
@@ -252,7 +248,7 @@ func TestAdminStatsAndNotifications(t *testing.T) {
 	require.Contains(t, string(raw), `"groupBy":"state"`)
 	require.Contains(t, string(raw), "Allocated")
 
-	status, raw = testutil.DoJSON(t, "GET", base+"/profiles/stats?groupBy=bogus", nil)
+	status, _ = testutil.DoJSON(t, "GET", base+"/profiles/stats?groupBy=bogus", nil)
 	require.Equal(t, 400, status)
 
 	status, raw = testutil.DoJSON(t, "GET", base+"/audit/stats?groupBy=interface", nil)
@@ -293,12 +289,18 @@ func mustJSON(t *testing.T, v any) string {
 	return string(b)
 }
 
-func readAll(t *testing.T, resp *http.Response) string {
+// doRead performs req and returns its status, headers and body, closing the body
+// before returning. It deliberately does not return the *http.Response: the
+// response value would escape the function, and neither the bodyclose linter nor
+// a caller can tell that the body is already closed.
+func doRead(t *testing.T, req *http.Request) (int, http.Header, string) {
 	t.Helper()
+	resp, err := http.DefaultClient.Do(req)
+	require.NoError(t, err)
 	defer func() { _ = resp.Body.Close() }()
 	b, err := io.ReadAll(resp.Body)
 	require.NoError(t, err)
-	return string(b)
+	return resp.StatusCode, resp.Header, string(b)
 }
 
 // TestAdminOpenAPIDocIsValid asserts the embedded OpenAPI description is
@@ -503,10 +505,8 @@ func TestAdminEIDAggregationAndCSVImport(t *testing.T) {
 	req, err := http.NewRequest("POST", base+"/profiles/import", strings.NewReader(csvBody))
 	require.NoError(t, err)
 	req.Header.Set("Content-Type", "text/csv")
-	resp, err := http.DefaultClient.Do(req)
-	require.NoError(t, err)
-	body := readAll(t, resp)
-	require.Equal(t, 200, resp.StatusCode)
+	status, _, body := doRead(t, req)
+	require.Equal(t, 200, status)
 	require.Contains(t, body, `"imported":2`)
 	require.Contains(t, body, `"ok":false`)
 

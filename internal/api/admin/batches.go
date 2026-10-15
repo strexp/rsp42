@@ -166,7 +166,7 @@ func (h *Handler) confirmBatch(w http.ResponseWriter, r *http.Request) {
 		return err
 	})
 	if failed > 0 {
-		h.Batch.UpdateState(id, "Completed")
+		h.markBatchState(id, "Completed")
 	}
 	adminhttp.WriteJSON(w, http.StatusOK, map[string]any{"applied": applied, "failed": failed})
 }
@@ -187,8 +187,17 @@ func (h *Handler) cancelBatch(w http.ResponseWriter, r *http.Request) {
 		_, err := h.Orders.Cancel(p.ICCID, unavailable)
 		return err
 	})
-	_ = h.Batch.UpdateState(id, "Cancelled")
+	h.markBatchState(id, "Cancelled")
 	adminhttp.WriteJSON(w, http.StatusOK, map[string]any{"applied": applied, "failed": failed})
+}
+
+// markBatchState records the batch's terminal state. A failure is logged rather
+// than returned: the per-profile transitions have already been applied and are
+// reported in applied/failed, so the batch marker is informational.
+func (h *Handler) markBatchState(id int64, state string) {
+	if err := h.Batch.UpdateState(id, state); err != nil && h.Log != nil {
+		h.Log.Warn("batch state update", "id", id, "state", state, "err", err)
+	}
 }
 
 func (h *Handler) deleteBatch(w http.ResponseWriter, r *http.Request) {

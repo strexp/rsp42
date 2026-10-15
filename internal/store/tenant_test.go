@@ -202,7 +202,7 @@ func TestProfileTenantFilterAndExternalRef(t *testing.T) {
 	require.Equal(t, 1, total)
 	require.Empty(t, items[0].TenantID)
 
-	items, total, err = st.Profiles.ListFiltered(ProfileFilter{ExternalRef: "order-1"}, 10, 0, "")
+	_, total, err = st.Profiles.ListFiltered(ProfileFilter{ExternalRef: "order-1"}, 10, 0, "")
 	require.NoError(t, err)
 	require.Equal(t, 2, total)
 

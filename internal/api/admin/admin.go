@@ -243,14 +243,6 @@ func (h *Handler) openapi(w http.ResponseWriter, _ *http.Request) {
 	adminhttp.WriteJSON(w, http.StatusOK, openapi.Doc())
 }
 
-func op(summary string, params ...string) map[string]any {
-	m := map[string]any{"summary": summary, "responses": map[string]any{"200": map[string]any{"description": "OK"}}}
-	if len(params) > 0 && params[0] != "" {
-		m["parameters"] = []map[string]string{{"name": "query", "in": "query", "description": params[0]}}
-	}
-	return m
-}
-
 // adminhttp.ClampSize bounds a page size to [1, adminhttp.MaxPageSize] with the shared default.
 
 // adminhttp.ClampPage bounds a 1-based page number.
