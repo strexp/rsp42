@@ -53,6 +53,10 @@ func cmdSMDpp(prog string, args []string) int {
 		UPP: st.UPP, Idem: st.Idem, AuditRepo: st.Audit,
 		RequesterTenants: requesterResolver(cfg.SMDpp.ES2P.RequesterTenants, log),
 		OrderAudit:       st.Orders,
+		// Without the registry the ES2+ counters (unmapped requester, unparsed
+		// profileType, ES12 registration failures) are described by the registry
+		// but never incremented.
+		Metrics: reg,
 	})
 
 	// The Operator-facing ES2+ client is shared by the progress callbacks and

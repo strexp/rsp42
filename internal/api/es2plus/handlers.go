@@ -243,6 +243,11 @@ func (h *Handler) confirmOrder(w http.ResponseWriter, r *http.Request) {
 	if matchingID == "" {
 		matchingID = "MATCH-" + strings.ReplaceAll(uuid.NewString(), "-", "")[:16]
 	}
+	// The SM-DS registration is keyed by the MatchingID (§3.6). Re-confirming an
+	// order with a different one leaves a registration that no longer matches the
+	// Profile - an LPA could still discover it, but the Activation Code would be
+	// refused - so the previous registration is dropped first.
+	previousMatchingID := p.MatchingID
 	p.MatchingID = matchingID
 	if req.SMDSAddress != "" {
 		p.SMDSAddress = req.SMDSAddress
@@ -269,6 +274,15 @@ func (h *Handler) confirmOrder(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	_ = h.record(tenant, "confirmOrder", p.ICCID, p.EID, matchingID, req)
+	// A registration for the order's previous MatchingID is stale now.
+	if previousMatchingID != "" && previousMatchingID != matchingID && h.Registrar != nil && p.EID != "" {
+		meta := service.EventMeta{Tenant: tenant, ICCID: p.ICCID, MatchingID: previousMatchingID}
+		if err := h.Registrar.DeleteEvent(p.EID, previousMatchingID, meta); err != nil {
+			h.Log.Warn("ES12 delete stale event after a MatchingID change",
+				"eid", p.EID, "eventId", previousMatchingID, "tenant", tenant, "err", err)
+			h.registerFailure(tenant, p.EID, p.ICCID, err)
+		}
+	}
 	if req.SMDSAddress != "" && h.Registrar != nil && p.EID != "" {
 		meta := service.EventMeta{Tenant: tenant, ICCID: p.ICCID, MatchingID: matchingID}
 		if err := h.Registrar.Register(p.EID, matchingID, req.SMDSAddress, meta); err != nil {

@@ -156,6 +156,46 @@ func TestConfirmOrderStandardVerifications(t *testing.T) {
 	require.True(t, se.IsCode("8.1.1", "2.2"), "eid missing with smdsAddress: got %v", err)
 }
 
+// TestConfirmOrderMatchingIDChangeDropsStaleEvent covers F8: the SM-DS
+// registration is keyed by the MatchingID, so re-confirming an order with a
+// different one must drop the previous registration rather than leave both.
+func TestConfirmOrderMatchingIDChangeDropsStaleEvent(t *testing.T) {
+	client, st := newTenantServer(t)
+	ctx := context.Background()
+
+	dl, err := client.DownloadOrderWith(ctx, testEID, "", "carrier-a/tpl-a", es2p.CallOptions{Requester: "op-a"})
+	require.NoError(t, err)
+
+	confirm := func(matchingID string) {
+		t.Helper()
+		_, err := client.ConfirmOrderWith(ctx, es2p.ConfirmOrderRequest{
+			ICCID: dl.ICCID, EID: testEID, MatchingID: matchingID,
+			SMDSAddress: "testrootsmds.example.com",
+		}, es2p.CallOptions{Requester: "op-a"})
+		require.NoError(t, err)
+	}
+	active := func() []string {
+		t.Helper()
+		regs, err := st.Regs.ListActiveByEID(testEID)
+		require.NoError(t, err)
+		out := make([]string, 0, len(regs))
+		for _, g := range regs {
+			out = append(out, g.EventID)
+		}
+		return out
+	}
+
+	confirm("M-OLD-1")
+	require.Equal(t, []string{"M-OLD-1"}, active())
+
+	confirm("M-NEW-2")
+	require.Equal(t, []string{"M-NEW-2"}, active(), "the previous registration must be dropped")
+
+	// A resend with the same MatchingID takes no other action.
+	confirm("M-NEW-2")
+	require.Equal(t, []string{"M-NEW-2"}, active())
+}
+
 // TestUnmappedRequesterSignals covers F1: the platform-default fallback of an
 // unmapped functionRequesterIdentifier is counted and lands on the audit row, so
 // an operator health check has a signal (docs/interfaces.md).
