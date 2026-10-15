@@ -28,7 +28,7 @@
 | 侧 | 结论 |
 |---|---|
 | rsp42 | 两轮改造**全部落地或已收敛**。第三轮复核后**遗漏的 R1（值域校验）已落地**，§0.6 的文档修正**已全部完成**；本轮进一步按 **SGP.22 标准**修订了 ES2+ 订单函数（§12），并与 esim42 契约发生冲突时一律以标准为准。仍需 rsp42 动作的只剩 **R2**（待真机/一致性工具裁决）与 **R9**（暂不做，属用户决定）。 |
-| esim42 | 转为**契约消费**：以 `internal/api/admin/openapi/openapi.json`（`info.version 0.2.0`）快照 + `openapi-typescript` 生成类型；ES2+ 类型手写并冻结在其 `02` §2.1。esim42 侧的实施不变量与对账任务见其 `02` §7.4/§8。**本轮 rsp42 侧的标准修订要求 esim42 同步修正 4 处契约**，见 **§12.2**（cancelOrder 必填字段、matchingId 字符集、downloadOrder 响应字段、指标名）。 |
+| esim42 | 转为**契约消费**：以 `internal/api/openapi/openapi.json`（`info.version 0.2.0`）快照 + `openapi-typescript` 生成类型；ES2+ 类型手写并冻结在其 `02` §2.1。esim42 侧的实施不变量与对账任务见其 `02` §7.4/§8。**本轮 rsp42 侧的标准修订要求 esim42 同步修正 4 处契约**，见 **§12.2**（cancelOrder 必填字段、matchingId 字符集、downloadOrder 响应字段、指标名）。 |
 | 共同 | 本轮新增的**最强第三方证据**：`refs/simulator-testing/INTEROP-TEST-REPORT.md`（lpac × YggdraSIM）跑通 ES2+ 下单 → SM-DS 发现 → ES9+ → eUICC 安装 → 通知 → `Installed`；BPP 由 pySim 独立解码 + BSP 验签解密通过，个性化值逐项命中。它不替代 esim42 自己的联调，但显著降低 rsp42 侧未知风险。 |
 
 ### 0.3 第二轮必改项（N 清单：除 N6/N10/N9/N14 外全部落地）
@@ -220,9 +220,9 @@
 
 ## 5. 管理 API（已落地；权威 = OpenAPI）
 
-> 权威契约：`internal/api/admin/openapi/openapi.json`（OpenAPI **3.0.3**，`info.version 0.2.0`，`//go:embed`；线上 `GET /admin/api/v1/openapi.json`）。当前 **66 个 operation / 52 个 path**（上一版为 61/48）。
-> **路径已迁移**：上一版的 `internal/api/admin/openapi.json` → 本版的 `internal/api/admin/openapi/openapi.json`（esim42 的快照路径需同步）。
-> SM-DS 监听器上的同名端点返回**只含 `/events`** 的过滤文档（`openapi.FilteredDoc` 定义在 `internal/api/admin/openapi`，由 `internal/api/dsadmin` 调用）。
+> 权威契约：`internal/api/openapi/openapi.json`（OpenAPI **3.0.3**，`info.version 0.2.0`，`//go:embed`；线上 `GET /admin/api/v1/openapi.json`）。当前 **66 个 operation / 52 个 path**（上一版为 61/48）。
+> **路径已迁移**：该文档现位于 `internal/api/openapi/openapi.json`（`admin` 与 `dsadmin` 共用），esim42 的快照路径需同步。
+> SM-DS 监听器上的同名端点返回**只含 `/events`** 的过滤文档（`openapi.FilteredDoc` 定义在 `internal/api/openapi`，由 `internal/api/dsadmin` 调用）。
 
 上一版 §5 的“变更草案”已全部实现；esim42 侧的可消费矩阵见其 `02` §3。本轮相对上一版的关键差异：
 
@@ -256,7 +256,7 @@
 | 全部 | 越权状态码：ICCID → `8.2.1/1.2`；Profile Type/模板 → `8.2.5/1.2` | 已落地 |
 | 回调 | 载荷增 `tenantId`、`externalRef`、`matchingId`；`notificationPointId` 新增 `17` = ACR | 纯增量；已落地 |
 
-> **ES2+ 错误码以 `internal/rsp/errors.go` 为准**（上一版 §6 的表格已被 C3/C4/N12/C1 的拆分取代）。esim42 侧的正确分支见其 `02` §2.6；本轮唯一需要 rsp42 修正的是 `docs/interfaces.md` §Quotas 的漂移（§0.6-1）。
+> **ES2+ 错误码以 `internal/rsp/status/status.go` 为准**（上一版 §6 的表格已被 C3/C4/N12/C1 的拆分取代）。esim42 侧的正确分支见其 `02` §2.6；本轮唯一需要 rsp42 修正的是 `docs/interfaces.md` §Quotas 的漂移（§0.6-1）。
 
 ---
 
@@ -339,10 +339,10 @@
 | G4 | 下载回写 EID | `[x]` | `service/cmae.go` `AuthenticateClient`（EID 为空则绑定；`Allocated → Linked`） |
 | G5 | 幂等与业务关联 | `[x]` | `service/inventory.go:sameResend`（Table 24 NOTE）、`api/middleware/idempotency.go`（`Idempotency-Key`，哈希排除易变 `functionCallIdentifier`）、`store/idempotency.go`、`profiles.external_ref` |
 | G6 | 池加固与凭据池 | `[x]` | `store/pool.go`（租户隔离、`reserved_until`、`reference`、`profile_id`、`ReleaseExpired`）、`service/inventory.go` 失败回滚、`service/order.go` Cancel/Delete 回池、`store/personalization.go`（`ReservePair`）、`POST /personalization/pool/import` |
-| G7 | SAIP 模板能力外露 | `[x]` | `GET /upp/{name}/schema`、`POST /upp/validate`、`POST /upp/render`、`POST /upp/{name}/clone`、`POST /upp/{name}/promote`（`api/admin/upp_tools.go`、`service/upp_inspect.go`）；个性化新增 PLMN/MSISDN/ACC/任意 EF 覆盖 |
+| G7 | SAIP 模板能力外露 | `[x]` | `GET /upp/{name}/schema`、`POST /upp/validate`、`POST /upp/render`、`POST /upp/{name}/clone`、`POST /upp/{name}/promote`（`api/admin/upp_tools.go`、`internal/uppinspect`）；个性化新增 PLMN/MSISDN/ACC/任意 EF 覆盖 |
 | G8 | 审计与看板 | `[x]` | `api/middleware`（actor 取 mTLS 主体 / `functionRequesterIdentifier` / ES12 caller OID；管理 API 记 `esim42-backend`）、`audit_log.tenant_id`、`GET /audit/stats`、`GET /profiles/stats`、`GET /notifications`、timeline 含 session + 审计事件 |
 | G9 | 回调字段与租户路由 | `[x]` | `ProgressInfo` 增 `tenantId/externalRef/matchingId`；`tenants.callback_url` 覆盖；`docs/interfaces.md` 补 `notificationPointId` 语义（含 17=ACR） |
-| G10 | OpenAPI + 错误码 | `[x]` | `internal/api/admin/openapi/openapi.json`（OpenAPI 3.0.3，`info.version 0.2.0`，`//go:embed` + 校验测试）、`internal/api/adminhttp` 的 `{code,message}` |
+| G10 | OpenAPI + 错误码 | `[x]` | `internal/api/openapi/openapi.json`（OpenAPI 3.0.3，`info.version 0.2.0`，`//go:embed` + 校验测试）、`internal/api/adminhttp` 的 `{code,message}` |
 | G11 | 可观测性 | `[x]` | `internal/metrics`，管理监听器 `GET /metrics` |
 | G12 | 并发与存储 | `[x]`（范围已收敛） | `store.Open` 统一追加 `_txlock=immediate`；并发 200 次领号测试；PostgreSQL 与多副本明确不做（§8.4 决策 7–8） |
 | G13 | ACR 调用方侧接线 | `[x]` | `service.ACRChecker` + `es2plus.CallbackClient.HandleAcrRequest`（Table 32d/32e）；拒绝不重试、传输失败退避重试、`acr_timeout` 兜底；ACR-0 轮换与 delete 通知已接线 |
@@ -378,7 +378,7 @@
 
 | # | 项 | 状态 | 现状证据 |
 |---|---|---|---|
-| N16 | SAIP 版本上限 | `[x]` | `profiles.allowed_saip_versions`（`internal/config/config.go`、`config/config.example.yaml`）+ 唯一 choke point（`internal/service/saip_version.go` → `internal/saipver`）；`api/admin/upp.go`（`putUPP` 409 `saip_version_not_supported` + `details`）、`upp_tools.go`（`validateUPP` warning、`clone`/`promote`/`restore` 同校验）、`internal/cli/admin_upp.go`（CLI import 同策略） |
+| N16 | SAIP 版本上限 | `[x]` | `profiles.allowed_saip_versions`（`internal/config/config.go`、`config/config.example.yaml`）+ 唯一 choke point（`internal/service/saip_version.go` → `internal/saipver`）；`api/admin/upp.go`（`putUPP` 409 `saip_version_not_supported` + `details`）、`upp_tools.go`（`validateUPP` warning、`clone`/`promote`/`restore` 同校验）、`internal/cli/admin/admin_upp.go`（CLI import 同策略） |
 | N12 | 版本不兼容干净失败 | `[x]` | `internal/service/download.go` `resolveUPPTemplate`/`loadUPP`（五级候选均校验，显式 pin 不回落）；`ErrProfileVersionNotSupported`；`rsp.CodeProfileVersionNotSupported`（`8.2.6/3.8`）；`CMAE.noteVersionFailure` 写审计并计数；`AuthenticateClient` 提前干净失败；迁移 `00011` |
 | N1 | 审计单调游标 | `[x]` | `store.AuditEntry.ID` + 所有 SELECT/scan 补 `id`；`ListAfterID`（排他下界、`id ASC`）；`GET /audit?afterId=&limit=` 响应 `{items[].id, nextAfterId, hasMore}`，与 `page`/`size` 互斥。**无需迁移**：`audit_log.id` 本就是 `INTEGER PRIMARY KEY AUTOINCREMENT` |
 | N2 | 回调队列管理 API | `[x]` | `store.CallbackFilter`/`ListFiltered`/`Requeue`/`RequeueDead`（tenant/iccid 走 `json_extract(payload_json,…)`，**无需迁移**）；`api/admin/callbacks.go`：`GET /callbacks`（`payload` 已解析对象）、`POST /callbacks/{id}/retry`（非 dead/failed → 409）、`POST /callbacks/retry-dead`；审计 `retryCallback` |
@@ -501,7 +501,7 @@
 
 ## 附：第三轮复核的方法与边界
 
-- **判定基线**：本仓库 `89308b2`；逐条对照 `internal/store/migrations/`、`internal/api/admin/openapi/openapi.json`、`internal/rsp/errors.go`、`config/config.example.yaml` 与相关测试。
+- **判定基线**：本仓库 `89308b2`；逐条对照 `internal/store/migrations/`、`internal/api/openapi/openapi.json`、`internal/rsp/status/status.go`、`config/config.example.yaml` 与相关测试。
 - **输入边界**：仅 `../esim42/todo/01`–`06`；`../esim42/todo/research/` 未纳入本文（按约定）。todo 文档内的 research 引用仅作为 esim42 侧的证据指针，本文不复制其内容。
 - **上一版“改造前快照”附录已删除**：第一轮 G 的改造前判定已不再有运维价值，历史见 git；当前状态以 §9/§9.4 为唯一准。
 - **本文与 `TODO.md` 的分工**：`TODO.md` 只记录未完成工作，其 §2bis 索引指向本文 §0.3、§9.4、§10；本文是 N 清单与决策的权威出处。

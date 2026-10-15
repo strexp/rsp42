@@ -294,7 +294,7 @@ A BSS/OSS-facing management API is served on the admin listener under
 `/admin/api/v1` (JSON; no UI). It has no authentication and must be deployed on a
 trusted network. `GET /admin/api/v1/openapi.json` serves the complete OpenAPI 3.0
 description (schemas and error model included); the same document is checked in
-at `internal/api/admin/openapi/openapi.json`. Every 2xx answer declares its response
+at `internal/api/openapi/openapi.json`. Every 2xx answer declares its response
 schema there, and the test suite validates real responses against the declared
 schema (`internal/api/admin/contract_test.go`).
 
