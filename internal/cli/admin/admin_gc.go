@@ -1,4 +1,4 @@
-package cli
+package admin
 
 import (
 	"flag"
@@ -9,10 +9,10 @@ import (
 	"rsp42/internal/store"
 )
 
-// cmdGC removes stale rows (retention) from the selected database(s).
-func cmdGC(prog string, args []string) int {
+// GC removes stale rows (retention) from the selected database(s).
+func GC(prog string, args []string) int {
 	fs := flag.NewFlagSet("gc", flag.ContinueOnError)
-	cfgPath := fs.String("config", "config/config.yaml", "config path")
+	cfgPath := fs.String("config", DefaultConfigPath, "config path")
 	keep := fs.Duration("keep", 720*time.Hour, "retain rows newer than this (e.g. 720h)")
 	which := fs.String("db", "all", "which database: dp|ds|all")
 	if err := fs.Parse(args); err != nil {

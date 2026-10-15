@@ -1,22 +1,23 @@
-package cli
+package admin
 
 import (
 	"flag"
 	"fmt"
 	"os"
 
+	"rsp42/internal/kms"
 	"rsp42/internal/service"
 	"rsp42/internal/store"
 )
 
-func cmdPersonalization(prog string, args []string) int {
+func Personalization(prog string, args []string) int {
 	if len(args) < 1 {
 		fmt.Fprintf(os.Stderr, "usage: %s admin personalization list|import|delete [--config FILE] [--iccid X]\n", prog)
 		return 2
 	}
 	action := args[0]
 	fs := flag.NewFlagSet("personalization", flag.ContinueOnError)
-	cfgPath := fs.String("config", "config/config.yaml", "config path")
+	cfgPath := fs.String("config", DefaultConfigPath, "config path")
 	iccid := fs.String("iccid", "", "ICCID (delete)")
 	file := fs.String("file", "", "CSV/file path (import)")
 	kind := fs.String("kind", "csv", "import source kind: csv|file|static")
@@ -35,7 +36,7 @@ func cmdPersonalization(prog string, args []string) int {
 		return 1
 	}
 	defer func() { _ = st.Close() }()
-	provider, err := newKMSProvider(&cfg.KMS)
+	provider, err := kms.OpenFileProvider(cfg.KMS.KEKHex, cfg.KMS.KEKFile)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		return 1

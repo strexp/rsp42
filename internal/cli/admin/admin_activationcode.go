@@ -1,4 +1,4 @@
-package cli
+package admin
 
 import (
 	"flag"
@@ -8,7 +8,7 @@ import (
 	"rsp42/internal/activationcode"
 )
 
-func cmdActivationCode(args []string) int {
+func ActivationCode(args []string) int {
 	fs := flag.NewFlagSet("activation-code", flag.ContinueOnError)
 	fqdn := fs.String("fqdn", "", "SM-DP+ FQDN")
 	matchingID := fs.String("matching-id", "", "matching id / token")

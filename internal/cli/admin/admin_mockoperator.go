@@ -1,4 +1,4 @@
-package cli
+package admin
 
 import (
 	"flag"
@@ -9,7 +9,7 @@ import (
 	"rsp42/internal/mockoperator"
 )
 
-func cmdMockOperator(args []string) int {
+func MockOperator(args []string) int {
 	fs := flag.NewFlagSet("mock-operator", flag.ContinueOnError)
 	addr := fs.String("addr", "127.0.0.1:9500", "listen address")
 	if err := fs.Parse(args); err != nil {

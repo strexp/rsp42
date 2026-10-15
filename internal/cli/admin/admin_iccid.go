@@ -1,4 +1,4 @@
-package cli
+package admin
 
 import (
 	"flag"
@@ -8,14 +8,14 @@ import (
 	"rsp42/internal/store"
 )
 
-func cmdICCID(prog string, args []string) int {
+func ICCID(prog string, args []string) int {
 	if len(args) < 1 {
 		fmt.Fprintf(os.Stderr, "usage: %s admin iccid import|list|stats [--config FILE]\n", prog)
 		return 2
 	}
 	action := args[0]
 	fs := flag.NewFlagSet("iccid", flag.ContinueOnError)
-	cfgPath := fs.String("config", "config/config.yaml", "config path")
+	cfgPath := fs.String("config", DefaultConfigPath, "config path")
 	start := fs.String("start", "", "range start ICCID")
 	end := fs.String("end", "", "range end ICCID")
 	note := fs.String("note", "", "range note")

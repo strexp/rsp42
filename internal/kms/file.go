@@ -125,3 +125,15 @@ func (f *FileProvider) Decrypt(ciphertext []byte) ([]byte, error) {
 	nonce, ct := ciphertext[:gcm.NonceSize()], ciphertext[gcm.NonceSize():]
 	return gcm.Open(nil, nonce, ct, nil)
 }
+
+// OpenFileProvider returns a file-backed provider from a hex-encoded KEK
+// (preferred when set) or from a KEK file path.
+//
+// It lives here so the CLI and the admin commands build the same provider from
+// the same two configuration fields without either package owning the mapping.
+func OpenFileProvider(kekHex, kekFile string) (*FileProvider, error) {
+	if kekHex != "" {
+		return NewFileProviderFromHex(kekHex)
+	}
+	return NewFileProvider(kekFile)
+}

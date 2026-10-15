@@ -1,4 +1,4 @@
-package cli
+package admin
 
 import (
 	"context"
@@ -9,7 +9,7 @@ import (
 	"rsp42/internal/client/es2p"
 )
 
-func cmdES2P(prog string, args []string) int {
+func ES2P(prog string, args []string) int {
 	if len(args) == 0 {
 		fmt.Fprintln(os.Stderr, "usage: admin es2p downloadOrder|confirmOrder|cancelOrder|releaseProfile ...")
 		return 2

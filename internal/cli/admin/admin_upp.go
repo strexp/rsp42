@@ -1,4 +1,4 @@
-package cli
+package admin
 
 import (
 	"flag"
@@ -10,14 +10,14 @@ import (
 	"rsp42/internal/store"
 )
 
-func cmdUPP(prog string, args []string) int {
+func UPP(prog string, args []string) int {
 	if len(args) < 1 {
 		fmt.Fprintf(os.Stderr, "usage: %s admin upp list|import [--config FILE] [--dir DIR]\n", prog)
 		return 2
 	}
 	action := args[0]
 	fs := flag.NewFlagSet("upp", flag.ContinueOnError)
-	cfgPath := fs.String("config", "config/config.yaml", "config path")
+	cfgPath := fs.String("config", DefaultConfigPath, "config path")
 	dir := fs.String("dir", "", "UPP template directory (import source)")
 	if err := fs.Parse(args[1:]); err != nil {
 		return 2

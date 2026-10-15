@@ -11,7 +11,7 @@ import (
 // loadCertificates builds the KMS provider and validates the configured
 // certificate material at startup.
 func loadCertificates(cfg *config.Config, log *slog.Logger) (*cert.Manager, *kms.FileProvider, error) {
-	provider, err := newKMSProvider(&cfg.KMS)
+	provider, err := kms.OpenFileProvider(cfg.KMS.KEKHex, cfg.KMS.KEKFile)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -58,13 +58,4 @@ func certOptions(cfg *config.Config, cc config.CertsConfig) cert.Options {
 		DSOID:        cfg.SMDS.OID,
 		AllowExpired: cc.AllowExpiredTestCerts,
 	}
-}
-
-// newKMSProvider builds the software KMS from the configured key source
-// (kek_hex preferred, else kek_file).
-func newKMSProvider(cfg *config.KMSConfig) (*kms.FileProvider, error) {
-	if cfg.KEKHex != "" {
-		return kms.NewFileProviderFromHex(cfg.KEKHex)
-	}
-	return kms.NewFileProvider(cfg.KEKFile)
 }

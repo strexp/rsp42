@@ -1,4 +1,4 @@
-package cli
+package admin
 
 import (
 	"encoding/json"
@@ -52,9 +52,9 @@ func dbTargets(cfg *config.Config, which string) ([]dbTarget, error) {
 	return dsns, nil
 }
 
-func cmdMigrate(prog string, args []string) int {
+func Migrate(prog string, args []string) int {
 	fs := flag.NewFlagSet("migrate", flag.ContinueOnError)
-	cfgPath := fs.String("config", "config/config.yaml", "config path")
+	cfgPath := fs.String("config", DefaultConfigPath, "config path")
 	which := fs.String("db", "all", "which database: dp|ds|all")
 	if err := fs.Parse(args); err != nil {
 		return 2
@@ -81,9 +81,9 @@ func cmdMigrate(prog string, args []string) int {
 	return 0
 }
 
-func cmdRekey(prog string, args []string) int {
+func Rekey(prog string, args []string) int {
 	fs := flag.NewFlagSet("rekey", flag.ContinueOnError)
-	cfgPath := fs.String("config", "config/config.yaml", "config path")
+	cfgPath := fs.String("config", DefaultConfigPath, "config path")
 	newKEK := fs.String("new-kek", "", "path to the new 32-byte KEK file")
 	which := fs.String("db", "all", "which database: dp|ds|all")
 	if err := fs.Parse(args); err != nil {
@@ -103,7 +103,7 @@ func cmdRekey(prog string, args []string) int {
 		fmt.Fprintln(os.Stderr, err)
 		return 1
 	}
-	oldProvider, err := newKMSProvider(&cfg.KMS)
+	oldProvider, err := kms.OpenFileProvider(cfg.KMS.KEKHex, cfg.KMS.KEKFile)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		return 1
@@ -166,14 +166,14 @@ func rekeySessions(st *store.Store, oldP, newP kms.Provider) (int, error) {
 	return count, nil
 }
 
-func cmdProfile(prog string, args []string) int {
+func Profile(prog string, args []string) int {
 	if len(args) == 0 {
 		fmt.Fprintln(os.Stderr, "usage: admin profile list|show --config FILE [--iccid ICCID]")
 		return 2
 	}
 	sub := args[0]
 	fs := flag.NewFlagSet("profile", flag.ContinueOnError)
-	cfgPath := fs.String("config", "config/config.yaml", "config path")
+	cfgPath := fs.String("config", DefaultConfigPath, "config path")
 	iccid := fs.String("iccid", "", "ICCID for show")
 	if err := fs.Parse(args[1:]); err != nil {
 		return 2
@@ -216,13 +216,13 @@ func cmdProfile(prog string, args []string) int {
 	}
 }
 
-func cmdSession(prog string, args []string) int {
+func Session(prog string, args []string) int {
 	if len(args) == 0 || args[0] != "gc" {
 		fmt.Fprintln(os.Stderr, "usage: admin session gc --config FILE [--db dp|ds|all]")
 		return 2
 	}
 	fs := flag.NewFlagSet("session", flag.ContinueOnError)
-	cfgPath := fs.String("config", "config/config.yaml", "config path")
+	cfgPath := fs.String("config", DefaultConfigPath, "config path")
 	which := fs.String("db", "all", "which database: dp|ds|all")
 	if err := fs.Parse(args[1:]); err != nil {
 		return 2

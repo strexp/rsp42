@@ -1,4 +1,4 @@
-package cli
+package admin
 
 import (
 	"flag"
@@ -9,14 +9,14 @@ import (
 	"rsp42/internal/store"
 )
 
-func cmdSMDSAdmin(prog string, args []string) int {
+func SMDSAdmin(prog string, args []string) int {
 	if len(args) < 2 || args[0] != "event" {
 		fmt.Fprintln(os.Stderr, "usage: admin smds event list|delete --config FILE")
 		return 2
 	}
 	action := args[1]
 	fs := flag.NewFlagSet("smds", flag.ContinueOnError)
-	cfgPath := fs.String("config", "config/config.yaml", "config path")
+	cfgPath := fs.String("config", DefaultConfigPath, "config path")
 	eid := fs.String("eid", "", "EID")
 	eventID := fs.String("event-id", "", "EventID")
 	caller := fs.String("caller-oid", "", "caller OID")
