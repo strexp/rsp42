@@ -8,12 +8,16 @@ import (
 )
 
 // BoundProfilePackage is the BF36 shell assembled by the SM-DP+ (SGP.22 §5.5).
+//
+// Every segment slice holds complete SCP03t data-block TLVs (tag + length +
+// protected data + MAC), exactly as crypto.ProtectBPP returns them; the group
+// tags in Assemble only add the [0]/[1]/[2]/[3] sequence wrapper.
 type BoundProfilePackage struct {
 	InitialiseSecureChannelRequest *InitialiseSecureChannelRequest
-	FirstSequenceOf87              [][]byte // protected ConfigureISDP segments (BF24)
-	SequenceOf88                   [][]byte // protected StoreMetadata segments (BF25)
-	SecondSequenceOf87             [][]byte // protected ReplaceSessionKeys segments (BF26), optional
-	SequenceOf86                   [][]byte // protected UPP segments
+	FirstSequenceOf87              [][]byte // complete '87' TLVs: protected ConfigureISDP (BF24)
+	SequenceOf88                   [][]byte // complete '88' TLVs: protected StoreMetadata (BF25)
+	SecondSequenceOf87             [][]byte // complete '87' TLVs: protected ReplaceSessionKeys (BF26), optional
+	SequenceOf86                   [][]byte // complete '86' TLVs: protected UPP segments
 }
 
 // Assemble encodes the BoundProfilePackage to its wire form. It concatenates
@@ -22,20 +26,30 @@ type BoundProfilePackage struct {
 func (b *BoundProfilePackage) Assemble() []byte {
 	var content []byte
 	content = append(content, b.InitialiseSecureChannelRequest.Encode()...)
-	content = append(content, segmentGroupBytes(0, 7, b.FirstSequenceOf87)...)
-	content = append(content, segmentGroupBytes(1, 8, b.SequenceOf88)...)
+	content = append(content, segmentGroupBytes(0, b.FirstSequenceOf87)...)
+	content = append(content, segmentGroupBytes(1, b.SequenceOf88)...)
 	if len(b.SecondSequenceOf87) > 0 {
-		content = append(content, segmentGroupBytes(2, 7, b.SecondSequenceOf87)...)
+		content = append(content, segmentGroupBytes(2, b.SecondSequenceOf87)...)
 	}
-	content = append(content, segmentGroupBytes(3, 6, b.SequenceOf86)...)
+	content = append(content, segmentGroupBytes(3, b.SequenceOf86)...)
 	return asn1.RawTagged(asn1.Ctx(54, true), content)
 }
 
 // segmentGroupBytes builds an [n] SEQUENCE OF [segTag] OCTET STRING group.
-func segmentGroupBytes(groupTag, segTag uint64, segments [][]byte) []byte {
+//
+// Each element of segments is already a complete SCP03t data block TLV
+// (tag '87'/'88'/'86', length, protected data, MAC) as produced by
+// crypto.EncryptAndMAC/crypto.MACOnly. SGP.22 Annex H types the group as
+// "SEQUENCE OF [7]/[8]/[6] OCTET STRING -- sequence of '87'/'88'/'86' TLVs",
+// i.e. the OCTET STRING tag *is* the SGP.02 SCP03t data-block tag, so the
+// segment is appended verbatim; wrapping it in a second OCTET STRING (as this
+// function used to) makes a real eUICC reject the package with
+// scp03tSecurityError at the first protected block (see
+// docs/real-card-test-report.md, R5).
+func segmentGroupBytes(groupTag uint64, segments [][]byte) []byte {
 	var content []byte
 	for _, s := range segments {
-		content = append(content, asn1.RawTagged(asn1.Ctx(segTag, false), s)...)
+		content = append(content, s...)
 	}
 	return asn1.RawTagged(asn1.Ctx(groupTag, true), content)
 }
@@ -60,6 +74,9 @@ func DecodeBoundProfilePackage(raw []byte) (*BoundProfilePackage, error) {
 	return b, nil
 }
 
+// groupSegments collects the SCP03t segments of one group. Each group child is
+// itself the data block TLV (tag '87'/'88'/'86' + length + protected data +
+// MAC), so its raw form is what crypto.DemacAndDecrypt/DemacOnly expects.
 func groupSegments(t asn1.TLV, groupTag uint64, segTag byte) [][]byte {
 	group, ok := t.Find(asn1.Ctx(groupTag, true))
 	if !ok {
@@ -69,11 +86,11 @@ func groupSegments(t asn1.TLV, groupTag uint64, segTag byte) [][]byte {
 	if err != nil {
 		return nil
 	}
-	want := asn1.Ctx(uint64(segTag), false)
 	var out [][]byte
+	want := asn1.Ctx(uint64(segTag), false)
 	for _, k := range kids {
 		if len(k.Tag) == len(want) && k.Tag[0] == want[0] {
-			out = append(out, k.Value)
+			out = append(out, k.Raw)
 		}
 	}
 	return out

@@ -86,9 +86,13 @@ func childSegments(t *testing.T, parent asn1.TLV, tag byte) [][]byte {
 	for _, k := range kids {
 		require.Len(t, k.Tag, 1)
 		require.Equal(t, tag, k.Tag[0])
-		// The outer ASN.1 wrapper is a context-tagged OCTET STRING whose
-		// content is the BSP segment (which itself starts with the same tag).
-		segs = append(segs, k.Value)
+		// The group member *is* the SCP03t data block TLV (SGP.22 Annex H:
+		// "SEQUENCE OF [7] OCTET STRING -- sequence of '87' TLVs"), so its raw
+		// form is what the BSP layer verifies. Wrapping the segment in a second
+		// OCTET STRING (and reading k.Value here) produces a package a real
+		// eUICC rejects (docs/real-card-test-report.md, R5); the vector has
+		// been normalised to the wire form.
+		segs = append(segs, k.Raw)
 	}
 	require.NotEmpty(t, segs)
 	return segs
