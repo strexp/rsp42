@@ -7,6 +7,7 @@ import (
 	"rsp42/internal/activationcode"
 	"rsp42/internal/iccid"
 	"rsp42/internal/rsp"
+	"rsp42/internal/rsp/status"
 	"rsp42/internal/store"
 )
 
@@ -15,17 +16,17 @@ import (
 func (c *CMAE) handleACR(ctx context.Context, transactionID string, ca *clientAuth) (*AuthenticateResult, error) {
 	acr, err := activationcode.ParseACR(ca.MatchingID)
 	if err != nil {
-		return nil, rsp.CodeInputRefused.Status(err.Error())
+		return nil, status.CodeInputRefused.Status(err.Error())
 	}
 	profile, err := c.Deps.Profiles.GetByICCID(iccid.Normalize(acr.ICCID))
 	if err != nil {
-		return nil, rsp.CodeInputRefused.Status("unknown ICCID")
+		return nil, status.CodeInputRefused.Status("unknown ICCID")
 	}
 	if profile.EID != "" && profile.EID != ca.EID {
-		return nil, rsp.CodeInputRefused.Status("EID mismatch")
+		return nil, status.CodeInputRefused.Status("EID mismatch")
 	}
 	if profile.State != store.StateInstalled {
-		return nil, rsp.CodeInputRefused.Status("profile is not installed")
+		return nil, status.CodeInputRefused.Status("profile is not installed")
 	}
 
 	// Confirm with the Operator when ES2+.HandleAcrRequest is configured
@@ -35,9 +36,9 @@ func (c *CMAE) handleACR(ctx context.Context, transactionID string, ca *clientAu
 		if err := c.ACRCheck(ctx, profile); err != nil {
 			c.notify(ctx, progressFor(profile, ca.EID, 17, "Failed"))
 			if errors.Is(err, rsp.ErrACRRefused) {
-				return nil, rsp.CodeACRNotAllowed.Status("Operator refused Activation Code Retrieval")
+				return nil, status.CodeACRNotAllowed.Status("Operator refused Activation Code Retrieval")
 			}
-			return nil, rsp.CodeInputRefused.Status("Activation Code Retrieval confirmation failed")
+			return nil, status.CodeInputRefused.Status("Activation Code Retrieval confirmation failed")
 		}
 	}
 

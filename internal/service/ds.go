@@ -6,7 +6,7 @@ import (
 	"time"
 
 	"rsp42/internal/cert"
-	"rsp42/internal/rsp"
+	"rsp42/internal/rsp/status"
 	"rsp42/internal/store"
 )
 
@@ -74,7 +74,7 @@ func (d *DSService) AuthenticateClient(transactionID string, authenticateServerR
 	} else {
 		records, err = d.Events.LookupByEventID(ca.EID, ca.MatchingID)
 		if err == nil && len(records) == 0 {
-			return nil, rsp.CodeEventNotFound.Status("Event not found")
+			return nil, status.CodeEventNotFound.Status("Event not found")
 		}
 	}
 	if err != nil {
@@ -97,11 +97,11 @@ func (d *DSService) AuthenticateClient(transactionID string, authenticateServerR
 func mapDSInitiateStatus(err error) error {
 	switch {
 	case isCM(err, cmAddress):
-		return rsp.CodeDSAddress.Status("Invalid SM-DS address")
+		return status.CodeDSAddress.Status("Invalid SM-DS address")
 	case isCM(err, cmChallenge), isCM(err, cmBadResponse):
-		return rsp.CodeDSChallengeInvalid.Status(err.Error())
+		return status.CodeDSChallengeInvalid.Status(err.Error())
 	case isCM(err, cmCI):
-		return rsp.CodeDSCIUnsupported.Status("None of the proposed CI key identifiers is supported")
+		return status.CodeDSCIUnsupported.Status("None of the proposed CI key identifiers is supported")
 	}
 	return err
 }
@@ -113,13 +113,13 @@ func mapDSInitiateStatus(err error) error {
 func mapDSAuthenticateStatus(err error) error {
 	switch {
 	case isCM(err, cmUnknownTxn):
-		return rsp.CodeUnknownTransaction.Status("Unknown TransactionID")
+		return status.CodeUnknownTransaction.Status("Unknown TransactionID")
 	case isCM(err, cmCertChain), isCM(err, cmEID):
 		// The EID is carried by the eUICC certificate, so a missing or
 		// constraint-violating EID is an eUICC certificate failure (8.1.3/6.1).
-		return rsp.CodeCertChainFailed.Status(err.Error())
+		return status.CodeCertChainFailed.Status(err.Error())
 	case isCM(err, cmSignature), isCM(err, cmBadResponse), isCM(err, cmTxnMismatch), isCM(err, cmChallengeMismatch):
-		return rsp.CodeVerificationFailed.Status(err.Error())
+		return status.CodeVerificationFailed.Status(err.Error())
 	}
 	return err
 }

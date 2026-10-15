@@ -11,7 +11,7 @@ import (
 	"github.com/go-chi/chi/v5"
 
 	"rsp42/internal/api/common"
-	"rsp42/internal/rsp"
+	"rsp42/internal/rsp/status"
 	"rsp42/internal/service"
 )
 
@@ -41,17 +41,17 @@ type initiateReq struct {
 func (h *Handler) initiateAuthentication(w http.ResponseWriter, r *http.Request) {
 	var req initiateReq
 	if err := common.ReadJSON(w, r, 0, &req); err != nil {
-		common.WriteCode(w, rsp.CodeDSAddress, "invalid request")
+		common.WriteCode(w, status.CodeDSAddress, "invalid request")
 		return
 	}
 	challenge, err := common.DecodeB64(req.EuiccChallenge)
 	if err != nil {
-		common.WriteCode(w, rsp.CodeDSAddress, "invalid euiccChallenge")
+		common.WriteCode(w, status.CodeDSAddress, "invalid euiccChallenge")
 		return
 	}
 	info, err := common.DecodeB64(req.EuiccInfo1)
 	if err != nil {
-		common.WriteCode(w, rsp.CodeDSAddress, "invalid euiccInfo1")
+		common.WriteCode(w, status.CodeDSAddress, "invalid euiccInfo1")
 		return
 	}
 	res, err := h.DS.Initiate(challenge, info, req.SmdpAddress)
@@ -76,12 +76,12 @@ type authenticateReq struct {
 func (h *Handler) authenticateClient(w http.ResponseWriter, r *http.Request) {
 	var req authenticateReq
 	if err := common.ReadJSON(w, r, 0, &req); err != nil {
-		common.WriteCode(w, rsp.CodeVerificationFailed, "invalid request")
+		common.WriteCode(w, status.CodeVerificationFailed, "invalid request")
 		return
 	}
 	resp, err := common.DecodeB64(req.AuthenticateServerResponse)
 	if err != nil {
-		common.WriteCode(w, rsp.CodeVerificationFailed, "invalid authenticateServerResponse")
+		common.WriteCode(w, status.CodeVerificationFailed, "invalid authenticateServerResponse")
 		return
 	}
 	res, err := h.DS.AuthenticateClient(req.TransactionID, resp)

@@ -25,6 +25,7 @@ import (
 	"rsp42/internal/crypto"
 	"rsp42/internal/kms"
 	"rsp42/internal/rsp"
+	"rsp42/internal/rsp/status"
 	"rsp42/internal/saip"
 	"rsp42/internal/saip/personalization"
 	"rsp42/internal/store"
@@ -783,7 +784,7 @@ func TestACROperatorConfirmation(t *testing.T) {
 	}
 	_, err = cmae.handleACR(context.Background(), "TXN", ca())
 	require.Error(t, err)
-	var refused *rsp.StatusCode
+	var refused *status.StatusCode
 	require.ErrorAs(t, err, &refused)
 	require.Equal(t, "8.2.1", refused.SubjectCode)
 	require.Equal(t, "1.2", refused.ReasonCode)
@@ -1108,7 +1109,7 @@ func TestAuthenticateRefusesPPRForbiddenByEuicc(t *testing.T) {
 	err = authenticateWithForbiddenPPRForTest(t, cmae, "MATCH-PPR-FORBIDDEN",
 		rsp.PPRIDBits([]int{1, 2}))
 	require.Error(t, err)
-	var sc *rsp.StatusCode
+	var sc *status.StatusCode
 	require.ErrorAs(t, err, &sc)
 	require.Equal(t, "8.2.5", sc.SubjectCode)
 	require.Equal(t, "4.3", sc.ReasonCode)

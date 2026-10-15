@@ -12,6 +12,7 @@ import (
 
 	"rsp42/internal/crypto"
 	"rsp42/internal/rsp"
+	"rsp42/internal/rsp/status"
 	"rsp42/internal/saip"
 	"rsp42/internal/saip/personalization"
 	"rsp42/internal/saipver"
@@ -28,44 +29,44 @@ type GetBoundProfilePackageResult struct {
 func (c *CMAE) GetBoundProfilePackage(transactionID string, prepareDownloadResponse []byte) (*GetBoundProfilePackageResult, error) {
 	sess, err := c.Deps.Sessions.Get(transactionID)
 	if err != nil {
-		return nil, rsp.CodeUnknownTransaction.Status("Unknown TransactionID")
+		return nil, status.CodeUnknownTransaction.Status("Unknown TransactionID")
 	}
 	// The session lookup already proved that the TransactionID is a valid
 	// session key; decode it once, and treat a malformed value as an error
 	// rather than a panic.
 	txn, err := hexLower(transactionID)
 	if err != nil {
-		return nil, rsp.CodeVerificationFailed.Status(err.Error())
+		return nil, status.CodeVerificationFailed.Status(err.Error())
 	}
 	ok, errResp, err := rsp.DecodePrepareDownloadResponse(prepareDownloadResponse)
 	if err != nil {
-		return nil, rsp.CodeVerificationFailed.Status(err.Error())
+		return nil, status.CodeVerificationFailed.Status(err.Error())
 	}
 	if ok == nil {
 		code := int64(127)
 		if errResp != nil {
 			code = errResp.DownloadErrorCode
 		}
-		return nil, rsp.CodeVerificationFailed.Status(fmt.Sprintf("downloadResponseError %d", code))
+		return nil, status.CodeVerificationFailed.Status(fmt.Sprintf("downloadResponseError %d", code))
 	}
 
 	euiccSigned2Raw, err := rsp.ExtractEuiccSigned2(prepareDownloadResponse)
 	if err != nil {
-		return nil, rsp.CodeVerificationFailed.Status(err.Error())
+		return nil, status.CodeVerificationFailed.Status(err.Error())
 	}
 	euiccCert, err := x509.ParseCertificate(sess.EuiccCert)
 	if err != nil {
-		return nil, rsp.CodeVerificationFailed.Status("missing eUICC certificate")
+		return nil, status.CodeVerificationFailed.Status("missing eUICC certificate")
 	}
 	pub, okPub := euiccCert.PublicKey.(*ecdsa.PublicKey)
 	toVerify := append(append([]byte{}, euiccSigned2Raw...), sess.SmdpSignature2...)
 	if !okPub || !crypto.VerifyRaw(pub, toVerify, rsp.SignatureValue(ok.EuiccSignature2)) {
-		return nil, rsp.CodeVerificationFailed.Status("eUICC signature verification failed")
+		return nil, status.CodeVerificationFailed.Status("eUICC signature verification failed")
 	}
 
 	profile, err := c.Deps.Profiles.GetByID(sess.ProfileID)
 	if err != nil {
-		return nil, rsp.CodeUnknownTransaction.Status("Unknown profile")
+		return nil, status.CodeUnknownTransaction.Status("Unknown profile")
 	}
 
 	if profile.CCRequired {
@@ -84,9 +85,9 @@ func (c *CMAE) GetBoundProfilePackage(transactionID string, prepareDownloadRespo
 			// eUICC receives a clean, distinguishable failure instead of a
 			// package it would reject at the end of the download.
 			c.noteVersionFailure(profile.TenantID, profile, vErr)
-			return nil, rsp.CodeProfileVersionNotSupported.Status(vErr.Error())
+			return nil, status.CodeProfileVersionNotSupported.Status(vErr.Error())
 		}
-		return nil, rsp.CodeProfileLoadFailed.Status(err.Error())
+		return nil, status.CodeProfileLoadFailed.Status(err.Error())
 	}
 
 	otSK := make([]byte, 32)
@@ -138,11 +139,11 @@ func (c *CMAE) recordConfirmationFailure(p *store.Profile) (exhausted bool) {
 // confirmationFailureStatus records a refused Confirmation Code and returns the
 // Table 40 status: 8.2.7/6.4 "Maximum number of retries exceeded" only once the
 // retry budget is exhausted, otherwise 8.2.7/3.8 "Confirmation Code is refused".
-func (c *CMAE) confirmationFailureStatus(p *store.Profile) *rsp.StatusCode {
+func (c *CMAE) confirmationFailureStatus(p *store.Profile) *status.StatusCode {
 	if c.recordConfirmationFailure(p) {
-		return rsp.CodeConfirmationCode.Status("Confirmation code retries exceeded")
+		return status.CodeConfirmationCode.Status("Confirmation code retries exceeded")
 	}
-	return rsp.CodeConfirmationCodeRefused.Status("Confirmation code refused")
+	return status.CodeConfirmationCodeRefused.Status("Confirmation code refused")
 }
 
 func (c *CMAE) buildBPP(eid string, transactionID, smdpOtpk, smdpOtSK, euiccOtpk, upp []byte, profile *store.Profile, pbSigner stdcrypto.Signer) ([]byte, error) {

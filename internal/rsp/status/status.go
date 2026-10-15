@@ -1,4 +1,11 @@
-package rsp
+// Package status holds the SGP.22 status-code vocabulary: the subjectCode/
+// reasonCode pairs of §5.2.6 and the errors built from them.
+//
+// It is a leaf package on purpose. The vocabulary is shared by the ES2+/ES9+/
+// ES11/ES12 interfaces and the services, and keeping it inside internal/rsp
+// made every caller that only needed a status code link the whole message
+// codec.
+package status
 
 import "fmt"
 

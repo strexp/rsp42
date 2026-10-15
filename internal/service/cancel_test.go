@@ -5,7 +5,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"rsp42/internal/rsp"
+	"rsp42/internal/rsp/status"
 	"rsp42/internal/store"
 	"rsp42/internal/testutil"
 )
@@ -57,7 +57,7 @@ func TestCancelSessionJSONErrorAlternative(t *testing.T) {
 	raw := testutil.MustHex(t, "bf4103810105")
 	_, _, err := cmae.CancelSessionJSON(txn, raw)
 	require.Error(t, err)
-	var sc *rsp.StatusCode
+	var sc *status.StatusCode
 	require.ErrorAs(t, err, &sc)
 	require.Equal(t, "8.10.1", sc.SubjectCode)
 	require.Equal(t, "3.9", sc.ReasonCode)

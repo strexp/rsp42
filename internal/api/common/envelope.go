@@ -8,7 +8,7 @@ import (
 	"io"
 	"net/http"
 
-	"rsp42/internal/rsp"
+	"rsp42/internal/rsp/status"
 )
 
 // DefaultBodyLimit is the request-body budget when a router is not configured
@@ -66,19 +66,19 @@ func WriteFailure(w http.ResponseWriter, subject, reason, message string) {
 }
 
 // WriteCode writes a Failed execution status using a named SGP.22 status code.
-func WriteCode(w http.ResponseWriter, code rsp.Code, message string) {
+func WriteCode(w http.ResponseWriter, code status.Code, message string) {
 	WriteFailure(w, code.Subject, code.Reason, message)
 }
 
-// WriteStatusFailure maps an error to a Failed execution status. A *rsp.StatusCode
+// WriteStatusFailure maps an error to a Failed execution status. A *status.StatusCode
 // keeps its own subject/reason code; anything else becomes a generic failure.
 func WriteStatusFailure(w http.ResponseWriter, err error) {
-	var sc *rsp.StatusCode
+	var sc *status.StatusCode
 	if errors.As(err, &sc) {
 		WriteFailure(w, sc.SubjectCode, sc.ReasonCode, sc.Message)
 		return
 	}
-	WriteCode(w, rsp.CodeVerificationFailed, err.Error())
+	WriteCode(w, status.CodeVerificationFailed, err.Error())
 }
 
 // ReadRaw reads a request body within the router's budget. A maxBytes of 0

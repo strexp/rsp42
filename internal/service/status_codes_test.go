@@ -6,14 +6,14 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"rsp42/internal/rsp"
+	"rsp42/internal/rsp/status"
 	"rsp42/internal/store"
 )
 
 func assertStatus(t *testing.T, err error, subject, reason string) {
 	t.Helper()
 	require.Error(t, err)
-	var sc *rsp.StatusCode
+	var sc *status.StatusCode
 	require.ErrorAs(t, err, &sc)
 	require.Equal(t, subject, sc.SubjectCode, "subjectCode of %v", err)
 	require.Equal(t, reason, sc.ReasonCode, "reasonCode of %v", err)
@@ -102,5 +102,5 @@ func TestDSStatusMapping(t *testing.T) {
 	assertStatus(t, mapDSAuthenticateStatus(cmErr(cmChallengeMismatch, "x")), "8.1", "6.1")
 
 	// No event for the EventID: 8.9.5/3.9, emitted directly by the service.
-	assertStatus(t, rsp.CodeEventNotFound.Status("Event not found"), "8.9.5", "3.9")
+	assertStatus(t, status.CodeEventNotFound.Status("Event not found"), "8.9.5", "3.9")
 }

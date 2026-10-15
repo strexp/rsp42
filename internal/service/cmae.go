@@ -16,6 +16,7 @@ import (
 	"rsp42/internal/crypto"
 	"rsp42/internal/metrics"
 	"rsp42/internal/rsp"
+	"rsp42/internal/rsp/status"
 	"rsp42/internal/saip/personalization"
 	"rsp42/internal/store"
 )
@@ -170,7 +171,7 @@ func (c *CMAE) AuthenticateClient(ctx context.Context, transactionID string, aut
 	// deployment misconfiguration does not consume the profile's attempt budget.
 	if forbidden, hit := forbiddenPPRHit(c.effectivePPRIDs(profile), ca.Signed1.EuiccInfo2); hit {
 		c.notify(context.Background(), progressFor(profile, ca.EID, 1, "Failed"))
-		return nil, rsp.CodeNoEligibleProfile.Status(
+		return nil, status.CodeNoEligibleProfile.Status(
 			fmt.Sprintf("PPR%d is forbidden by the eUICC", forbidden))
 	}
 	// Bind the profile to the eUICC that actually performs the download (G4):
@@ -226,9 +227,9 @@ func (c *CMAE) AuthenticateClient(ctx context.Context, transactionID string, aut
 		var vErr *ErrProfileVersionNotSupported
 		if errors.As(err, &vErr) {
 			c.noteVersionFailure(profile.TenantID, profile, vErr)
-			return nil, rsp.CodeProfileVersionNotSupported.Status(vErr.Error())
+			return nil, status.CodeProfileVersionNotSupported.Status(vErr.Error())
 		}
-		return nil, rsp.CodeProfileLoadFailed.Status(err.Error())
+		return nil, status.CodeProfileLoadFailed.Status(err.Error())
 	}
 	sess.UPPTemplate = tpl.Name
 	if err := c.Deps.Sessions.Put(sess); err != nil {
@@ -292,27 +293,27 @@ func (c *CMAE) noteVersionFailure(tenant string, profile *store.Profile, rej *Er
 
 func (c *CMAE) lookupProfile(matchingID, eid string) (*store.Profile, error) {
 	if matchingID == "" {
-		return nil, rsp.CodeProfileNotEligible.Status("Refused")
+		return nil, status.CodeProfileNotEligible.Status("Refused")
 	}
 	p, err := c.Deps.Profiles.GetByMatchingID(matchingID)
 	if err != nil {
-		return nil, rsp.CodeProfileNotEligible.Status("Refused")
+		return nil, status.CodeProfileNotEligible.Status("Refused")
 	}
 	if p.EID != "" && p.EID != eid {
 		// Table 43: 8.1.1/3.8 "EID doesn't match the expected value".
-		return nil, rsp.CodeEIDMismatch.Status("EID mismatch")
+		return nil, status.CodeEIDMismatch.Status("EID mismatch")
 	}
 	switch p.State {
 	case store.StateReleased, store.StateDownloaded:
 	default:
 		// Table 43: 8.2/1.2 "Profile has not yet been released".
-		return nil, rsp.CodeProfileNotReleased.Status("Profile has not yet been released")
+		return nil, status.CodeProfileNotReleased.Status("Profile has not yet been released")
 	}
 	// Download order TTL: an order that is older than the configured window is
 	// no longer eligible for download.
 	if c.Cfg.DownloadTTL > 0 && !p.CreatedAt.IsZero() && time.Since(p.CreatedAt) > c.Cfg.DownloadTTL {
 		// Table 43: 8.8.5/4.10 "Time to Live Expired".
-		return nil, rsp.CodeDownloadOrderExpired.Status("Download order expired")
+		return nil, status.CodeDownloadOrderExpired.Status("Download order expired")
 	}
 	return p, nil
 }
@@ -363,7 +364,7 @@ func (c *CMAE) registerDownloadAttempt(p *store.Profile) error {
 		}
 		c.notify(context.Background(), progressFor(p, p.EID, 1, "Failed"))
 		// Table 43: 8.8.5/6.4 "Maximum number of retries exceeded".
-		return rsp.CodeDownloadRetriesExceeded.Status("Download attempts exceeded")
+		return status.CodeDownloadRetriesExceeded.Status("Download attempts exceeded")
 	}
 	return c.Deps.Profiles.Update(p)
 }
@@ -372,19 +373,19 @@ func (c *CMAE) registerDownloadAttempt(p *store.Profile) error {
 func mapDPStatus(err error) error {
 	switch {
 	case isCM(err, cmAddress):
-		return rsp.CodeSMDPAddress.Status("Invalid SM-DP+ address")
+		return status.CodeSMDPAddress.Status("Invalid SM-DP+ address")
 	case isCM(err, cmChallenge):
-		return rsp.CodeChallengeInvalid.Status("euiccChallenge must be 16 bytes")
+		return status.CodeChallengeInvalid.Status("euiccChallenge must be 16 bytes")
 	case isCM(err, cmCI):
-		return rsp.CodeCIUnsupported.Status("None of the proposed CI key identifiers is supported")
+		return status.CodeCIUnsupported.Status("None of the proposed CI key identifiers is supported")
 	case isCM(err, cmUnknownTxn):
-		return rsp.CodeUnknownTransaction.Status("Unknown TransactionID")
+		return status.CodeUnknownTransaction.Status("Unknown TransactionID")
 	case isCM(err, cmCertChain):
-		return rsp.CodeCertChainFailed.Status(err.Error())
+		return status.CodeCertChainFailed.Status(err.Error())
 	case isCM(err, cmSignature), isCM(err, cmBadResponse), isCM(err, cmTxnMismatch), isCM(err, cmChallengeMismatch):
-		return rsp.CodeVerificationFailed.Status(err.Error())
+		return status.CodeVerificationFailed.Status(err.Error())
 	case isCM(err, cmEID):
-		return rsp.CodeEIDMismatch.Status(err.Error())
+		return status.CodeEIDMismatch.Status(err.Error())
 	}
 	return err
 }

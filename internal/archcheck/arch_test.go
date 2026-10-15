@@ -30,14 +30,15 @@ var skipDirs = map[string]bool{
 // primitives that every layer may use, so an import out of a leaf inverts the
 // dependency direction.
 var leafPackages = map[string]bool{
-	"internal/asn1":    true,
-	"internal/iccid":   true,
-	"internal/saipver": true,
-	"internal/kms":     true,
-	"internal/logging": true,
-	"internal/metrics": true,
-	"internal/hexutil": true,
-	"internal/version": true,
+	"internal/asn1":       true,
+	"internal/iccid":      true,
+	"internal/saipver":    true,
+	"internal/kms":        true,
+	"internal/logging":    true,
+	"internal/metrics":    true,
+	"internal/hexutil":    true,
+	"internal/rsp/status": true,
+	"internal/version":    true,
 }
 
 // deniedEdges are dependency edges that must not exist. Each entry states the

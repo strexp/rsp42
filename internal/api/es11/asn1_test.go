@@ -21,6 +21,7 @@ import (
 	"rsp42/internal/cert"
 	"rsp42/internal/kms"
 	"rsp42/internal/rsp"
+	"rsp42/internal/rsp/status"
 	"rsp42/internal/service"
 	"rsp42/internal/store"
 	"rsp42/internal/testutil"
@@ -63,23 +64,23 @@ func newTestServer(t *testing.T) *httptest.Server {
 func TestES11ErrorEnums(t *testing.T) {
 	// F5: the Table 52 codes the DS service emits must land on the
 	// AuthenticateClientResponseEs11 members (§6.6.2.7).
-	require.EqualValues(t, 3, asn1bind.CodeFor(rsp.CodeCertChainFailed.Status("x"), dsAuthenticateErrorCodes, 127))    // euiccCertificateInvalid
-	require.EqualValues(t, 5, asn1bind.CodeFor(rsp.CodeVerificationFailed.Status("x"), dsAuthenticateErrorCodes, 127)) // euiccSignatureInvalid
-	require.EqualValues(t, 6, asn1bind.CodeFor(rsp.CodeEventNotFound.Status("x"), dsAuthenticateErrorCodes, 127))      // eventIdUnknown
-	require.EqualValues(t, 7, asn1bind.CodeFor(rsp.CodeUnknownTransaction.Status("x"), dsAuthenticateErrorCodes, 127)) // invalidTransactionId
+	require.EqualValues(t, 3, asn1bind.CodeFor(status.CodeCertChainFailed.Status("x"), dsAuthenticateErrorCodes, 127))    // euiccCertificateInvalid
+	require.EqualValues(t, 5, asn1bind.CodeFor(status.CodeVerificationFailed.Status("x"), dsAuthenticateErrorCodes, 127)) // euiccSignatureInvalid
+	require.EqualValues(t, 6, asn1bind.CodeFor(status.CodeEventNotFound.Status("x"), dsAuthenticateErrorCodes, 127))      // eventIdUnknown
+	require.EqualValues(t, 7, asn1bind.CodeFor(status.CodeUnknownTransaction.Status("x"), dsAuthenticateErrorCodes, 127)) // invalidTransactionId
 
 	// The ES11 enum has no ciPKUnknown member (unlike ES9+'s ciPKUnknown(9)), so
 	// Table 52's 8.11.1/3.9 falls back to undefinedError(127).
-	require.EqualValues(t, 127, asn1bind.CodeFor(rsp.Code{Subject: "8.11.1", Reason: "3.9"}.Status("x"), dsAuthenticateErrorCodes, 127))
+	require.EqualValues(t, 127, asn1bind.CodeFor(status.Code{Subject: "8.11.1", Reason: "3.9"}.Status("x"), dsAuthenticateErrorCodes, 127))
 
 	// Table 48a's InitiateAuthentication subjects map onto the reused ES9+
 	// InitiateAuthenticationResponse enum (§6.6.2.6).
-	require.EqualValues(t, 1, asn1bind.CodeFor(rsp.CodeDSAddress.Status("x"), dsInitiateErrorCodes, 2))
-	require.EqualValues(t, 2, asn1bind.CodeFor(rsp.CodeDSSVNUnsupported.Status("x"), dsInitiateErrorCodes, 2))
-	require.EqualValues(t, 3, asn1bind.CodeFor(rsp.CodeDSCIUnsupported.Status("x"), dsInitiateErrorCodes, 2))
+	require.EqualValues(t, 1, asn1bind.CodeFor(status.CodeDSAddress.Status("x"), dsInitiateErrorCodes, 2))
+	require.EqualValues(t, 2, asn1bind.CodeFor(status.CodeDSSVNUnsupported.Status("x"), dsInitiateErrorCodes, 2))
+	require.EqualValues(t, 3, asn1bind.CodeFor(status.CodeDSCIUnsupported.Status("x"), dsInitiateErrorCodes, 2))
 	// Malformed euiccChallenge/euiccInfo1: generic 8.9.1/1.2 format code, mapped
 	// to the same enum value as the invalid-address row.
-	require.EqualValues(t, 1, asn1bind.CodeFor(rsp.CodeDSChallengeInvalid.Status("x"), dsInitiateErrorCodes, 2))
+	require.EqualValues(t, 1, asn1bind.CodeFor(status.CodeDSChallengeInvalid.Status("x"), dsInitiateErrorCodes, 2))
 }
 
 func TestES11ASN1BindingInitiate(t *testing.T) {

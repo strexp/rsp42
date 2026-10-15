@@ -14,6 +14,7 @@ import (
 
 	"rsp42/internal/api/common"
 	"rsp42/internal/rsp"
+	"rsp42/internal/rsp/status"
 )
 
 // DecodeRequest accepts an ASN.1 binding request and returns its function tag
@@ -42,10 +43,10 @@ func WriteResponse(w http.ResponseWriter, inner []byte) {
 	common.WriteASN1(w, rsp.EncodeRemoteProfileProvisioningResponse(inner))
 }
 
-// StatusPair returns the subjectCode and reasonCode of a *rsp.StatusCode error,
+// StatusPair returns the subjectCode and reasonCode of a *status.StatusCode error,
 // or two empty strings when the error carries no RSP classification.
 func StatusPair(err error) (subject, reason string) {
-	var sc *rsp.StatusCode
+	var sc *status.StatusCode
 	if errors.As(err, &sc) {
 		return sc.SubjectCode, sc.ReasonCode
 	}

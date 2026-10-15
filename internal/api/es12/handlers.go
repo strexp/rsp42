@@ -13,7 +13,7 @@ import (
 	"rsp42/internal/api/common"
 	"rsp42/internal/cert"
 	es12client "rsp42/internal/client/es12"
-	"rsp42/internal/rsp"
+	"rsp42/internal/rsp/status"
 	"rsp42/internal/service"
 	"rsp42/internal/store"
 )
@@ -72,7 +72,7 @@ type registerReq struct {
 func (h *Handler) registerEvent(w http.ResponseWriter, r *http.Request) {
 	var req registerReq
 	if err := common.ReadJSON(w, r, 0, &req); err != nil {
-		common.WriteCode(w, rsp.CodeES12BadRequest, "invalid request")
+		common.WriteCode(w, status.CodeES12BadRequest, "invalid request")
 		return
 	}
 	caller := callerOID(r, req.Header.FunctionRequesterIdentifier)
@@ -83,10 +83,10 @@ func (h *Handler) registerEvent(w http.ResponseWriter, r *http.Request) {
 		common.WriteSuccess(w, nil)
 	case errors.Is(err, service.ErrEventIDInUse):
 		h.auditFailure(meta.Tenant, "registerEvent", req.EID, "8.9.5/3.3", err)
-		common.WriteCode(w, rsp.CodeEventIDInUse, "EventID already in use")
+		common.WriteCode(w, status.CodeEventIDInUse, "EventID already in use")
 	default:
 		h.auditFailure(meta.Tenant, "registerEvent", req.EID, "8.9/5.1", err)
-		common.WriteCode(w, rsp.CodeES12Upstream, err.Error())
+		common.WriteCode(w, status.CodeES12Upstream, err.Error())
 	}
 }
 
@@ -111,7 +111,7 @@ type deleteReq struct {
 func (h *Handler) deleteEvent(w http.ResponseWriter, r *http.Request) {
 	var req deleteReq
 	if err := common.ReadJSON(w, r, 0, &req); err != nil {
-		common.WriteCode(w, rsp.CodeES12BadRequest, "invalid request")
+		common.WriteCode(w, status.CodeES12BadRequest, "invalid request")
 		return
 	}
 	caller := callerOID(r, req.Header.FunctionRequesterIdentifier)
@@ -121,9 +121,9 @@ func (h *Handler) deleteEvent(w http.ResponseWriter, r *http.Request) {
 	case err == nil:
 		common.WriteSuccess(w, nil)
 	case errors.Is(err, service.ErrEventNotFound):
-		common.WriteCode(w, rsp.CodeEventNotFound, "Event does not exist")
+		common.WriteCode(w, status.CodeEventNotFound, "Event does not exist")
 	default:
-		common.WriteCode(w, rsp.CodeES12Upstream, err.Error())
+		common.WriteCode(w, status.CodeES12Upstream, err.Error())
 	}
 }
 

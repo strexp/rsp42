@@ -18,7 +18,7 @@ import (
 	"rsp42/internal/api/middleware"
 	"rsp42/internal/client/es12"
 	"rsp42/internal/iccid"
-	"rsp42/internal/rsp"
+	"rsp42/internal/rsp/status"
 	"rsp42/internal/service"
 	"rsp42/internal/store"
 )
@@ -178,13 +178,13 @@ func (h *Handler) downloadOrder(w http.ResponseWriter, r *http.Request) {
 		// allocation failure (8.2/4.2).
 		switch {
 		case errors.Is(err, service.ErrInvalidICCID):
-			writeFailure(w, rsp.CodeInvalidRequest, err.Error())
+			writeFailure(w, status.CodeInvalidRequest, err.Error())
 		case errors.Is(err, service.ErrQuotaExceeded):
-			writeFailure(w, rsp.CodeNoMoreProfileAvailable, err.Error())
+			writeFailure(w, status.CodeNoMoreProfileAvailable, err.Error())
 		case errors.Is(err, service.ErrICCIDInUse):
-			writeFailure(w, rsp.CodeICCIDInUse, err.Error())
+			writeFailure(w, status.CodeICCIDInUse, err.Error())
 		default:
-			writeFailure(w, rsp.CodeAllocateFailed, err.Error())
+			writeFailure(w, status.CodeAllocateFailed, err.Error())
 		}
 		return
 	}
@@ -214,17 +214,17 @@ func (h *Handler) confirmOrder(w http.ResponseWriter, r *http.Request) {
 	}
 	tenant := h.applyCaller(r, hdr)
 	if req.ICCID == "" {
-		writeFailure(w, rsp.CodeMandatoryElementMissing, "iccid is required")
+		writeFailure(w, status.CodeMandatoryElementMissing, "iccid is required")
 		return
 	}
 	if req.ReleaseFlag == nil {
-		writeFailure(w, rsp.CodeMandatoryElementMissing, "releaseFlag is required")
+		writeFailure(w, status.CodeMandatoryElementMissing, "releaseFlag is required")
 		return
 	}
 	release := *req.ReleaseFlag
 	p, err := h.Profiles.GetByICCID(iccid.Normalize(req.ICCID))
 	if err != nil {
-		writeFailure(w, rsp.CodeICCIDUnknown, "unknown ICCID")
+		writeFailure(w, status.CodeICCIDUnknown, "unknown ICCID")
 		return
 	}
 	if err := h.authorize(tenant, p, req.EID); err != nil {
@@ -239,13 +239,13 @@ func (h *Handler) confirmOrder(w http.ResponseWriter, r *http.Request) {
 	// Profile that is already bound carries its EID, so this only rejects an
 	// anonymous order that asks for an SM-DS event.
 	if req.SMDSAddress != "" && p.EID == "" {
-		writeFailure(w, rsp.CodeMandatoryElementMissing, "eid is required when smdsAddress is provided")
+		writeFailure(w, status.CodeMandatoryElementMissing, "eid is required when smdsAddress is provided")
 		return
 	}
 	// §4.1.1: a MatchingID consists only of upper case alphanumeric characters
 	// and '-'. An empty value means "generate one"; anything else is malformed.
 	if req.MatchingID != "" && !validMatchingID(req.MatchingID) {
-		writeFailure(w, rsp.CodeInvalidRequest, "matchingId must be upper case alphanumeric or '-'")
+		writeFailure(w, status.CodeInvalidRequest, "matchingId must be upper case alphanumeric or '-'")
 		return
 	}
 	matchingID := req.MatchingID
@@ -273,11 +273,11 @@ func (h *Handler) confirmOrder(w http.ResponseWriter, r *http.Request) {
 		// The unique index is the authority (a pre-check would race), and the
 		// store error itself must not reach the caller.
 		if store.IsUniqueViolation(err) {
-			writeFailure(w, rsp.CodeMatchingIDInUse, "matchingId is already in use")
+			writeFailure(w, status.CodeMatchingIDInUse, "matchingId is already in use")
 			return
 		}
 		h.Log.Warn("confirmOrder profile update", "iccid", p.ICCID, "err", err)
-		writeFailure(w, rsp.CodeProfileUpdateFailed, "the Profile could not be updated")
+		writeFailure(w, status.CodeProfileUpdateFailed, "the Profile could not be updated")
 		return
 	}
 	if _, err := h.Orders.Confirm(p.ICCID, release); err != nil {
@@ -322,16 +322,16 @@ func (h *Handler) cancelOrder(w http.ResponseWriter, r *http.Request) {
 	// finalProfileStatusIndicator is mandatory (Table 28): an absent element and
 	// an unrecognised value are different failures.
 	if strings.TrimSpace(req.FinalProfileStatusIndicator) == "" {
-		writeFailure(w, rsp.CodeMandatoryElementMissing, "finalProfileStatusIndicator is required")
+		writeFailure(w, status.CodeMandatoryElementMissing, "finalProfileStatusIndicator is required")
 		return
 	}
 	final, err := parseFinalStatus(req.FinalProfileStatusIndicator)
 	if err != nil {
-		writeFailure(w, rsp.CodeInvalidRequest, err.Error())
+		writeFailure(w, status.CodeInvalidRequest, err.Error())
 		return
 	}
 	if req.ICCID == "" {
-		writeFailure(w, rsp.CodeMandatoryElementMissing, "iccid is required")
+		writeFailure(w, status.CodeMandatoryElementMissing, "iccid is required")
 		return
 	}
 	if err := h.authorizeICCID(tenant, req.ICCID); err != nil {
@@ -341,23 +341,23 @@ func (h *Handler) cancelOrder(w http.ResponseWriter, r *http.Request) {
 	norm := iccid.Normalize(req.ICCID)
 	p, err := h.Profiles.GetByICCID(norm)
 	if err != nil {
-		writeFailure(w, rsp.CodeICCIDUnknown, "unknown ICCID")
+		writeFailure(w, status.CodeICCIDUnknown, "unknown ICCID")
 		return
 	}
 	// Table 30: a Profile that is already downloaded is 8.2.1/3.3 (Already in
 	// Use); CancelOrder only cancels a pending order.
 	if p.State == store.StateDownloaded || p.State == store.StateInstalled {
-		writeFailure(w, rsp.CodeICCIDInUse, "the Profile is already downloaded")
+		writeFailure(w, status.CodeICCIDInUse, "the Profile is already downloaded")
 		return
 	}
 	// Table 30: a supplied MatchingID/EID that is not the one associated with
 	// the ICCID is an Invalid Association.
 	if req.MatchingID != "" && p.MatchingID != "" && req.MatchingID != p.MatchingID {
-		writeFailure(w, rsp.CodeMatchingIDInvalidAssoc, "a different MatchingID is associated with this ICCID")
+		writeFailure(w, status.CodeMatchingIDInvalidAssoc, "a different MatchingID is associated with this ICCID")
 		return
 	}
 	if req.EID != "" && p.EID != "" && req.EID != p.EID {
-		writeFailure(w, rsp.CodeICCIDInvalidAssoc, "a different EID is associated with this ICCID")
+		writeFailure(w, status.CodeICCIDInvalidAssoc, "a different EID is associated with this ICCID")
 		return
 	}
 	if _, err := h.Orders.Cancel(norm, final == finalUnavailable); err != nil {
@@ -420,13 +420,13 @@ func (h *Handler) releaseProfile(w http.ResponseWriter, r *http.Request) {
 	}
 	tenant := h.applyCaller(r, hdr)
 	if req.ICCID == "" {
-		writeFailure(w, rsp.CodeMandatoryElementMissing, "iccid is required")
+		writeFailure(w, status.CodeMandatoryElementMissing, "iccid is required")
 		return
 	}
 	norm := iccid.Normalize(req.ICCID)
 	p, err := h.Profiles.GetByICCID(norm)
 	if err != nil {
-		writeFailure(w, rsp.CodeICCIDUnknown, "unknown ICCID")
+		writeFailure(w, status.CodeICCIDUnknown, "unknown ICCID")
 		return
 	}
 	if err := h.authorize(tenant, p, ""); err != nil {
@@ -440,7 +440,7 @@ func (h *Handler) releaseProfile(w http.ResponseWriter, r *http.Request) {
 	switch p.State {
 	case store.StateConfirmed, store.StateReleased:
 	default:
-		writeFailure(w, rsp.CodeInvalidTransition, "the Profile has not been confirmed, or is already downloaded")
+		writeFailure(w, status.CodeInvalidTransition, "the Profile has not been confirmed, or is already downloaded")
 		return
 	}
 	if _, err := h.Orders.Release(norm); err != nil {
@@ -459,7 +459,7 @@ func (h *Handler) handleDownloadProgressInfo(w http.ResponseWriter, _ *http.Requ
 func (h *Handler) handleAcrRequest(w http.ResponseWriter, r *http.Request) {
 	body, err := common.ReadRaw(w, r, 0)
 	if err != nil {
-		common.WriteCode(w, rsp.CodeInputRefused, "cannot read body")
+		common.WriteCode(w, status.CodeInputRefused, "cannot read body")
 		return
 	}
 	if h.ACRHandler == nil {
@@ -475,7 +475,7 @@ func (h *Handler) handleAcrRequest(w http.ResponseWriter, r *http.Request) {
 	req.Data = body
 	resp, err := h.ACRHandler(req)
 	if err != nil {
-		common.WriteCode(w, rsp.CodeInputRefused, err.Error())
+		common.WriteCode(w, status.CodeInputRefused, err.Error())
 		return
 	}
 	if resp == nil {
@@ -538,14 +538,14 @@ func (h *Handler) resolveProfileType(tenant, profileType string) (string, bool, 
 	}
 	want, name := profileType[:i], profileType[i+1:]
 	if name == "" {
-		return "", false, rsp.CodeProfileTypeUnknown.Status("malformed profileType " + profileType)
+		return "", false, status.CodeProfileTypeUnknown.Status("malformed profileType " + profileType)
 	}
 	if want != "" && want != tenant {
-		return "", false, rsp.CodeProfileTypeNotAllowed.Status("profileType belongs to another tenant")
+		return "", false, status.CodeProfileTypeNotAllowed.Status("profileType belongs to another tenant")
 	}
 	if h.UPP != nil {
 		if _, err := h.UPP.GetForTenant(tenant, name); err != nil {
-			return "", false, rsp.CodeProfileTypeUnknown.Status("unknown profileType template " + name)
+			return "", false, status.CodeProfileTypeUnknown.Status("unknown profileType template " + name)
 		}
 	}
 	return name, true, nil
@@ -555,10 +555,10 @@ func (h *Handler) resolveProfileType(tenant, profileType string) (string, bool, 
 // carries an EID, the EID consistency required by SGP.22 §5.3.2.
 func (h *Handler) authorize(tenant string, p *store.Profile, eid string) error {
 	if p.TenantID != tenant {
-		return rsp.CodeInputRefused.Status("ICCID belongs to another tenant")
+		return status.CodeInputRefused.Status("ICCID belongs to another tenant")
 	}
 	if eid != "" && p.EID != "" && p.EID != eid {
-		return rsp.CodeInvalidAssociation.Status("eid does not match the download order")
+		return status.CodeInvalidAssociation.Status("eid does not match the download order")
 	}
 	return nil
 }
@@ -569,10 +569,10 @@ func (h *Handler) authorize(tenant string, p *store.Profile, eid string) error {
 func (h *Handler) authorizeICCID(tenant, rawICCID string) error {
 	p, err := h.Profiles.GetByICCID(iccid.Normalize(rawICCID))
 	if err != nil {
-		return rsp.CodeICCIDUnknown.Status("unknown ICCID")
+		return status.CodeICCIDUnknown.Status("unknown ICCID")
 	}
 	if p.TenantID != tenant {
-		return rsp.CodeInputRefused.Status("ICCID belongs to another tenant")
+		return status.CodeInputRefused.Status("ICCID belongs to another tenant")
 	}
 	return nil
 }
@@ -583,7 +583,7 @@ func (h *Handler) authorizeICCID(tenant, rawICCID string) error {
 // both header identifiers.
 func decode(w http.ResponseWriter, r *http.Request, v any) (common.RequestHeader, bool) {
 	if err := common.ReadJSON(w, r, 0, v); err != nil {
-		common.WriteCode(w, rsp.CodeInvalidRequest, "invalid JSON")
+		common.WriteCode(w, status.CodeInvalidRequest, "invalid JSON")
 		return common.RequestHeader{}, false
 	}
 	var hdr common.RequestHeader
@@ -598,7 +598,7 @@ func decode(w http.ResponseWriter, r *http.Request, v any) (common.RequestHeader
 		hdr = t.Header
 	}
 	if hdr.FunctionRequesterIdentifier == "" || hdr.FunctionCallIdentifier == "" {
-		common.WriteCode(w, rsp.CodeInvalidRequest, "missing header.functionRequesterIdentifier/functionCallIdentifier")
+		common.WriteCode(w, status.CodeInvalidRequest, "missing header.functionRequesterIdentifier/functionCallIdentifier")
 		return common.RequestHeader{}, false
 	}
 	return hdr, true
@@ -619,18 +619,18 @@ func writeSuccess(w http.ResponseWriter, extra map[string]any) {
 	common.WriteSuccess(w, extra)
 }
 
-func writeFailure(w http.ResponseWriter, code rsp.Code, message string) {
+func writeFailure(w http.ResponseWriter, code status.Code, message string) {
 	common.WriteCode(w, code, message)
 }
 
 func writeError(w http.ResponseWriter, err error) {
 	var te *service.TransitionError
 	if errors.As(err, &te) {
-		common.WriteCode(w, rsp.CodeInvalidTransition, err.Error())
+		common.WriteCode(w, status.CodeInvalidTransition, err.Error())
 		return
 	}
 	if errors.Is(err, store.ErrNotFound) {
-		common.WriteCode(w, rsp.CodeICCIDUnknown, "unknown ICCID")
+		common.WriteCode(w, status.CodeICCIDUnknown, "unknown ICCID")
 		return
 	}
 	common.WriteStatusFailure(w, err)

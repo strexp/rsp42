@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"rsp42/internal/rsp"
+	"rsp42/internal/rsp/status"
 	"rsp42/internal/store"
 )
 
@@ -15,10 +16,10 @@ import (
 func (c *CMAE) CancelSession(transactionID string, cancelSessionRequestEs9 []byte) (string, int64, error) {
 	req, err := rsp.DecodeCancelSessionRequestEs9(cancelSessionRequestEs9)
 	if err != nil {
-		return "", 0, rsp.CodeUnknownTransaction.Status(err.Error())
+		return "", 0, status.CodeUnknownTransaction.Status(err.Error())
 	}
 	if !strings.EqualFold(hex.EncodeToString(req.TransactionID), transactionID) {
-		return "", 0, rsp.CodeUnknownTransaction.Status("transactionId mismatch")
+		return "", 0, status.CodeUnknownTransaction.Status("transactionId mismatch")
 	}
 	c.applyCancelSession(transactionID, req.Reason)
 	return transactionID, req.Reason, nil
@@ -32,19 +33,19 @@ func (c *CMAE) CancelSession(transactionID string, cancelSessionRequestEs9 []byt
 func (c *CMAE) CancelSessionJSON(transactionID string, cancelSessionResponse []byte) (string, int64, error) {
 	ok, code, err := rsp.DecodeCancelSessionResponse(cancelSessionResponse)
 	if err != nil {
-		return "", 0, rsp.CodeUnknownTransaction.Status(err.Error())
+		return "", 0, status.CodeUnknownTransaction.Status(err.Error())
 	}
 	if ok == nil || ok.Signed == nil {
 		// The ES10b error alternative (§5.7.14): invalidTransactionId(5) or
 		// undefinedError(127).
 		if code == 5 {
-			return "", 0, rsp.CodeUnknownTransaction.Status("invalidTransactionId")
+			return "", 0, status.CodeUnknownTransaction.Status("invalidTransactionId")
 		}
-		return "", 0, rsp.CodeVerificationFailed.Status(
+		return "", 0, status.CodeVerificationFailed.Status(
 			fmt.Sprintf("cancelSessionResponseError %d", code))
 	}
 	if !strings.EqualFold(hex.EncodeToString(ok.Signed.TransactionID), transactionID) {
-		return "", 0, rsp.CodeUnknownTransaction.Status("transactionId mismatch")
+		return "", 0, status.CodeUnknownTransaction.Status("transactionId mismatch")
 	}
 	c.applyCancelSession(transactionID, ok.Signed.Reason)
 	return transactionID, ok.Signed.Reason, nil
