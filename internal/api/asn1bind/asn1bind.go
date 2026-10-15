@@ -42,16 +42,6 @@ func WriteResponse(w http.ResponseWriter, inner []byte) {
 	common.WriteASN1(w, rsp.EncodeRemoteProfileProvisioningResponse(inner))
 }
 
-// SubjectCode returns the subjectCode of a *rsp.StatusCode error, or "" when
-// the error carries no RSP classification.
-func SubjectCode(err error) string {
-	var sc *rsp.StatusCode
-	if errors.As(err, &sc) {
-		return sc.SubjectCode
-	}
-	return ""
-}
-
 // StatusPair returns the subjectCode and reasonCode of a *rsp.StatusCode error,
 // or two empty strings when the error carries no RSP classification.
 func StatusPair(err error) (subject, reason string) {

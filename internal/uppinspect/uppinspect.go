@@ -114,13 +114,6 @@ func InspectUPP(raw []byte) (*UPPInspection, error) {
 	return out, nil
 }
 
-// RenderResult is a dry-run personalization preview (G7: `POST /upp/render`).
-type RenderResult struct {
-	*UPPInspection
-	// Elements/Files below describe the rendered package, not the template.
-	Rendered bool `json:"rendered"`
-}
-
 // RenderUPP parses a template, applies the caller-supplied personalization and
 // re-encodes it, returning the resulting package's structure and digest. It
 // allocates nothing and writes nothing.

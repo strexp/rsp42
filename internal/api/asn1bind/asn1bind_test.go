@@ -10,17 +10,6 @@ import (
 	"rsp42/internal/rsp"
 )
 
-func TestSubjectCode(t *testing.T) {
-	require.Equal(t, "", SubjectCode(nil))
-	require.Equal(t, "", SubjectCode(errors.New("plain")))
-	require.Equal(t, "8.10.1", SubjectCode(rsp.CodeUnknownTransaction.Status("x")))
-
-	// The lookup must survive wrapping, because the service layers wrap status
-	// codes with context.
-	wrapped := fmt.Errorf("session lookup: %w", rsp.CodeUnknownTransaction.Status("x"))
-	require.Equal(t, "8.10.1", SubjectCode(wrapped))
-}
-
 func TestStatusPair(t *testing.T) {
 	subject, reason := StatusPair(nil)
 	require.Equal(t, "", subject)

@@ -28,11 +28,6 @@ type ICCIDPoolEntry struct {
 	CreatedAt     time.Time
 }
 
-// Expired reports whether an allocated entry's reservation has lapsed.
-func (e *ICCIDPoolEntry) Expired(now time.Time) bool {
-	return e.State == "allocated" && e.ReservedUntil != nil && e.ReservedUntil.Before(now)
-}
-
 // ICCIDRange is an imported ICCID range.
 type ICCIDRange struct {
 	ID        int64

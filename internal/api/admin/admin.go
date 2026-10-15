@@ -146,11 +146,6 @@ func Mount(r chi.Router, h *Handler) {
 	})
 }
 
-// adminhttp.ErrorBody is the stable management-API error model (G10).
-
-// adminhttp.ErrorBodyDetails is adminhttp.ErrorBody plus a machine-readable details object. It is
-// used where a stable code alone is not enough to act on (N16, N3).
-
 // writeSAIPVersionErr reports a template refused by profiles.allowed_saip_versions
 // (N16). The stable code is saip_version_not_supported.
 func (h *Handler) writeSAIPVersionErr(w http.ResponseWriter, rej *service.SAIPVersionRejection) {
@@ -160,16 +155,6 @@ func (h *Handler) writeSAIPVersionErr(w http.ResponseWriter, rej *service.SAIPVe
 	adminhttp.WriteJSON(w, http.StatusConflict, adminhttp.ErrorBodyDetails("saip_version_not_supported", rej.Error(),
 		map[string]any{"templateVersion": rej.TemplateVersion, "maxSupported": rej.MaxSupported}))
 }
-
-// adminhttp.ErrCode derives a stable machine-readable code from the HTTP status when a
-// handler has no more specific one. Every status a handler can produce maps to
-// a named code; there is deliberately no bare "error" code (N7).
-
-// adminhttp.ReadJSON decodes a management-API request body. The size budget comes from
-// middleware.MaxBody (api.Options.BodyLimit), so no separate limit applies.
-
-// adminhttp.TenantFilter returns the `?tenant=` filter: nil when absent, a pointer to the
-// raw value otherwise ("" selects the platform-default rows).
 
 // effectiveTenant resolves the tenant of a write: the explicit body value wins,
 // then `?tenant=`. A non-empty tenant must be registered. The resolved value is
@@ -243,14 +228,6 @@ func (h *Handler) openapi(w http.ResponseWriter, _ *http.Request) {
 	adminhttp.WriteJSON(w, http.StatusOK, openapi.Doc())
 }
 
-// adminhttp.ClampSize bounds a page size to [1, adminhttp.MaxPageSize] with the shared default.
-
-// adminhttp.ClampPage bounds a 1-based page number.
-
-// adminhttp.ParseID parses a positive identifier.
-
-// adminhttp.ParseTime parses a query timestamp; nil when empty or unparsable.
-
 // serviceAllocate maps a create-profile request onto an allocation request.
 func serviceAllocate(req createProfileReq, tenant string) service.AllocateRequest {
 	return service.AllocateRequest{
@@ -262,8 +239,6 @@ func serviceAllocate(req createProfileReq, tenant string) service.AllocateReques
 		ExternalRef: req.ExternalRef,
 	}
 }
-
-// adminhttp.FirstNonEmpty returns the first non-empty string.
 
 // writeTenantErr reports a tenant-resolution failure with a stable code.
 func writeTenantErr(w http.ResponseWriter, err error) {

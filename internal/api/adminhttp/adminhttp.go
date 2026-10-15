@@ -118,9 +118,9 @@ func TenantFilter(r *http.Request) *string {
 	return &t
 }
 
-// ClampSize bounds a page size to [1, MaxPageSize], falling back to
+// clampSize bounds a page size to [1, MaxPageSize], falling back to
 // DefaultPageSize.
-func ClampSize(n int) int {
+func clampSize(n int) int {
 	if n < 1 {
 		return DefaultPageSize
 	}
@@ -130,8 +130,8 @@ func ClampSize(n int) int {
 	return n
 }
 
-// ClampPage bounds a 1-based page number.
-func ClampPage(n int) int {
+// clampPage bounds a 1-based page number.
+func clampPage(n int) int {
 	if n < 1 {
 		return 1
 	}
@@ -142,8 +142,8 @@ func ClampPage(n int) int {
 // management-API defaults and bounds.
 func ParsePage(r *http.Request) (page, size int) {
 	q := r.URL.Query()
-	page = ClampPage(AtoiDefault(q.Get("page"), 1))
-	size = ClampSize(AtoiDefault(q.Get("size"), DefaultPageSize))
+	page = clampPage(AtoiDefault(q.Get("page"), 1))
+	size = clampSize(AtoiDefault(q.Get("size"), DefaultPageSize))
 	return page, size
 }
 
