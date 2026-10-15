@@ -12,8 +12,8 @@ import (
 
 	"rsp42/internal/api/adminhttp"
 	"rsp42/internal/saip/personalization"
-	"rsp42/internal/service"
 	"rsp42/internal/store"
+	"rsp42/internal/uppinspect"
 )
 
 // uppFieldSchema describes one personalizable field for the visual template
@@ -67,7 +67,7 @@ var personalizationRequiredIn = map[string][]string{
 }
 
 // annotateSchema resolves the static field catalog against one template.
-func annotateSchema(ins *service.UPPInspection) []uppFieldSchema {
+func annotateSchema(ins *uppinspect.UPPInspection) []uppFieldSchema {
 	present := map[string]bool{}
 	for _, f := range ins.Files {
 		present[strings.ToUpper(f.FID)] = true
@@ -137,7 +137,7 @@ func (h *Handler) uppSchema(w http.ResponseWriter, r *http.Request) {
 		adminhttp.WriteErr(w, http.StatusNotFound, "unknown template")
 		return
 	}
-	ins, err := service.InspectUPP(t.Bytes)
+	ins, err := uppinspect.InspectUPP(t.Bytes)
 	if err != nil {
 		adminhttp.WriteErr(w, http.StatusUnprocessableEntity, "invalid UPP: "+err.Error())
 		return
@@ -164,7 +164,7 @@ func (h *Handler) validateUPP(w http.ResponseWriter, r *http.Request) {
 		adminhttp.WriteErr(w, http.StatusBadRequest, "data must be base64-encoded DER")
 		return
 	}
-	ins, err := service.InspectUPP(raw)
+	ins, err := uppinspect.InspectUPP(raw)
 	if err != nil {
 		adminhttp.WriteJSON(w, http.StatusOK, map[string]any{"valid": false, "error": err.Error()})
 		return
@@ -239,7 +239,7 @@ func (h *Handler) renderUPP(w http.ResponseWriter, r *http.Request) {
 		adminhttp.WriteErr(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	ins, encoded, err := service.RenderUPP(raw, data, &personalization.Engine{})
+	ins, encoded, err := uppinspect.RenderUPP(raw, data, &personalization.Engine{})
 	if err != nil {
 		adminhttp.WriteJSON(w, http.StatusOK, map[string]any{"rendered": false, "error": err.Error()})
 		return

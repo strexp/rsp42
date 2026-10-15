@@ -11,8 +11,8 @@ import (
 	"github.com/go-chi/chi/v5"
 
 	"rsp42/internal/api/adminhttp"
-	"rsp42/internal/service"
 	"rsp42/internal/store"
+	"rsp42/internal/uppinspect"
 )
 
 type uppView struct {
@@ -109,7 +109,7 @@ func (h *Handler) putUPP(w http.ResponseWriter, r *http.Request) {
 	}
 	// Parse once: the inspection carries the SAIP version and the N13
 	// constraint result.
-	ins, err := service.InspectUPP(raw)
+	ins, err := uppinspect.InspectUPP(raw)
 	if err != nil {
 		adminhttp.WriteErr(w, http.StatusBadRequest, "invalid UPP profile: "+err.Error())
 		return

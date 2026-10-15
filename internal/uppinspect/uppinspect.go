@@ -1,4 +1,12 @@
-package service
+// Package uppinspect derives the structural, read-only view of a SAIP profile
+// package (header, services, GFSTE list, ProfileElements and files) that the
+// management API serves, and renders a personalization dry run.
+//
+// It sits beside internal/saip rather than inside internal/service because it is
+// SAIP codec and validation work with a JSON-facing result shape, not
+// orchestration: internal/service keeps the download-path logic and the
+// management API keeps the HTTP binding.
+package uppinspect
 
 import (
 	"crypto/sha256"
