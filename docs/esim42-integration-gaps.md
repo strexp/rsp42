@@ -474,8 +474,9 @@
 | F5 | `profileType` 选择器**无法表达平台默认租户**：`"/<template>"` 被判 `malformed`，因此无法按名选择全局（`promote` 后）模板 | §6.5.2.1（`profileType` 由 Operator 自由定义） | 允许**空前缀** `"/<template>"` 选择平台默认租户（全局）模板；名称仍按调用方作用域解析（自有或全局）。`"/"` 仍为 `8.2.5/3.9`，他人租户前缀仍为 `8.2.5/1.2` |
 | F6 | 复用已存在的 `matchingId` 时把**原始 SQLite 错误**（`UNIQUE constraint failed: profiles.matching_id (2067)`）当 `8.2/4.2` 返回，泄漏存储层细节 | Table 27：`8.2.6/3.3` Matching ID — Already in Use (Uniqueness)；§4.1.1（matchingId 字符集） | 唯一索引冲突 → **`8.2.6/3.3`** 且只返回可读 message（不泄漏存储层错误）；`matchingId` 字符集（大写字母/数字/`-`）非法 → `8.1/1.2`；此外按 Table 27，带 `smdsAddress` 时缺 EID → `8.1.1/2.2` |
 | F7 | esim42 文档把 `smdpAddress` 列为 `downloadOrder` 的成功响应字段 | Table 23（DownloadOrder 输出**只有 `iccid`**）；`smdpAddress` 是 Table 26 的 ConfirmOrder 可选输出 | rsp42 **不改**（只返回 `iccid`）；已写入 `docs/interfaces.md`，esim42 需修正文档 |
-| F8 | 用**不同 `matchingId`** 重发 `confirmOrder` 时，旧 MatchingID 下的 SM-DS 事件登记**不被删除**：同一 ICCID 出现两条事件，而 Profile 只认新 ID（旧激活码可被发现但必定认证失败） | §3.6（事件登记以 MatchingID 为键）、Table 27 的重发 NOTE（重发不应产生额外动作） | 检测到 MatchingID 变更时先 `Registrar.DeleteEvent` 删除旧登记，再按 `smdsAddress` 登记新事件；同一 MatchingID 重发为幂等（不再向 SM-DS 重复登记，避免 `8.9.5/3.3` 被记成注册失败）。**残留**：ACR-0 轮换 MatchingID 时同样会产生陈旧登记，但 ACR-0 只作用于 `Installed` 状态而 `delete_on_install=true` 时事件已删；仅在 `delete_on_install=false` 下存在，需给 CMAE 加登记依赖才能彻底修（未做） |
+| F8 | 用**不同 `matchingId`** 重发 `confirmOrder` 时，旧 MatchingID 下的 SM-DS 事件登记**不被删除**：同一 ICCID 出现两条事件，而 Profile 只认新 ID（旧激活码可被发现但必定认证失败） | §3.6（事件登记以 MatchingID 为键）、Table 27 的重发 NOTE（重发不应产生额外动作） | 检测到 MatchingID 变更时先 `Registrar.DeleteEvent` 删除旧登记，再按 `smdsAddress` 登记新事件；同一 MatchingID 重发为幂等（不再向 SM-DS 重复登记，避免 `8.9.5/3.3` 被记成注册失败）。**ACR-0 轮换同样被覆盖**：CMAE 新增 `MatchingIDChanged` 钩子，轮换后删除旧登记（新激活码直接交付，不再登记新事件）。实测：`Installed` 且保留事件时执行 `ACR-0-<ICCID>` → `matchingId` 轮换为新 token、`/events` 归零 |
 | F9 | `internal/cli/smdpp.go` 构造 `es2plus.Deps` 时**没有注入 `Metrics`**，导致 `rsp42_es2p_tenant_unmapped_total`、`rsp42_es2p_profile_type_unparsed_total`、`rsp42_es12_register_failures_total` **只有 HELP/TYPE、没有取值**（F1 承诺的指标那一半实际不生效） | —（装配缺陷） | 注入 `Metrics: reg`；三个计数器实测开始上报（未映射 requester → `rsp42_es2p_tenant_unmapped_total 1`；opaque `profileType` → `rsp42_es2p_profile_type_unparsed_total{tenant=…} 1`；映射正常的 requester 不计数） |
+| F10 | `smdpp.es12.delete_on_install` **只被解析、从未被读取**：安装成功路径无条件删除 SM-DS 事件，配置项形同虚设（文档与示例却把它当成可选项） | §3.6（事件在安装后不再需要，删除是常规行为） | 安装路径改为受 `NotificationDeps.KeepEventOnInstall` 控制（字段取反，零值 = 删除，保持既有/规范默认），CLI 用 `!cfg.SMDpp.ES12.DeleteOnInstall` 注入。实测 `delete_on_install: false` 时事件在安装后保留，随后由 ACR-0 钩子在轮换时清理；`true`（默认）时安装即删除 |
 
 ### 12.2 esim42 必须同步修正的契约（对外回执）
 
@@ -494,7 +495,7 @@
 | Annex A 表 vs pySim 转写（573 条）+ V2.3.1 PDF 复核 | 61 处差异**全部**是 pySim(V3.3.1) 缺陷或 V2→V3 变更；rsp42 表在 V2.3.1 基线上逐条正确 |
 | lpac × YggdraSIM 端到端 + pySim BPP 校验 | `Released → Downloaded → Installed`；BPP MAC/解密通过；**R2**（BF26 用 `04` 而非 `80/81/82`）与 **R3**（ASN.1 binding 响应单层 `BF39`）复现 |
 | SGP.22 v2.7 原文（Table 23/26/27/28/29/30、§4.1.1、§5.3.3） | 上述 F4/F6/F7 的标准依据 |
-| 隔离环境复跑（全新 DB + 独立 YggdraSIM 状态）后的实测 | F1（审计 detail + 计数器）、F2（`?function=` 命中）、F3（`rsp42_downloads_total` 取值）、F4/F5/F6（各状态码）、F8（换 ID 后仅剩一条事件、同 ID 重发不重复登记）、F9（三个 ES2+ 计数器开始上报）全部通过；端到端 `Released → Downloaded → Installed` 回归通过 |
+| 隔离环境复跑（全新 DB + 独立 YggdraSIM 状态）后的实测 | F1（审计 detail + 计数器）、F2（`?function=` 命中）、F3（`rsp42_downloads_total` 取值）、F4/F5/F6（各状态码）、F8（换 ID 后仅剩一条事件、同 ID 重发不重复登记、**ACR-0 轮换后事件归零**）、F9（三个 ES2+ 计数器开始上报）、F10（`delete_on_install: false` 保留事件 / 默认删除）全部通过；端到端 `Released → Downloaded → Installed` 回归通过 |
 
 ---
 

@@ -60,6 +60,10 @@ smdpp:
     smds_address: "testrootsmds.example.com"
     register_on_confirm: true
     forwarding_indicator: true
+    # Delete the SM-DS event once the Profile is installed (SGP.22 §3.6: an
+    # installed Profile no longer needs to be discoverable). Set false to keep it;
+    # the event is then also dropped when an ACR-0 redownload rotates the
+    # MatchingID, because a registration is keyed by it.
     delete_on_install: true
     tls:
       client_cert_file: "testdata/sgp26/SM-DP+/DPtls/CERT_DPtls_NIST.pem"
