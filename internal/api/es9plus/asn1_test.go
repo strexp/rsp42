@@ -15,6 +15,7 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/stretchr/testify/require"
 
+	"rsp42/internal/api/asn1bind"
 	"rsp42/internal/api/common"
 	"rsp42/internal/api/middleware"
 	"rsp42/internal/asn1"
@@ -83,6 +84,32 @@ func euiccInfo1(ski []byte) []byte {
 }
 
 func envelope(inner []byte) []byte { return rsp.EncodeRemoteProfileProvisioningResponse(inner) }
+
+func TestES9PlusErrorEnums(t *testing.T) {
+	// F4/F6: each reason code under a shared subject maps to its own
+	// AuthenticateClientResponseEs9 member (§6.6.2.2, Table 43).
+	require.EqualValues(t, 7, asn1bind.CodeFor(rsp.CodeEIDMismatch.Status("x"), authenticateErrorCodes, 127))           // eidMismatch
+	require.EqualValues(t, 6, asn1bind.CodeFor(rsp.CodeProfileNotEligible.Status("x"), authenticateErrorCodes, 127))    // matchingIdRefused
+	require.EqualValues(t, 8, asn1bind.CodeFor(rsp.CodeNoEligibleProfile.Status("x"), authenticateErrorCodes, 127))     // noEligibleProfile
+	require.EqualValues(t, 3, asn1bind.CodeFor(rsp.CodeCertChainFailed.Status("x"), authenticateErrorCodes, 127))       // euiccCertificateInvalid
+	require.EqualValues(t, 5, asn1bind.CodeFor(rsp.CodeVerificationFailed.Status("x"), authenticateErrorCodes, 127))    // euiccSignatureInvalid
+	require.EqualValues(t, 10, asn1bind.CodeFor(rsp.CodeUnknownTransaction.Status("x"), authenticateErrorCodes, 127))   // invalidTransactionId
+	require.EqualValues(t, 18, asn1bind.CodeFor(rsp.CodeDownloadOrderExpired.Status("x"), authenticateErrorCodes, 127)) // downloadOrderExpired
+	// 8.2/1.2 (not yet released) and 8.8.5/6.4 (retries exceeded) have no enum
+	// member: undefinedError(127).
+	require.EqualValues(t, 127, asn1bind.CodeFor(rsp.CodeProfileNotReleased.Status("x"), authenticateErrorCodes, 127))
+	require.EqualValues(t, 127, asn1bind.CodeFor(rsp.CodeDownloadRetriesExceeded.Status("x"), authenticateErrorCodes, 127))
+
+	// F6: the GetBoundProfilePackage confirmation-code rows are distinguished
+	// (§6.6.2.3, Table 40).
+	require.EqualValues(t, 3, asn1bind.CodeFor(rsp.CodeConfirmationCodeRefused.Status("x"), getBPPErrorCodes, 127))
+	require.EqualValues(t, 4, asn1bind.CodeFor(rsp.CodeConfirmationCode.Status("x"), getBPPErrorCodes, 127))
+	require.EqualValues(t, 95, asn1bind.CodeFor(rsp.CodeUnknownTransaction.Status("x"), getBPPErrorCodes, 127))
+
+	// F4: the InitiateAuthentication enum (§6.6.2.1, Table 37).
+	require.EqualValues(t, 1, asn1bind.CodeFor(rsp.CodeSMDPAddress.Status("x"), initiateErrorCodes, 2))
+	require.EqualValues(t, 3, asn1bind.CodeFor(rsp.CodeCIUnsupported.Status("x"), initiateErrorCodes, 2))
+}
 
 func TestASN1BindingContentNegotiation(t *testing.T) {
 	h, _ := newTestHandler(t)

@@ -76,12 +76,12 @@ type authenticateReq struct {
 func (h *Handler) authenticateClient(w http.ResponseWriter, r *http.Request) {
 	var req authenticateReq
 	if err := common.ReadJSON(w, r, 0, &req); err != nil {
-		common.WriteCode(w, rsp.CodeDSAuthFailed, "invalid request")
+		common.WriteCode(w, rsp.CodeVerificationFailed, "invalid request")
 		return
 	}
 	resp, err := common.DecodeB64(req.AuthenticateServerResponse)
 	if err != nil {
-		common.WriteCode(w, rsp.CodeDSAuthFailed, "invalid authenticateServerResponse")
+		common.WriteCode(w, rsp.CodeVerificationFailed, "invalid authenticateServerResponse")
 		return
 	}
 	res, err := h.DS.AuthenticateClient(req.TransactionID, resp)

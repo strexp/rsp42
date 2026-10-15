@@ -31,10 +31,15 @@ var (
 	StatusUnknownTransactionID  = &StatusCode{SubjectCode: "8.10.1", ReasonCode: "3.9", Message: "Unknown TransactionID"}
 	StatusInvalidCertificate    = &StatusCode{SubjectCode: "8.1.3", ReasonCode: "6.1", Message: "Invalid certificate"}
 	StatusEUICCVerificationFail = &StatusCode{SubjectCode: "8.1", ReasonCode: "6.1", Message: "eUICC verification failed"}
-	StatusConfirmationCodeMiss  = &StatusCode{SubjectCode: "8.2.7", ReasonCode: "6.4", Message: "Confirmation code missing or invalid"}
-	StatusSMDPAddressRefused    = &StatusCode{SubjectCode: "8.8.1", ReasonCode: "3.8", Message: "Invalid SM-DP+ address"}
-	StatusCIPKNotSupported      = &StatusCode{SubjectCode: "8.8.2", ReasonCode: "3.1", Message: "Requested CI key not supported"}
-	StatusNoEligibleProfile     = &StatusCode{SubjectCode: "8.2.6", ReasonCode: "3.8", Message: "No eligible profile"}
+	// StatusConfirmationCodeMiss is Table 40's 8.2.7/2.2 "Mandatory Element
+	// Missing: Confirmation Code is missing" (a missing code is not the same
+	// condition as the 8.2.7/6.4 retry budget being exhausted).
+	StatusConfirmationCodeMiss = &StatusCode{SubjectCode: "8.2.7", ReasonCode: "2.2", Message: "Confirmation code missing"}
+	StatusSMDPAddressRefused   = &StatusCode{SubjectCode: "8.8.1", ReasonCode: "3.8", Message: "Invalid SM-DP+ address"}
+	StatusCIPKNotSupported     = &StatusCode{SubjectCode: "8.8.2", ReasonCode: "3.1", Message: "Requested CI key not supported"}
+	// StatusNoEligibleProfile is Table 43's 8.2.5/4.3 "No eligible Profile for
+	// this eUICC/Device", not the 8.2.6 MatchingID subject.
+	StatusNoEligibleProfile = &StatusCode{SubjectCode: "8.2.5", ReasonCode: "4.3", Message: "No eligible Profile for this eUICC/Device"}
 )
 
 // Code is a named subjectCode/reasonCode pair from SGP.22 §5.2.6. Functions
@@ -54,10 +59,24 @@ var (
 	CodeInvalidRequest     = Code{"8.1", "1.2"}
 	CodeVerificationFailed = Code{"8.1", "6.1"}
 	CodeCertChainFailed    = Code{"8.1.3", "6.1"}
-	CodeEIDNotPermitted    = Code{"8.1.4", "6.1"}
-	CodeProfileLoadFailed  = Code{"8.2", "3.7"}
-	CodeInputRefused       = Code{"8.2.1", "1.2"}
+	// CodeEIDMismatch is Table 43's 8.1.1/3.8 "EID doesn't match the expected
+	// value". Subject 8.1.4 does not exist in SGP.22 §5.2.6.1 (F7).
+	CodeEIDMismatch       = Code{"8.1.1", "3.8"}
+	CodeProfileLoadFailed = Code{"8.2", "3.7"}
+	CodeInputRefused      = Code{"8.2.1", "1.2"}
+	// CodeProfileNotEligible is Table 43's 8.2.6/3.8 "MatchingID (AC_Token or
+	// EventID) is refused": the MatchingID lookup failed or the Profile's EID
+	// does not match. See CodeProfileNotReleased and CodeEIDMismatch for the
+	// conditions that have their own rows.
 	CodeProfileNotEligible = Code{"8.2.6", "3.8"}
+	// CodeProfileNotReleased is Table 43's 8.2/1.2 "Profile has not yet been
+	// released".
+	CodeProfileNotReleased = Code{"8.2", "1.2"}
+	// CodeDownloadOrderExpired is Table 43's 8.8.5/4.10 "Time to Live Expired".
+	CodeDownloadOrderExpired = Code{"8.8.5", "4.10"}
+	// CodeDownloadRetriesExceeded is Table 43's 8.8.5/6.4 "Maximum number of
+	// retries exceeded" for the Profile download order.
+	CodeDownloadRetriesExceeded = Code{"8.8.5", "6.4"}
 	// CodeAllocateFailed is a generic DownloadOrder allocation failure
 	// (Profile / Execution Error). Pool or quota exhaustion uses the more
 	// specific CodeNoMoreProfileAvailable, and an ICCID conflict uses
@@ -78,19 +97,30 @@ var (
 	CodeNoEligibleProfile = Code{"8.2.5", "4.3"}
 	// CodeICCIDInUse is 8.2.1/3.3: the Profile identified by the ICCID is not
 	// available (already in use, blocked or otherwise not issuable).
-	CodeICCIDInUse         = Code{"8.2.1", "3.3"}
-	CodeInvalidTransition  = Code{"8.2.6", "3.5"}
-	CodeConfirmationCode   = Code{"8.2.7", "6.4"}
-	CodeChallengeInvalid   = Code{"8.8.1", "1.2"}
-	CodeSMDPAddress        = Code{"8.8.1", "3.8"}
-	CodeCIUnsupported      = Code{"8.8.2", "3.1"}
-	CodeUnsupportedCurve   = Code{"8.8.5", "4.10"}
-	CodeES12BadRequest     = Code{"8.9", "1.2"}
-	CodeES12Upstream       = Code{"8.9", "5.1"}
-	CodeDSChallengeInvalid = Code{"8.9.1", "1.2"}
-	CodeDSAddress          = Code{"8.9.1", "3.8"}
-	CodeDSCIUnsupported    = Code{"8.9.2", "3.1"}
-	CodeDSAuthFailed       = Code{"8.9.3", "3.1"}
+	CodeICCIDInUse        = Code{"8.2.1", "3.3"}
+	CodeInvalidTransition = Code{"8.2.1", "3.5"}
+	// CodeConfirmationCode is Table 40's 8.2.7/6.4 "Maximum number of retries
+	// exceeded" for the Confirmation Code. A single refused code that still has
+	// retry budget left is CodeConfirmationCodeRefused.
+	CodeConfirmationCode = Code{"8.2.7", "6.4"}
+	// CodeConfirmationCodeRefused is Table 40's 8.2.7/3.8 "Confirmation Code is
+	// refused".
+	CodeConfirmationCodeRefused = Code{"8.2.7", "3.8"}
+	CodeChallengeInvalid        = Code{"8.8.1", "1.2"}
+	CodeSMDPAddress             = Code{"8.8.1", "3.8"}
+	CodeCIUnsupported           = Code{"8.8.2", "3.1"}
+	CodeUnsupportedCurve        = Code{"8.8.5", "4.10"}
+	CodeES12BadRequest          = Code{"8.9", "1.2"}
+	CodeES12Upstream            = Code{"8.9", "5.1"}
+	CodeDSChallengeInvalid      = Code{"8.9.1", "1.2"}
+	CodeDSAddress               = Code{"8.9.1", "3.8"}
+	CodeDSCIUnsupported         = Code{"8.9.2", "3.1"}
+	// CodeDSSVNUnsupported is Table 48a's 8.9.3/3.1 "Specification Version
+	// Number indicated by the eUICC is not supported by the SM-DS". The ES11
+	// InitiateAuthenticationResponse enum encodes it as
+	// euiccVersionNotSupportedByDp(2). It is not an AuthenticateClient code
+	// (AuthenticateClient uses the Table 52 pairs).
+	CodeDSSVNUnsupported   = Code{"8.9.3", "3.1"}
 	CodeEventIDInUse       = Code{"8.9.5", "3.3"}
 	CodeEventNotFound      = Code{"8.9.5", "3.9"}
 	CodeUnknownTransaction = Code{"8.10.1", "3.9"}

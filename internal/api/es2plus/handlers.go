@@ -113,7 +113,10 @@ type confirmOrderReq struct {
 	MatchingID       string               `json:"matchingId"`
 	ConfirmationCode string               `json:"confirmationCode"`
 	SMDSAddress      string               `json:"smdsAddress"`
-	ReleaseFlag      bool                 `json:"releaseFlag"`
+	// ReleaseFlag is mandatory (§5.3.2 Table 25; §6.5.2.2 "required":
+	// ["iccid","releaseFlag"]). A pointer distinguishes an absent member from
+	// an explicit false.
+	ReleaseFlag *bool `json:"releaseFlag"`
 }
 
 type cancelOrderReq struct {
@@ -213,6 +216,11 @@ func (h *Handler) confirmOrder(w http.ResponseWriter, r *http.Request) {
 		writeFailure(w, rsp.CodeMandatoryElementMissing, "iccid is required")
 		return
 	}
+	if req.ReleaseFlag == nil {
+		writeFailure(w, rsp.CodeMandatoryElementMissing, "releaseFlag is required")
+		return
+	}
+	release := *req.ReleaseFlag
 	p, err := h.Profiles.GetByICCID(iccid.Normalize(req.ICCID))
 	if err != nil {
 		writeFailure(w, rsp.CodeICCIDUnknown, "unknown ICCID")
@@ -241,7 +249,9 @@ func (h *Handler) confirmOrder(w http.ResponseWriter, r *http.Request) {
 	}
 	matchingID := req.MatchingID
 	if matchingID == "" {
-		matchingID = "MATCH-" + strings.ReplaceAll(uuid.NewString(), "-", "")[:16]
+		// §4.1.1: a MatchingID is upper case alphanumeric plus '-' only, so the
+		// generated token must be upper-cased (google/uuid emits lower-case hex).
+		matchingID = "MATCH-" + strings.ToUpper(strings.ReplaceAll(uuid.NewString(), "-", "")[:16])
 	}
 	// The SM-DS registration is keyed by the MatchingID (§3.6). Re-confirming an
 	// order with a different one leaves a registration that no longer matches the
@@ -269,7 +279,7 @@ func (h *Handler) confirmOrder(w http.ResponseWriter, r *http.Request) {
 		writeFailure(w, rsp.CodeProfileUpdateFailed, "the Profile could not be updated")
 		return
 	}
-	if _, err := h.Orders.Confirm(p.ICCID, req.ReleaseFlag); err != nil {
+	if _, err := h.Orders.Confirm(p.ICCID, release); err != nil {
 		writeError(w, err)
 		return
 	}
@@ -288,7 +298,12 @@ func (h *Handler) confirmOrder(w http.ResponseWriter, r *http.Request) {
 			h.Log.Warn("ES12 register event", "eid", p.EID, "tenant", tenant, "err", err)
 		}
 	}
-	writeSuccess(w, map[string]any{"matchingId": matchingID, "smdpAddress": ""})
+	extra := map[string]any{"matchingId": matchingID, "smdpAddress": ""}
+	// Table 26: the EID SHALL be returned when it is bound to this order.
+	if p.EID != "" {
+		extra["eid"] = p.EID
+	}
+	writeSuccess(w, extra)
 }
 
 // cancelOrder implements ES2+.CancelOrder (§5.3.3). The function SHALL verify
@@ -407,11 +422,27 @@ func (h *Handler) releaseProfile(w http.ResponseWriter, r *http.Request) {
 		writeFailure(w, rsp.CodeMandatoryElementMissing, "iccid is required")
 		return
 	}
-	if err := h.authorizeICCID(tenant, req.ICCID); err != nil {
+	norm := iccid.Normalize(req.ICCID)
+	p, err := h.Profiles.GetByICCID(norm)
+	if err != nil {
+		writeFailure(w, rsp.CodeICCIDUnknown, "unknown ICCID")
+		return
+	}
+	if err := h.authorize(tenant, p, ""); err != nil {
 		common.WriteStatusFailure(w, err)
 		return
 	}
-	if _, err := h.Orders.Release(iccid.Normalize(req.ICCID)); err != nil {
+	// §5.3.4: the Profile must have been processed with DownloadOrder and
+	// ConfirmOrder but not released yet. An already-released Profile is the
+	// idempotent no-op of the Table 32 NOTE; anything else (Allocated/Linked
+	// never confirmed, or already downloaded) is 8.2.1/3.5 Invalid transition.
+	switch p.State {
+	case store.StateConfirmed, store.StateReleased:
+	default:
+		writeFailure(w, rsp.CodeInvalidTransition, "the Profile has not been confirmed, or is already downloaded")
+		return
+	}
+	if _, err := h.Orders.Release(norm); err != nil {
 		writeError(w, err)
 		return
 	}

@@ -299,17 +299,20 @@ func (c *CMAE) lookupProfile(matchingID, eid string) (*store.Profile, error) {
 		return nil, rsp.CodeProfileNotEligible.Status("Refused")
 	}
 	if p.EID != "" && p.EID != eid {
-		return nil, rsp.CodeProfileNotEligible.Status("EID mismatch")
+		// Table 43: 8.1.1/3.8 "EID doesn't match the expected value".
+		return nil, rsp.CodeEIDMismatch.Status("EID mismatch")
 	}
 	switch p.State {
 	case store.StateReleased, store.StateDownloaded:
 	default:
-		return nil, rsp.CodeProfileNotEligible.Status("Profile not eligible for download")
+		// Table 43: 8.2/1.2 "Profile has not yet been released".
+		return nil, rsp.CodeProfileNotReleased.Status("Profile has not yet been released")
 	}
 	// Download order TTL: an order that is older than the configured window is
 	// no longer eligible for download.
 	if c.Cfg.DownloadTTL > 0 && !p.CreatedAt.IsZero() && time.Since(p.CreatedAt) > c.Cfg.DownloadTTL {
-		return nil, rsp.CodeProfileNotEligible.Status("Download order expired")
+		// Table 43: 8.8.5/4.10 "Time to Live Expired".
+		return nil, rsp.CodeDownloadOrderExpired.Status("Download order expired")
 	}
 	return p, nil
 }
@@ -359,7 +362,8 @@ func (c *CMAE) registerDownloadAttempt(p *store.Profile) error {
 			return err
 		}
 		c.notify(context.Background(), progressFor(p, p.EID, 1, "Failed"))
-		return rsp.CodeProfileNotEligible.Status("Download attempts exceeded")
+		// Table 43: 8.8.5/6.4 "Maximum number of retries exceeded".
+		return rsp.CodeDownloadRetriesExceeded.Status("Download attempts exceeded")
 	}
 	return c.Deps.Profiles.Update(p)
 }
@@ -380,7 +384,7 @@ func mapDPStatus(err error) error {
 	case isCM(err, cmSignature), isCM(err, cmBadResponse), isCM(err, cmTxnMismatch), isCM(err, cmChallengeMismatch):
 		return rsp.CodeVerificationFailed.Status(err.Error())
 	case isCM(err, cmEID):
-		return rsp.CodeEIDNotPermitted.Status(err.Error())
+		return rsp.CodeEIDMismatch.Status(err.Error())
 	}
 	return err
 }

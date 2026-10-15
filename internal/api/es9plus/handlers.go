@@ -166,10 +166,11 @@ func (h *Handler) cancelSession(w http.ResponseWriter, r *http.Request) {
 		common.WriteCode(w, rsp.CodeUnknownTransaction, "invalid cancelSessionResponse")
 		return
 	}
-	txn, _, err := h.CMAE.CancelSession(req.TransactionID, resp)
-	if err != nil {
+	if _, _, err := h.CMAE.CancelSessionJSON(req.TransactionID, resp); err != nil {
 		common.WriteStatusFailure(w, err)
 		return
 	}
-	common.WriteSuccess(w, map[string]any{"transactionId": txn})
+	// The JSON response has no <JSON body> part (SGP.22 §6.5.2.10): the success
+	// carries only the functionExecutionStatus header.
+	common.WriteSuccess(w, nil)
 }

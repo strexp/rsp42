@@ -55,7 +55,7 @@ type DSAuthResult struct {
 func (d *DSService) Initiate(euiccChallenge, euiccInfo1 []byte, address string) (*InitiateResult, error) {
 	res, err := d.core.initiate(euiccChallenge, euiccInfo1, address)
 	if err != nil {
-		return nil, mapDSStatus(err)
+		return nil, mapDSInitiateStatus(err)
 	}
 	return res, nil
 }
@@ -65,7 +65,7 @@ func (d *DSService) Initiate(euiccChallenge, euiccInfo1 []byte, address string) 
 func (d *DSService) AuthenticateClient(transactionID string, authenticateServerResponse []byte) (*DSAuthResult, error) {
 	ca, err := d.core.verify(transactionID, authenticateServerResponse)
 	if err != nil {
-		return nil, mapDSStatus(err)
+		return nil, mapDSAuthenticateStatus(err)
 	}
 
 	var records []*store.EventRecord
@@ -92,19 +92,34 @@ func (d *DSService) AuthenticateClient(transactionID string, authenticateServerR
 	return &DSAuthResult{TransactionID: transactionID, EventEntries: entries}, nil
 }
 
-// mapDSStatus translates a typed CMAE error into the ES11 status codes.
-func mapDSStatus(err error) error {
+// mapDSInitiateStatus translates a cmaeCore failure of ES11.InitiateAuthentication
+// into the ES11 status codes (SGP.22 §5.8.1 Table 48a).
+func mapDSInitiateStatus(err error) error {
 	switch {
 	case isCM(err, cmAddress):
 		return rsp.CodeDSAddress.Status("Invalid SM-DS address")
-	case isCM(err, cmChallenge):
-		return rsp.CodeDSChallengeInvalid.Status("euiccChallenge must be 16 bytes")
+	case isCM(err, cmChallenge), isCM(err, cmBadResponse):
+		return rsp.CodeDSChallengeInvalid.Status(err.Error())
 	case isCM(err, cmCI):
 		return rsp.CodeDSCIUnsupported.Status("None of the proposed CI key identifiers is supported")
+	}
+	return err
+}
+
+// mapDSAuthenticateStatus translates a cmaeCore failure of ES11.AuthenticateClient
+// into the Table 52 status codes (SGP.22 §5.8.2). It is deliberately separate
+// from mapDSInitiateStatus: the two functions share the cmaeCore error kinds but
+// not their numeric spaces (8.9.x vs 8.1.x).
+func mapDSAuthenticateStatus(err error) error {
+	switch {
 	case isCM(err, cmUnknownTxn):
-		return rsp.CodeEventNotFound.Status("Unknown TransactionID")
-	case isCM(err, cmCertChain), isCM(err, cmSignature), isCM(err, cmBadResponse), isCM(err, cmTxnMismatch), isCM(err, cmChallengeMismatch), isCM(err, cmEID):
-		return rsp.CodeDSAuthFailed.Status(err.Error())
+		return rsp.CodeUnknownTransaction.Status("Unknown TransactionID")
+	case isCM(err, cmCertChain), isCM(err, cmEID):
+		// The EID is carried by the eUICC certificate, so a missing or
+		// constraint-violating EID is an eUICC certificate failure (8.1.3/6.1).
+		return rsp.CodeCertChainFailed.Status(err.Error())
+	case isCM(err, cmSignature), isCM(err, cmBadResponse), isCM(err, cmTxnMismatch), isCM(err, cmChallengeMismatch):
+		return rsp.CodeVerificationFailed.Status(err.Error())
 	}
 	return err
 }

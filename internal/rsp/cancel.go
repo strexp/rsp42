@@ -60,6 +60,12 @@ func DecodeCancelSessionResponse(raw []byte) (*CancelSessionResponseOk, int64, e
 			return nil, n, nil
 		}
 	}
+	// Some peers encode the error INTEGER directly in [1] under the CHOICE (an
+	// implicit primitive tag, 0x81) rather than as a constructed [1]
+	// alternative; splitChoice only recognises the constructed form.
+	if n, ok := choiceErrorCode(t); ok {
+		return nil, n, nil
+	}
 	return nil, 0, fmt.Errorf("rsp: CancelSessionResponse has no recognised alternative")
 }
 

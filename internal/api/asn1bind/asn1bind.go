@@ -58,10 +58,34 @@ func SubjectCode(err error) string {
 	return ""
 }
 
+// StatusPair returns the subjectCode and reasonCode of a *rsp.StatusCode error,
+// or two empty strings when the error carries no RSP classification.
+func StatusPair(err error) (subject, reason string) {
+	var sc *rsp.StatusCode
+	if errors.As(err, &sc) {
+		return sc.SubjectCode, sc.ReasonCode
+	}
+	return "", ""
+}
+
 // CodeFor maps err to the interface-specific ASN.1 error code registered in
-// table for its subject code, or returns fallback when it is not mapped.
+// table, or returns fallback when it is not mapped.
+//
+// A table may key entries by "subject/reason" (preferred: one subject can carry
+// several spec rows whose reason codes belong to different enums) or by the
+// subject alone. The pair key wins; a subject-only entry is the fallback so a
+// caller that passes a legacy table without slashes keeps working.
 func CodeFor(err error, table map[string]int64, fallback int64) int64 {
-	if code, ok := table[SubjectCode(err)]; ok {
+	subject, reason := StatusPair(err)
+	if subject == "" {
+		return fallback
+	}
+	if reason != "" {
+		if code, ok := table[subject+"/"+reason]; ok {
+			return code
+		}
+	}
+	if code, ok := table[subject]; ok {
 		return code
 	}
 	return fallback

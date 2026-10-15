@@ -64,6 +64,7 @@ func progressFor(p *store.Profile, eid string, pointID int, status string) Progr
 		info.ExternalRef = p.ExternalRef
 		info.MatchingID = p.MatchingID
 		info.ICCID = p.ICCID
+		info.ProfileType = p.ProfileType
 		if info.EID == "" {
 			info.EID = p.EID
 		}
@@ -195,7 +196,14 @@ func (n *NotificationService) handleInstallation(ctx context.Context, pir *rsp.P
 	if n.Deps.Sessions != nil {
 		_ = n.Deps.Sessions.Delete(txn)
 	}
-	n.notify(ctx, progressFor(profile, eidOf(profile), 4, "Executed-Success"))
+	// SGP.22 §3.1.3 step 9 / Table 32a: point 4 reports the Profile Installation
+	// Result, so a failed installation must not be advertised as
+	// Executed-Success.
+	installStatus := "Executed-Success"
+	if fr != nil && !fr.Success {
+		installStatus = "Failed"
+	}
+	n.notify(ctx, progressFor(profile, eidOf(profile), 4, installStatus))
 	return nil
 }
 

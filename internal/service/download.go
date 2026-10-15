@@ -71,9 +71,8 @@ func (c *CMAE) GetBoundProfilePackage(transactionID string, prepareDownloadRespo
 	if profile.CCRequired {
 		expected := confirmationHash(profile.CCHash, txn)
 		if !bytes.Equal(expected, ok.EuiccSigned2.HashCc) {
-			c.recordConfirmationFailure(profile)
 			c.notify(context.Background(), progressFor(profile, sess.EID, 2, "Failed"))
-			return nil, rsp.CodeConfirmationCode.Status("Confirmation code invalid")
+			return nil, c.confirmationFailureStatus(profile)
 		}
 	}
 
@@ -123,14 +122,27 @@ func (c *CMAE) GetBoundProfilePackage(transactionID string, prepareDownloadRespo
 
 // recordConfirmationFailure increments the per-Profile Confirmation Code attempt
 // counter and, once the configured maximum is reached, moves the Profile to
-// Error (SGP.22 §3.1.3 step 7).
-func (c *CMAE) recordConfirmationFailure(p *store.Profile) {
+// Error (SGP.22 §3.1.3 step 7). It reports whether the retry budget is now
+// exhausted.
+func (c *CMAE) recordConfirmationFailure(p *store.Profile) (exhausted bool) {
 	p.CCAttempts++
 	if c.Cfg.MaxCCAttempts > 0 && p.CCAttempts >= c.Cfg.MaxCCAttempts {
 		p.State = store.StateError
 		p.ErrorReason = "confirmation code attempts exceeded"
+		exhausted = true
 	}
 	_ = c.Deps.Profiles.Update(p)
+	return exhausted
+}
+
+// confirmationFailureStatus records a refused Confirmation Code and returns the
+// Table 40 status: 8.2.7/6.4 "Maximum number of retries exceeded" only once the
+// retry budget is exhausted, otherwise 8.2.7/3.8 "Confirmation Code is refused".
+func (c *CMAE) confirmationFailureStatus(p *store.Profile) *rsp.StatusCode {
+	if c.recordConfirmationFailure(p) {
+		return rsp.CodeConfirmationCode.Status("Confirmation code retries exceeded")
+	}
+	return rsp.CodeConfirmationCodeRefused.Status("Confirmation code refused")
 }
 
 func (c *CMAE) buildBPP(eid string, transactionID, smdpOtpk, smdpOtSK, euiccOtpk, upp []byte, profile *store.Profile, pbSigner stdcrypto.Signer) ([]byte, error) {

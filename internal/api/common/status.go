@@ -10,8 +10,11 @@ import (
 	"strings"
 )
 
-// AdminProtocolV2 is the value expected in the X-Admin-Protocol header.
-const AdminProtocolV2 = "gsma/rsp/v2.2.0"
+// AdminProtocolV2 is the X-Admin-Protocol value rsp42 advertises and accepts
+// (SGP.22 §6.5/§6.6: "gsma/rsp/v<x.y.z>"). The implemented revision is v2.7, so
+// the response advertises that; the middleware still accepts any gsma/rsp/v2.x
+// request header.
+const AdminProtocolV2 = "gsma/rsp/v2.7.0"
 
 // ContentTypeJSON is the value used for the JSON binding (SGP.22 §6.5).
 const ContentTypeJSON = "application/json"

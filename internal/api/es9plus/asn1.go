@@ -12,13 +12,70 @@ import (
 
 // ES9+ ASN.1 error codes. The numeric space is SGP.22 §6.6's
 // InitiateAuthenticationResponseError / AuthenticateClientResponseError /
-// GetBoundProfilePackageResponseError / CancelSessionResponseError enums, keyed
-// by the subjectCode of the RSP status the service returned.
+// GetBoundProfilePackageResponseError / CancelSessionResponseError enums. Each
+// table is keyed "subject/reason" (SGP.22 §5.2.6 status codes; the governing
+// function tables are cited per entry) so that distinct reason codes under one
+// subject map to the right enum member.
 var (
-	initiateErrorCodes     = map[string]int64{"8.8.1": 1, "8.8.2": 3}                                                             // invalidDpAddress, ciPKIdNotSupported
-	authenticateErrorCodes = map[string]int64{"8.1.3": 1, "8.1": 5, "8.1.4": 7, "8.2.5": 8, "8.2.6": 8, "8.8.2": 9, "8.10.1": 10} // eumCertificateInvalid, euiccSignatureInvalid, eidMismatch, noEligibleProfile, ciPKUnknown, invalidTransactionId
-	getBPPErrorCodes       = map[string]int64{"8.1": 1, "8.2.7": 3, "8.10.1": 95}                                                 // euiccSignatureInvalid, confirmationCodeRefused, invalidTransactionId
-	cancelErrorCodes       = map[string]int64{"8.10.1": 1, "8.1": 2}                                                              // invalidTransactionId, euiccSignatureInvalid
+	// InitiateAuthenticationResponse enum (§6.6.2.1), Table 37:
+	//   invalidDpAddress(1)=8.8.1/3.8, euiccVersionNotSupportedByDp(2)=8.8.3/3.1,
+	//   ciPKIdNotSupported(3)=8.8.2/3.1.
+	// 8.8.1/1.2 is the format code the service emits for a malformed
+	// euiccChallenge/euiccInfo1; the enum has no format member, so it maps to
+	// invalidDpAddress(1) (the same subject). 8.8.4/3.7 has no enum member.
+	initiateErrorCodes = map[string]int64{
+		"8.8.1/3.8": 1,
+		"8.8.3/3.1": 2,
+		"8.8.2/3.1": 3,
+		"8.8.1/1.2": 1,
+	}
+
+	// AuthenticateClientResponseEs9 enum (§6.6.2.2), Table 43:
+	//   eumCertificateInvalid(1)=8.1.2/6.1, eumCertificateExpired(2)=8.1.2/6.3,
+	//   euiccCertificateInvalid(3)=8.1.3/6.1, euiccCertificateExpired(4)=8.1.3/6.3,
+	//   euiccSignatureInvalid(5)=8.1/6.1, matchingIdRefused(6)=8.2.6/3.8,
+	//   eidMismatch(7)=8.1.1/3.8, noEligibleProfile(8)=8.2.5/4.3,
+	//   ciPKUnknown(9)=8.11.1/3.9, invalidTransactionId(10)=8.10.1/3.9,
+	//   insufficientMemory(11)=8.1/4.8, downloadOrderExpired(18)=8.8.5/4.10.
+	// Table 43's 8.2/1.2 (Profile not yet released) and 8.8.5/6.4 (download
+	// retries exceeded) have no enum member: they fall back to undefinedError(127).
+	authenticateErrorCodes = map[string]int64{
+		"8.1.2/6.1":  1,
+		"8.1.2/6.3":  2,
+		"8.1.3/6.1":  3,
+		"8.1.3/6.3":  4,
+		"8.1/6.1":    5,
+		"8.2.6/3.8":  6,
+		"8.1.1/3.8":  7,
+		"8.2.5/4.3":  8,
+		"8.11.1/3.9": 9,
+		"8.10.1/3.9": 10,
+		"8.1/4.8":    11,
+		"8.8.5/4.10": 18,
+	}
+
+	// GetBoundProfilePackageResponse enum (§6.6.2.3), Table 40:
+	//   euiccSignatureInvalid(1)=8.1/6.1, confirmationCodeMissing(2)=8.2.7/2.2,
+	//   confirmationCodeRefused(3)=8.2.7/3.8,
+	//   confirmationCodeRetriesExceeded(4)=8.2.7/6.4, bppRebindingRefused(5)=8.2/3.7,
+	//   invalidTransactionId(95)=8.10.1/3.9.
+	getBPPErrorCodes = map[string]int64{
+		"8.1/6.1":    1,
+		"8.2.7/2.2":  2,
+		"8.2.7/3.8":  3,
+		"8.2.7/6.4":  4,
+		"8.2/3.7":    5,
+		"8.10.1/3.9": 95,
+	}
+
+	// CancelSessionResponseEs9 enum (§6.6.2.5), Table 46:
+	//   invalidTransactionId(1)=8.10.1/3.9, euiccSignatureInvalid(2)=8.1/6.1.
+	// 8.8/3.10 (SM-DP+ OID invalid) is not produced: the §5.6.5 signature/OID
+	// verification is the registered R4 gap.
+	cancelErrorCodes = map[string]int64{
+		"8.10.1/3.9": 1,
+		"8.1/6.1":    2,
+	}
 )
 
 // asn1Binding implements the SGP.22 §6.6 ASN.1 binding at the generic path
