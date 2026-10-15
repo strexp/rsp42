@@ -174,7 +174,16 @@ profiles:
   # These apply to every downloaded profile; the ES2+ DownloadOrder body
   # cannot override them (PPR only travel through this management-side value,
   # see docs/esim42-integration-gaps.md C1).
+  # A PPR the eUICC lists in its EUICCInfo2 forbiddenProfilePolicyRules is
+  # refused with 8.2.5/4.3 instead of being delivered (SGP.22 §5.7.5).
   ppr_ids: []
+  # Return a Profile to 'Released' once a verified Delete Notification for it
+  # arrives, so the Activation Code it carries can be used again. SGP.22 §3.1.7
+  # makes this a start condition of Activation Code Retrieval: without it an
+  # ACR-0 redownload Activation Code can never be used, because 'Installed' is
+  # not downloadable. Off by default, so 'Installed' stays terminal unless the
+  # deployment opts in.
+  allow_redownload_after_delete: false
 
 notifications:
   es2p_callback:

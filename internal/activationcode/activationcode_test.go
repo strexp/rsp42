@@ -45,7 +45,15 @@ func TestParseACR(t *testing.T) {
 	require.Equal(t, 1, b.Check)
 
 	require.True(t, IsACR("ACR-0-1"))
+	require.True(t, IsACR("ACR-1-8947010000123456784"))
 	require.False(t, IsACR("TOKEN"))
+	// Only the two shapes SGP.22 §4.9.1 defines may trigger the ACR branch.
+	// Anything else that merely starts with "ACR-" is an ordinary MatchingID
+	// (the ACR-0 redownload token used to be "ACR-<hex>", and swallowing it
+	// made the Activation Code handed to the end user unusable).
+	for _, s := range []string{"ACR-2-1", "ACR-0", "ACR-F8EF256446D4BC21", "ACR-", "ACR", "MATCH-1"} {
+		require.False(t, IsACR(s), "IsACR(%q)", s)
+	}
 
 	for _, s := range []string{"ACR-2-1", "ACR-0", "ACR-0-abc", "X-0-1"} {
 		_, err := ParseACR(s)

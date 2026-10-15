@@ -62,6 +62,15 @@ func cmdSMDpp(prog string, args []string) int {
 		log.Error("operator es2p client", "err", err)
 		return 1
 	}
+	// ACR-0 hands out a redownload Activation Code, but SGP.22 §3.1.7 only makes
+	// it usable once the Delete Notification for the Profile has been received.
+	// Without allow_redownload_after_delete the code can never be used, so say so
+	// instead of leaving a silently half-working feature.
+	if cfg.Notifications.ES2PCallback.ACRURL != "" && !cfg.Profiles.AllowRedownloadAfterDelete {
+		log.Warn("ACR is enabled but profiles.allow_redownload_after_delete is false: " +
+			"an ACR-0 redownload Activation Code cannot be used until the Profile " +
+			"leaves Installed")
+	}
 	if queue != nil {
 		startTicker(cfg.Notifications.ES2PCallback.RetryInterval.Duration(), func() {
 			if _, err := queue.RunOnce(context.Background()); err != nil {

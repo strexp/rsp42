@@ -54,6 +54,38 @@ func (n *NotificationService) handleOtherSigned(o *rsp.OtherSignedNotification) 
 		SignatureOK: ok,
 		Processed:   ok,
 	})
+	// A verified Delete Notification means the Profile is no longer on the
+	// eUICC, which is the condition SGP.22 §3.1.7 attaches to letting its
+	// Activation Code be used again ("the SM-DP+ is configured in such a way
+	// that it will allow a Profile ... to be redownloaded after the reception
+	// of the associated Delete Notification"). Only a verified signature and,
+	// when configured, an existing Profile may trigger the state change.
+	if ok && n.Deps.AllowRedownloadAfterDelete && profile != nil &&
+		operationName(o.Notification.Operation) == "delete" &&
+		profile.State == store.StateInstalled {
+		if err := n.markRedownloadable(profile); err != nil && n.Deps.Log != nil {
+			n.Deps.Log.Warn("redownload-after-delete transition",
+				"iccid", profile.ICCID, "err", err)
+		}
+	}
+	return nil
+}
+
+// markRedownloadable returns an installed Profile to Released so the Activation
+// Code it currently carries can be used again (SGP.22 §3.1.7). It goes through
+// the order state machine, which permits Installed -> Released.
+func (n *NotificationService) markRedownloadable(profile *store.Profile) error {
+	if n.Deps.Orders == nil {
+		profile.State = store.StateReleased
+		return n.Deps.Profiles.Update(profile)
+	}
+	if _, err := n.Deps.Orders.Release(profile.ICCID); err != nil {
+		return err
+	}
+	if n.Deps.Log != nil {
+		n.Deps.Log.Info("profile released for redownload after delete notification",
+			"iccid", profile.ICCID)
+	}
 	return nil
 }
 

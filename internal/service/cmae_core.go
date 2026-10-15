@@ -91,6 +91,7 @@ type clientAuth struct {
 // SM-DP+ (ES9+) and SM-DS (ES11).
 type cmaeCore struct {
 	fqdn       string
+	port       int
 	authCert   *x509.Certificate
 	authKey    stdcrypto.Signer
 	certs      certProvider
@@ -101,14 +102,16 @@ type cmaeCore struct {
 	log        *slog.Logger
 }
 
-func newCMAECore(fqdn string, authCert *x509.Certificate, authKey stdcrypto.Signer, certs certProvider, sessions *SessionService, txnLen int, ttl time.Duration, useDSAuth bool, log *slog.Logger) *cmaeCore {
+// port is the ES9+/ES11 listening port, so a request carrying "FQDN:port" is
+// accepted when the port is the one this server actually serves (SGP.22 §4.1).
+func newCMAECore(fqdn string, port int, authCert *x509.Certificate, authKey stdcrypto.Signer, certs certProvider, sessions *SessionService, txnLen int, ttl time.Duration, useDSAuth bool, log *slog.Logger) *cmaeCore {
 	if txnLen <= 0 {
 		txnLen = 16
 	}
 	if ttl <= 0 {
 		ttl = 30 * time.Minute
 	}
-	return &cmaeCore{fqdn: fqdn, authCert: authCert, authKey: authKey, certs: certs, sessions: sessions, txnLen: txnLen, sessionTTL: ttl, useDSAuth: useDSAuth, log: log}
+	return &cmaeCore{fqdn: fqdn, port: port, authCert: authCert, authKey: authKey, certs: certs, sessions: sessions, txnLen: txnLen, sessionTTL: ttl, useDSAuth: useDSAuth, log: log}
 }
 
 // authFor returns the authentication certificate/key of the identity for the
@@ -127,7 +130,7 @@ func (c *cmaeCore) authFor(id *cert.Identity) (*x509.Certificate, stdcrypto.Sign
 
 // initiate implements InitiateAuthentication (SGP.22 §5.6.1 / §5.8.1).
 func (c *cmaeCore) initiate(euiccChallenge, euiccInfo1 []byte, address string) (*InitiateResult, error) {
-	if !strings.EqualFold(address, c.fqdn) {
+	if !addressMatches(address, c.fqdn, c.port) {
 		return nil, cmErr(cmAddress, "server address mismatch")
 	}
 	if len(euiccChallenge) != 16 {

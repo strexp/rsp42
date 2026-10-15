@@ -71,7 +71,8 @@ func cmdSMDS(prog string, args []string) int {
 		eventSvc.Cascade = service.NewSMDSCClient("https://"+cfg.SMDS.Cascade.RootAddress+":9444", cfg.SMDS.OID, hc)
 	}
 	ds, err := service.NewDSService(service.DSConfig{
-		FQDN: cfg.SMDS.FQDN, OID: cfg.SMDS.OID, Role: cfg.SMDS.Role,
+		FQDN: cfg.SMDS.FQDN, ServerPort: cfg.SMDS.Server.ES11.Port,
+		OID: cfg.SMDS.OID, Role: cfg.SMDS.Role,
 		TransactionIDLen: 16, SessionTTL: cfg.SMDS.SessionTTL.Duration(),
 	}, certs, sessions, eventSvc, log)
 	if err != nil {

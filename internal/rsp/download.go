@@ -119,6 +119,31 @@ func PPRIDBits(ids []int) []byte {
 	return b
 }
 
+// PPRIDList decodes a PprIds BIT STRING content bitmap (the form PPRIDBits
+// produces and Profile.PPRIds carries) into the set ids in ascending order.
+// PprIds is defined in SGP.22 §2.8.1.1: pprUpdateControl(0), ppr1(1), ppr2(2).
+func PPRIDList(bits []byte) []int {
+	var ids []int
+	for i, b := range bits {
+		for bit := 0; bit < 8; bit++ {
+			if b&(0x80>>uint(bit)) != 0 {
+				ids = append(ids, i*8+bit)
+			}
+		}
+	}
+	return ids
+}
+
+// PPRBitStringContent drops the DER BIT STRING unused-bits octet that prefixes
+// the PprIds value on the wire, returning the bitmap bytes used by Profile.PPRIds
+// and EUICCInfo2.ForbiddenProfilePolicyRules. A value with no bitmap yields nil.
+func PPRBitStringContent(value []byte) []byte {
+	if len(value) <= 1 {
+		return nil
+	}
+	return value[1:]
+}
+
 // NotificationConfigurationInformation configures a notification address.
 type NotificationConfigurationInformation struct {
 	Operation uint8 // bit mask of NotificationEvent
@@ -260,7 +285,7 @@ func DecodeStoreMetadataRequest(t asn1.TLV) (*StoreMetadataRequest, error) {
 	}
 	if v, ok := t.Find(asn1.Ctx(25, false)); ok && len(v.Value) > 0 {
 		// Encode prefixes the BIT STRING content with its unused-bits byte.
-		r.PPRIds = v.Value[1:]
+		r.PPRIds = PPRBitStringContent(v.Value)
 	}
 	if kids, err := t.Children(); err == nil {
 		for _, k := range kids {

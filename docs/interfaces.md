@@ -106,6 +106,16 @@ progress callbacks never requires an ACR URL. Every call is counted
 (`rsp42_acr_requests_total{tenant,outcome}`) and audited
 (`interface=es2p`, `function=handleAcrRequest`).
 
+An `ACR-0-…` redownload rotates the Profile's MatchingID and returns the new
+Activation Code in `activationCodeForProfileRedownload` (SSD); the new
+MatchingID is a plain `MATCH-…` token, never an `ACR-…` one, so it cannot be
+mistaken for another retrieval request (§4.9.1). SGP.22 §3.1.7 makes the code
+usable only once the associated Delete Notification has been received: set
+`profiles.allow_redownload_after_delete: true` to return the Profile to
+`Released` on a **verified** delete notification. With the default (`false`)
+`Installed` stays terminal and an ACR-0 code can never be used — startup logs a
+warning when `acr_url` is set and the opt-in is missing.
+
 ### Download progress notifications (SM-DP+ -> Operator)
 
 `handleDownloadProgressInfo` payload:
@@ -119,11 +129,16 @@ persisted first and retried with backoff before being dead-lettered.
 
 | id | meaning |
 |---|---|
-| 1 | eligibility/authorisation check failure |
+| 1 | eligibility/authorisation check failure — including `8.2.5/4.3` when the Profile would carry a PPR the eUICC lists in `EUICCInfo2.forbiddenProfilePolicyRules` (§5.7.5) |
 | 2 | confirmation code failure |
 | 3 | download result |
 | 4 | installation result |
 | 17 | activation code retrieval |
+
+Notifications are recorded with their signature outcome either way. A **verified**
+`delete` notification additionally returns the Profile to `Released` when
+`profiles.allow_redownload_after_delete` is set (SGP.22 §3.1.7); with the default
+`false` a delete notification is recorded but changes no state.
 
 ## ES11 (SM-DS, LPA-facing)
 

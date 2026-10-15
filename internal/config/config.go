@@ -148,6 +148,14 @@ type ProfilesConfig struct {
 	// (SGP.22 §2.4a: 1 = PPR1 disabling not allowed, 2 = PPR2 deletion not
 	// allowed).
 	PPRIds []int `mapstructure:"ppr_ids"`
+	// AllowRedownloadAfterDelete returns a Profile to 'Released' once a
+	// verified Delete Notification for it arrives, so its Activation Code can
+	// be used again. SGP.22 §3.1.7 makes this a start condition of Activation
+	// Code Retrieval: without it the Activation Code handed out by an ACR-0
+	// redownload can never be used, because 'Installed' is not downloadable.
+	// Off by default: an operator that never issues redownloads keeps
+	// 'Installed' terminal.
+	AllowRedownloadAfterDelete bool `mapstructure:"allow_redownload_after_delete"`
 }
 
 // StoreConfig is a SQLite DSN.

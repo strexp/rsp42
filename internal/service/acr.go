@@ -43,7 +43,13 @@ func (c *CMAE) handleACR(ctx context.Context, transactionID string, ca *clientAu
 
 	var ssd []byte
 	if acr.Check == 0 {
-		token := "ACR-" + randomToken()
+		// The redownload Activation Code carries a fresh MatchingID. It must NOT
+		// live in the ACR namespace ("ACR-<0|1>-<ICCID>", SGP.22 §4.9.1): an
+		// "ACR-"-prefixed value would be routed back into this function by
+		// activationcode.IsACR, so the Activation Code handed to the end user
+		// could never be used. Use the same "MATCH-" shape confirmOrder
+		// auto-generates.
+		token := "MATCH-" + randomToken()
 		profile.MatchingID = token
 		if err := c.Deps.Profiles.Update(profile); err != nil {
 			return nil, err

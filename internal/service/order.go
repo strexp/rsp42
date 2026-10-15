@@ -40,6 +40,13 @@ var allowedTransitions = map[store.ProfileState]map[store.ProfileState]bool{
 		store.StateDownloaded: true,
 	},
 	store.StateInstalled: {
+		// Released is reachable so a Profile can be re-issued after a verified
+		// Delete Notification (SGP.22 §3.1.7: the SM-DP+ allows a Profile whose
+		// Activation Code was retrieved by ACR-0 to be redownloaded once the
+		// associated Delete Notification has been received). The automatic flip
+		// is gated by profiles.allow_redownload_after_delete; the operator can
+		// also drive it explicitly with ES2+.ConfirmOrder/releaseProfile.
+		store.StateReleased:  true,
 		store.StateAvailable: true, store.StateUnavailable: true,
 	},
 	store.StateError: {

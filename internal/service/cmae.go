@@ -22,7 +22,10 @@ import (
 
 // CMAEConfig holds the SM-DP+ mutual authentication parameters.
 type CMAEConfig struct {
-	FQDN                string
+	FQDN string
+	// ServerPort is the ES9+ listening port, used to accept an SM-DP+ address
+	// that carries the port (SGP.22 §4.1 "FQDN [:Port]").
+	ServerPort          int
 	OID                 string
 	HostID              []byte
 	TransactionIDLen    int
@@ -83,7 +86,7 @@ func NewCMAE(cfg CMAEConfig, d CMAEDeps) (*CMAE, error) {
 		return nil, fmt.Errorf("cmae: UPP template store not configured")
 	}
 	c := &CMAE{Cfg: cfg, Deps: d}
-	c.core = newCMAECore(cfg.FQDN, d.Certs.DPAuth(), d.Certs.DPAuthKey(), d.Certs, d.Sessions,
+	c.core = newCMAECore(cfg.FQDN, cfg.ServerPort, d.Certs.DPAuth(), d.Certs.DPAuthKey(), d.Certs, d.Sessions,
 		cfg.TransactionIDLen, cfg.SessionTTL, false, d.Log)
 	return c, nil
 }
@@ -152,6 +155,16 @@ func (c *CMAE) AuthenticateClient(ctx context.Context, transactionID string, aut
 	profile, err := c.lookupProfile(ca.MatchingID, ca.EID)
 	if err != nil {
 		return nil, err
+	}
+	// SGP.22 §5.7.5: forbiddenProfilePolicyRules lists the PPRs the eUICC cannot
+	// support, and the SM-DP+ SHALL not deliver a Profile carrying one of them.
+	// The list arrives inside euiccInfo2, which the eUICC signs as part of
+	// EuiccSigned1. The check runs before registerDownloadAttempt so that a
+	// deployment misconfiguration does not consume the profile's attempt budget.
+	if forbidden, hit := forbiddenPPRHit(c.effectivePPRIDs(profile), ca.Signed1.EuiccInfo2); hit {
+		c.notify(context.Background(), progressFor(profile, ca.EID, 1, "Failed"))
+		return nil, rsp.CodeNoEligibleProfile.Status(
+			fmt.Sprintf("PPR%d is forbidden by the eUICC", forbidden))
 	}
 	// Bind the profile to the eUICC that actually performs the download (G4):
 	// an anonymously claimed profile has no EID until the LPA authenticates,
@@ -292,6 +305,39 @@ func (c *CMAE) lookupProfile(matchingID, eid string) (*store.Profile, error) {
 		return nil, rsp.CodeProfileNotEligible.Status("Download order expired")
 	}
 	return p, nil
+}
+
+// effectivePPRIDs is the PprIds bitmap the Profile's StoreMetadata will carry
+// (SGP.22 §2.4a): the per-Profile list when set, otherwise the deployment-wide
+// default.
+func (c *CMAE) effectivePPRIDs(p *store.Profile) []byte {
+	if len(p.PPRIds) > 0 {
+		return p.PPRIds
+	}
+	return c.Cfg.PPRIds
+}
+
+// forbiddenPPRHit reports the lowest PPR id that both the Profile's PprIds
+// bitmap and the eUICC's forbiddenProfilePolicyRules bitmap have set, and
+// whether there is one. A nil/empty eUICC list forbids nothing.
+func forbiddenPPRHit(pprBits []byte, info *rsp.EUICCInfo2) (int, bool) {
+	if info == nil || len(info.ForbiddenProfilePolicyRules) == 0 {
+		return 0, false
+	}
+	forbidden := map[int]bool{}
+	for _, id := range rsp.PPRIDList(info.ForbiddenProfilePolicyRules) {
+		forbidden[id] = true
+	}
+	best, hit := 0, false
+	for _, id := range rsp.PPRIDList(pprBits) {
+		if !forbidden[id] {
+			continue
+		}
+		if !hit || id < best {
+			best, hit = id, true
+		}
+	}
+	return best, hit
 }
 
 // registerDownloadAttempt increments the per-Profile download attempt counter

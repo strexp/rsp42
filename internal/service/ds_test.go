@@ -34,7 +34,7 @@ func setupDS(t *testing.T) (*DSService, *EventService, *store.Store) {
 	sessions := NewSessionService(st.Sessions, provider, 30*time.Minute)
 	events := NewEventService(st.Events, "root", "testrootsmds.example.com", time.Hour)
 	ds, err := NewDSService(
-		DSConfig{FQDN: "testrootsmds.example.com", OID: "2.999.15", Role: "root", TransactionIDLen: 16, SessionTTL: 30 * time.Minute},
+		DSConfig{FQDN: "testrootsmds.example.com", ServerPort: 9443, OID: "2.999.15", Role: "root", TransactionIDLen: 16, SessionTTL: 30 * time.Minute},
 		certs, sessions, events, slog.Default())
 	require.NoError(t, err)
 	return ds, events, st

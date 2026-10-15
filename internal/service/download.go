@@ -205,16 +205,12 @@ func (c *CMAE) buildStoreMetadataWithSSD(profile *store.Profile, ssd []byte) ([]
 		return nil, err
 	}
 	class := int64(2) // operational
-	ppr := profile.PPRIds
-	if len(ppr) == 0 {
-		ppr = c.Cfg.PPRIds
-	}
 	req := &rsp.StoreMetadataRequest{
 		ICCID:               iccidEF,
 		ServiceProviderName: "RSP42",
 		ProfileName:         profile.ProfileName(),
 		ProfileClass:        &class,
-		PPRIds:              ppr,
+		PPRIds:              c.effectivePPRIDs(profile),
 		ServiceSpecificData: ssd,
 	}
 	if len(ssd) == 0 {

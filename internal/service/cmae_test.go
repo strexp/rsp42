@@ -16,6 +16,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
+	"rsp42/internal/activationcode"
 	"rsp42/internal/asn1"
 	"rsp42/internal/cert"
 	"rsp42/internal/crypto"
@@ -30,8 +31,11 @@ import (
 const (
 	testEID  = "89049032123451234512345678901235"
 	testFQDN = "testsmdpplus1.example.com"
-	testOID  = "2.999.10"
-	testRoot = "../../testdata/sgp26"
+	// testES9PPort is the port the test SM-DP+ pretends to listen on; an
+	// SM-DP+ address carrying it must be accepted (SGP.22 §4.1).
+	testES9PPort = 8443
+	testOID      = "2.999.10"
+	testRoot     = "../../testdata/sgp26"
 )
 
 // testKEK is a fixed 32-byte key-encryption key for tests.
@@ -67,7 +71,15 @@ func buildEUICCInfo1(ski []byte) []byte {
 }
 
 func buildEUICCInfo2(ski []byte) []byte {
-	return tlv(tBF22, testutil.Concat(
+	return buildEUICCInfo2WithForbiddenPPR(ski, nil)
+}
+
+// buildEUICCInfo2WithForbiddenPPR is buildEUICCInfo2 plus the
+// forbiddenProfilePolicyRules [25] BIT STRING (SGP.22 §5.7.5). forbidden is the
+// raw bitmap in the form rsp.PPRIDBits produces; the BIT STRING unused-bits
+// octet is prepended here.
+func buildEUICCInfo2WithForbiddenPPR(ski, forbidden []byte) []byte {
+	fields := [][]byte{
 		tlv([]byte{0x81}, []byte{0x02, 0x02, 0x00}),
 		tlv([]byte{0x82}, []byte{0x02, 0x02, 0x00}),
 		tlv([]byte{0x83}, []byte{0x02, 0x02, 0x00}),
@@ -76,9 +88,15 @@ func buildEUICCInfo2(ski []byte) []byte {
 		tlv([]byte{0x88}, []byte{0x00}),
 		tlv([]byte{0xa9}, tlv([]byte{0x04}, ski)),
 		tlv([]byte{0xaa}, tlv([]byte{0x04}, ski)),
+	}
+	if forbidden != nil {
+		fields = append(fields, tlv([]byte{0x99}, append([]byte{0x00}, forbidden...)))
+	}
+	fields = append(fields,
 		tlv([]byte{0x04}, []byte{0x02, 0x00, 0x00}),
 		tlv([]byte{0x0c}, []byte("x")),
-	))
+	)
+	return tlv(tBF22, testutil.Concat(fields...))
 }
 
 func setupCMAE(t *testing.T) (*CMAE, *store.Store) {
@@ -105,7 +123,7 @@ func setupCMAE(t *testing.T) (*CMAE, *store.Store) {
 
 	perso := NewPersonalizationService(st.Perso, provider)
 	cmae, err := NewCMAE(CMAEConfig{
-		FQDN: testFQDN, OID: testOID, HostID: make([]byte, 8),
+		FQDN: testFQDN, ServerPort: testES9PPort, OID: testOID, HostID: make([]byte, 8),
 		TransactionIDLen: 16, MaxDownloadAttempts: 5, MaxCCAttempts: 3,
 		SessionTTL: 30 * time.Minute, DownloadTTL: 24 * time.Hour,
 	}, CMAEDeps{
@@ -456,6 +474,64 @@ func TestNotificationOtherSignedVerification(t *testing.T) {
 	require.False(t, got[1].SignatureOK)
 }
 
+// TestNotificationDeleteReleasesForRedownload covers the second half of the ACR-0
+// fix: SGP.22 §3.1.7 makes the redownload Activation Code usable only after the
+// associated Delete Notification, so when the deployment opts in
+// (profiles.allow_redownload_after_delete) a verified delete notification must
+// return the Profile to Released. The default keeps Installed terminal.
+func TestNotificationDeleteReleasesForRedownload(t *testing.T) {
+	deleteNotificationState := func(t *testing.T, allow bool) store.ProfileState {
+		t.Helper()
+		_, st := setupCMAE(t)
+		orders := NewOrderService(st.Profiles)
+		notifs := NewNotificationService(NotificationDeps{
+			Log: slog.Default(), Notifs: st.Notifs, Profiles: st.Profiles, Orders: orders,
+			AllowRedownloadAfterDelete: allow,
+		})
+		notifs.Deps.Certs = testCertificateManager(t)
+
+		profile, err := NewInventory(st.Profiles, "8900012", "00101").
+			Allocate(AllocateRequest{EID: testEID, ProfileType: "operational"})
+		require.NoError(t, err)
+		_, err = orders.Confirm(profile.ICCID, true)
+		require.NoError(t, err)
+		_, err = orders.MarkDownloaded(profile.ICCID)
+		require.NoError(t, err)
+		_, err = orders.MarkInstalled(profile.ICCID)
+		require.NoError(t, err)
+
+		provider, err := kms.NewFileProviderFromKEK(testKEK)
+		require.NoError(t, err)
+		euiccKey, err := provider.ECDSAKey(testRoot + "/eUICC/SK_EUICC_NIST.pem")
+		require.NoError(t, err)
+		iccidBCD, err := personalization.ICCIDEFBytes(profile.ICCID)
+		require.NoError(t, err)
+		meta := tlv([]byte{0xbf, 0x2f}, testutil.Concat(
+			tlv([]byte{0x80}, []byte{0x01}),
+			tlv([]byte{0x81}, []byte{0x00, 0x10}), // delete
+			tlv([]byte{0x0c}, []byte("x")),
+			tlv([]byte{0x5a}, iccidBCD),
+		))
+		sig, err := crypto.SignRaw(euiccKey, meta)
+		require.NoError(t, err)
+		osn := tlv([]byte{0xa0}, tlv([]byte{0x30}, testutil.Concat(
+			meta, tlv(tSig, sig),
+			readFile(t, testRoot+"/eUICC/CERT_EUICC_NIST.der"),
+			readFile(t, testRoot+"/EUM/CERT_EUM_NIST.der"),
+		)))
+		require.NoError(t, notifs.HandlePendingNotification(context.Background(), osn))
+
+		got, err := st.Profiles.GetByICCID(profile.ICCID)
+		require.NoError(t, err)
+		return got.State
+	}
+
+	require.Equal(t, store.StateInstalled, deleteNotificationState(t, false),
+		"without the opt-in, Installed stays terminal")
+	require.Equal(t, store.StateReleased, deleteNotificationState(t, true),
+		"with the opt-in, a verified delete notification makes the Profile downloadable again")
+}
+
 func TestResolveUPPTemplateVersionSet(t *testing.T) {
 	cmae, _ := setupCMAE(t)
 	profile := &store.Profile{}
@@ -656,7 +732,12 @@ func TestACROperatorConfirmation(t *testing.T) {
 	rotated, err := st.Profiles.GetByICCID(profile.ICCID)
 	require.NoError(t, err)
 	require.NotEqual(t, "MATCH-ACR-OP", rotated.MatchingID)
-	require.True(t, strings.HasPrefix(rotated.MatchingID, "ACR-"))
+	// The redownload Activation Code must stay out of the ACR namespace: an
+	// "ACR-"-prefixed MatchingID would be routed back into the ACR branch by
+	// activationcode.IsACR and refused, making the code unusable.
+	require.False(t, activationcode.IsACR(rotated.MatchingID),
+		"rotated matching id %q must not be an ACR id", rotated.MatchingID)
+	require.True(t, strings.HasPrefix(rotated.MatchingID, "MATCH-"))
 }
 
 // releasedProfile creates a profile in Released state with the given matching id.
@@ -740,6 +821,13 @@ func TestConfirmedProfileNotDownloadable(t *testing.T) {
 // matching id with the SGP.26 eUICC test certificate, returning the error.
 func authenticateForTest(t *testing.T, cmae *CMAE, matchingID string) error {
 	t.Helper()
+	return authenticateWithForbiddenPPRForTest(t, cmae, matchingID, nil)
+}
+
+// authenticateWithForbiddenPPRForTest is authenticateForTest with the eUICC
+// advertising forbiddenProfilePolicyRules (raw bitmap, nil = none).
+func authenticateWithForbiddenPPRForTest(t *testing.T, cmae *CMAE, matchingID string, forbidden []byte) error {
+	t.Helper()
 	euiccChallenge := make([]byte, 16)
 	_, _ = rand.Read(euiccChallenge)
 	ciSKI := cmae.Deps.Certs.CI().SubjectKeyId
@@ -756,7 +844,7 @@ func authenticateForTest(t *testing.T, cmae *CMAE, matchingID string) error {
 		tlv(tCtx0p, txn),
 		tlv(tCtx3p, []byte(testFQDN)),
 		tlv(tCtx4p, ss1.ServerChallenge),
-		buildEUICCInfo2(ciSKI),
+		buildEUICCInfo2WithForbiddenPPR(ciSKI, forbidden),
 		tlv(tCtx0c, testutil.Concat(
 			tlv([]byte{0x80}, []byte(matchingID)),
 			tlv(tCtx1c, testutil.Concat(tlv([]byte{0x80}, make([]byte, 8)), tlv(tCtx1c, nil))),
@@ -873,4 +961,102 @@ func openServiceStore(t *testing.T) *store.Store {
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = st.Close() })
 	return st
+}
+
+// TestInitiateAcceptsSNMPAddressWithPort pins SGP.22 §4.1: the SM-DP+ address
+// an Activation Code carries is "FQDN [:Port]", and LPAs do send the port (lpac
+// passes `-s host:port` through verbatim). Only a wrong host or a port this
+// server does not serve may be refused.
+func TestInitiateAcceptsSNMPAddressWithPort(t *testing.T) {
+	cmae, _ := setupCMAE(t)
+	challenge := make([]byte, 16)
+	_, _ = rand.Read(challenge)
+	ciSKI := cmae.Deps.Certs.CI().SubjectKeyId //nolint:staticcheck // test helper
+
+	for _, addr := range []string{
+		testFQDN,
+		testFQDN + ":8443",
+		strings.ToUpper(testFQDN) + ":8443",
+	} {
+		_, err := cmae.Initiate(challenge, buildEUICCInfo1(ciSKI), addr)
+		require.NoError(t, err, "address %q must be accepted", addr)
+	}
+
+	for _, addr := range []string{
+		"other.example.com",
+		"other.example.com:8443",
+		testFQDN + ":9999",
+		testFQDN + ":abc",
+		"",
+	} {
+		_, err := cmae.Initiate(challenge, buildEUICCInfo1(ciSKI), addr)
+		require.Error(t, err, "address %q must be refused", addr)
+	}
+}
+
+// TestAuthenticateRefusesPPRForbiddenByEuicc pins SGP.22 §5.7.5: the SM-DP+
+// SHALL not deliver a Profile carrying a PPR the eUICC lists in
+// forbiddenProfilePolicyRules. The refusal is 8.2.5/4.3 "No eligible Profile for
+// this eUICC/Device", it must not consume a download attempt, and it must not
+// move the order out of Released.
+func TestAuthenticateRefusesPPRForbiddenByEuicc(t *testing.T) {
+	cmae, st := setupCMAE(t)
+	cmae.Cfg.PPRIds = rsp.PPRIDBits([]int{1}) // the Profile would carry PPR1
+
+	p := releasedProfile(t, st, "MATCH-PPR-FORBIDDEN")
+
+	// Forbidding PPR2 only must not block a PPR1 profile.
+	require.NoError(t, authenticateWithForbiddenPPRForTest(t, cmae, "MATCH-PPR-FORBIDDEN",
+		rsp.PPRIDBits([]int{2})))
+	before, err := st.Profiles.GetByICCID(p.ICCID)
+	require.NoError(t, err)
+
+	// Forbidding PPR1 intersects: refuse with 8.2.5/4.3.
+	err = authenticateWithForbiddenPPRForTest(t, cmae, "MATCH-PPR-FORBIDDEN",
+		rsp.PPRIDBits([]int{1, 2}))
+	require.Error(t, err)
+	var sc *rsp.StatusCode
+	require.ErrorAs(t, err, &sc)
+	require.Equal(t, "8.2.5", sc.SubjectCode)
+	require.Equal(t, "4.3", sc.ReasonCode)
+
+	got, err := st.Profiles.GetByICCID(p.ICCID)
+	require.NoError(t, err)
+	require.Equal(t, store.StateReleased, got.State)
+	require.Equal(t, before.DownloadAttempts, got.DownloadAttempts,
+		"an eligibility failure must not consume an attempt")
+}
+
+// TestForbiddenPPRHit covers the bitmap intersection, including the
+// pprUpdateControl(0) bit that is not a Profile Policy Rule.
+func TestForbiddenPPRHit(t *testing.T) {
+	info := func(bits []byte) *rsp.EUICCInfo2 {
+		return &rsp.EUICCInfo2{ForbiddenProfilePolicyRules: bits}
+	}
+	cases := []struct {
+		name      string
+		ppr       []byte
+		forbidden []byte
+		wantID    int
+		wantHit   bool
+	}{
+		{"no forbidden list", rsp.PPRIDBits([]int{1}), nil, 0, false},
+		{"disjoint", rsp.PPRIDBits([]int{1}), rsp.PPRIDBits([]int{2}), 0, false},
+		{"intersect ppr1", rsp.PPRIDBits([]int{1}), rsp.PPRIDBits([]int{1, 2}), 1, true},
+		{"intersect ppr2", rsp.PPRIDBits([]int{1, 2}), rsp.PPRIDBits([]int{2}), 2, true},
+		{"no ppr on the profile", nil, rsp.PPRIDBits([]int{1, 2}), 0, false},
+		{"lowest hit wins", rsp.PPRIDBits([]int{1, 2}), rsp.PPRIDBits([]int{1, 2}), 1, true},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			id, hit := forbiddenPPRHit(tc.ppr, info(tc.forbidden))
+			require.Equal(t, tc.wantHit, hit)
+			if tc.wantHit {
+				require.Equal(t, tc.wantID, id)
+			}
+		})
+	}
+	// A nil euiccInfo2 (an eUICC that sent none) forbids nothing.
+	_, hit := forbiddenPPRHit(rsp.PPRIDBits([]int{1}), nil)
+	require.False(t, hit)
 }

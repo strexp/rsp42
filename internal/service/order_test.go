@@ -236,3 +236,27 @@ func TestTransitionAttemptCounterOnlyOnStateChange(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, 1, p.DownloadAttempts)
 }
+
+// TestInstalledCanBeReleased pins SGP.22 §3.1.7: the SM-DP+ lets a Profile whose
+// Activation Code was retrieved by ACR-0 be redownloaded after the associated
+// Delete Notification, and rsp42 models "downloadable again" as Released.
+func TestInstalledCanBeReleased(t *testing.T) {
+	require.True(t, CanTransition(store.StateInstalled, store.StateReleased))
+	require.NoError(t, AssertTransition(store.StateInstalled, store.StateReleased))
+
+	_, st := setupCMAE(t)
+	orders := NewOrderService(st.Profiles)
+	profile, err := NewInventory(st.Profiles, "8900012", "00101").
+		Allocate(AllocateRequest{EID: testEID, ProfileType: "operational"})
+	require.NoError(t, err)
+	_, err = orders.Confirm(profile.ICCID, true)
+	require.NoError(t, err)
+	_, err = orders.MarkDownloaded(profile.ICCID)
+	require.NoError(t, err)
+	_, err = orders.MarkInstalled(profile.ICCID)
+	require.NoError(t, err)
+
+	got, err := orders.Release(profile.ICCID)
+	require.NoError(t, err)
+	require.Equal(t, store.StateReleased, got.State)
+}

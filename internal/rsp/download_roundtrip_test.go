@@ -75,3 +75,24 @@ func TestStoreMetadataRequestDecodeMinimal(t *testing.T) {
 	require.Empty(t, got.ServiceSpecificData)
 	require.Empty(t, got.Notifications)
 }
+
+// TestPPRIDListRoundTrip pins the PprIds bitmap codec against the values that
+// appear on the wire (ppr1 = bit 1, ppr2 = bit 2, SGP.22 §2.8.1.1).
+func TestPPRIDListRoundTrip(t *testing.T) {
+	for _, ids := range [][]int{nil, {1}, {2}, {1, 2}, {0, 2}} {
+		bits := PPRIDBits(ids)
+		if len(ids) == 0 {
+			require.Nil(t, bits)
+			require.Empty(t, PPRIDList(bits))
+			continue
+		}
+		require.Equal(t, ids, PPRIDList(bits), "ids %v", ids)
+	}
+	// The on-the-wire forms seen from a real eUICC (SGP.26 Variant O) and from
+	// rsp42's own StoreMetadata encoder.
+	require.Equal(t, []int{1}, PPRIDList([]byte{0x40}))
+	require.Equal(t, []int{1, 2}, PPRIDList([]byte{0x60}))
+	require.Equal(t, []byte{0x40}, PPRBitStringContent([]byte{0x00, 0x40}))
+	require.Nil(t, PPRBitStringContent([]byte{0x00}))
+	require.Nil(t, PPRBitStringContent(nil))
+}

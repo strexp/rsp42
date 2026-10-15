@@ -52,7 +52,7 @@ func newTestHandler(t *testing.T) (*Handler, *cert.Manager) {
 	require.NoError(t, err)
 
 	cmae, err := service.NewCMAE(service.CMAEConfig{
-		FQDN: "testsmdpplus1.example.com", OID: "2.999.10", HostID: make([]byte, 8),
+		FQDN: "testsmdpplus1.example.com", ServerPort: 8443, OID: "2.999.10", HostID: make([]byte, 8),
 		TransactionIDLen: 16, MaxDownloadAttempts: 5, MaxCCAttempts: 3,
 		SessionTTL: 30 * time.Minute, DownloadTTL: 24 * time.Hour,
 	}, service.CMAEDeps{

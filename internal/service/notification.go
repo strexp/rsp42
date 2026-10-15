@@ -88,6 +88,10 @@ type NotificationDeps struct {
 	Sessions  *SessionService
 	Certs     *cert.Manager
 	Registrar *Registrar
+	// AllowRedownloadAfterDelete returns a Profile to Released when a verified
+	// Delete Notification arrives, so an Activation Code retrieved with ACR-0
+	// becomes usable again (SGP.22 §3.1.7). Off by default.
+	AllowRedownloadAfterDelete bool
 }
 
 type NotificationService struct {

@@ -70,6 +70,12 @@ var (
 	// CodeNoMoreProfileAvailable is Table 24's 8.2.5/3.7: no Profile of the
 	// requested Profile Type is available (pool/quota exhaustion).
 	CodeNoMoreProfileAvailable = Code{"8.2.5", "3.7"}
+	// CodeNoEligibleProfile is the ES9+ AuthenticateClient status 8.2.5/4.3
+	// "No eligible Profile for this eUICC/Device": the order exists but no
+	// Profile may be delivered to this eUICC. It is raised when the Profile
+	// would carry a PPR the eUICC declares in forbiddenProfilePolicyRules
+	// (SGP.22 §5.7.5).
+	CodeNoEligibleProfile = Code{"8.2.5", "4.3"}
 	// CodeICCIDInUse is 8.2.1/3.3: the Profile identified by the ICCID is not
 	// available (already in use, blocked or otherwise not issuable).
 	CodeICCIDInUse         = Code{"8.2.1", "3.3"}

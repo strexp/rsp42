@@ -88,6 +88,7 @@ func bootstrapDP(cfg *config.Config, log *slog.Logger) (*dpGraph, error) {
 	g.perso = service.NewPersonalizationService(st.Perso, provider)
 	g.cmae, err = service.NewCMAE(service.CMAEConfig{
 		FQDN:                cfg.SMDpp.FQDN,
+		ServerPort:          cfg.SMDpp.Server.ES9P.Port,
 		OID:                 cfg.SMDpp.OID,
 		HostID:              hostID,
 		TransactionIDLen:    cfg.SMDpp.TransactionIDLen,
@@ -110,6 +111,7 @@ func bootstrapDP(cfg *config.Config, log *slog.Logger) (*dpGraph, error) {
 	g.notifs = service.NewNotificationService(service.NotificationDeps{
 		Log: log, Notifs: st.Notifs, Profiles: st.Profiles, Orders: g.orders,
 		Sessions: g.sessions, Certs: certs,
+		AllowRedownloadAfterDelete: cfg.Profiles.AllowRedownloadAfterDelete,
 	})
 	return g, nil
 }

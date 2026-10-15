@@ -12,7 +12,10 @@ import (
 
 // DSConfig holds the SM-DS mutual-authentication parameters.
 type DSConfig struct {
-	FQDN             string
+	FQDN string
+	// ServerPort is the ES11 listening port, used to accept an SM-DS address
+	// that carries the port (SGP.22 §4.1 "FQDN [:Port]").
+	ServerPort       int
 	OID              string
 	Role             string
 	TransactionIDLen int
@@ -38,7 +41,7 @@ func NewDSService(cfg DSConfig, certs *cert.Manager, sessions *SessionService, e
 	}
 	return &DSService{
 		Cfg: cfg, Certs: certs, Sessions: sessions, Events: events, Log: log,
-		core: newCMAECore(cfg.FQDN, certs.DSAuth(), certs.DSAuthKey(), certs, sessions, cfg.TransactionIDLen, cfg.SessionTTL, true, log),
+		core: newCMAECore(cfg.FQDN, cfg.ServerPort, certs.DSAuth(), certs.DSAuthKey(), certs, sessions, cfg.TransactionIDLen, cfg.SessionTTL, true, log),
 	}, nil
 }
 

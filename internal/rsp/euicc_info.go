@@ -53,6 +53,11 @@ type EUICCInfo2 struct {
 	AdditionalEuiccProfilePackageVersions [][]byte
 	// UICCCapability is the raw uiccCapability BIT STRING content ([5]).
 	UICCCapability []byte
+	// ForbiddenProfilePolicyRules is the PprIds bitmap ([25]) of the rules the
+	// eUICC declares 'forbidden' (SGP.22 §5.7.5). The SM-DP+ SHALL not deliver a
+	// Profile carrying one of them. It is stored without the BIT STRING
+	// unused-bits octet, like Profile.PPRIds.
+	ForbiddenProfilePolicyRules []byte
 }
 
 // ParseEUICCInfo2 parses a EUICCInfo2 (BF22) data object.
@@ -80,6 +85,11 @@ func ParseEUICCInfo2(raw []byte) (*EUICCInfo2, error) {
 	}
 	if v, ok := t.Find(asn1.Ctx(5, false)); ok {
 		info.UICCCapability = v.Value
+	}
+	// forbiddenProfilePolicyRules is a BIT STRING, so its value starts with the
+	// unused-bits octet.
+	if v, ok := t.Find(asn1.Ctx(25, false)); ok {
+		info.ForbiddenProfilePolicyRules = PPRBitStringContent(v.Value)
 	}
 	// ppVersion and sasAcreditationNumber are untagged (universal tags).
 	info.PPVersion = childBytes(t, []byte{0x04})

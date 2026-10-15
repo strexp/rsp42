@@ -45,7 +45,7 @@ func newTestServer(t *testing.T) *httptest.Server {
 
 	events := service.NewEventService(st.Events, "root", "testrootsmds.example.com", time.Hour)
 	ds, err := service.NewDSService(service.DSConfig{
-		FQDN: "testrootsmds.example.com", OID: "2.999.15", Role: "root",
+		FQDN: "testrootsmds.example.com", ServerPort: 9443, OID: "2.999.15", Role: "root",
 		TransactionIDLen: 16, SessionTTL: 30 * time.Minute,
 	}, certs, service.NewSessionService(st.Sessions, provider, 30*time.Minute), events, slog.Default())
 	require.NoError(t, err)

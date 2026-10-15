@@ -94,5 +94,11 @@ func ParseACR(s string) (*ACR, error) {
 	return &ACR{Check: int(rest[0] - '0'), ICCID: iccid}, nil
 }
 
-// IsACR reports whether s looks like an ACR matching id.
-func IsACR(s string) bool { return strings.HasPrefix(s, "ACR-") }
+// IsACR reports whether s is an ACR matching id. SGP.22 §4.9.1 fixes the shape
+// as "ACR" "-" <0|1> "-" <ICCID>, so only those two prefixes trigger the
+// Activation Code Retrieval branch. A plain MatchingID that merely starts with
+// "ACR-" (e.g. a redownload token generated elsewhere) must not be swallowed by
+// it — the ACR branch would then reject a perfectly usable Activation Code.
+func IsACR(s string) bool {
+	return strings.HasPrefix(s, "ACR-0-") || strings.HasPrefix(s, "ACR-1-")
+}
