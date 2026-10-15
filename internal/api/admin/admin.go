@@ -13,10 +13,10 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
-	"rsp42/internal/api/admin/openapi"
 	"rsp42/internal/api/adminhttp"
 	"rsp42/internal/api/common"
 	"rsp42/internal/api/middleware"
+	"rsp42/internal/api/openapi"
 	"rsp42/internal/service"
 	"rsp42/internal/store"
 )

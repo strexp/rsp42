@@ -8,7 +8,7 @@ import (
 	"github.com/santhosh-tekuri/jsonschema/v6"
 	"github.com/stretchr/testify/require"
 
-	"rsp42/internal/api/admin/openapi"
+	"rsp42/internal/api/openapi"
 	"rsp42/internal/testutil"
 )
 
