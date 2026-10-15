@@ -16,6 +16,7 @@ import (
 
 	"rsp42/internal/api/common"
 	"rsp42/internal/api/middleware"
+	"rsp42/internal/client/es12"
 	"rsp42/internal/iccid"
 	"rsp42/internal/rsp"
 	"rsp42/internal/service"
@@ -286,14 +287,14 @@ func (h *Handler) confirmOrder(w http.ResponseWriter, r *http.Request) {
 	_ = h.record(tenant, "confirmOrder", p.ICCID, p.EID, matchingID, req)
 	// A registration for the order's previous MatchingID is stale now.
 	if previousMatchingID != "" && previousMatchingID != matchingID && h.Registrar != nil && p.EID != "" {
-		meta := service.EventMeta{Tenant: tenant, ICCID: p.ICCID, MatchingID: previousMatchingID}
+		meta := es12.EventMeta{Tenant: tenant, ICCID: p.ICCID, MatchingID: previousMatchingID}
 		if err := h.Registrar.DeleteEvent(p.EID, previousMatchingID, meta); err != nil {
 			h.Log.Warn("ES12 delete stale event after a MatchingID change",
 				"eid", p.EID, "eventId", previousMatchingID, "tenant", tenant, "err", err)
 		}
 	}
 	if req.SMDSAddress != "" && h.Registrar != nil && p.EID != "" {
-		meta := service.EventMeta{Tenant: tenant, ICCID: p.ICCID, MatchingID: matchingID}
+		meta := es12.EventMeta{Tenant: tenant, ICCID: p.ICCID, MatchingID: matchingID}
 		if err := h.Registrar.Register(p.EID, matchingID, req.SMDSAddress, meta); err != nil {
 			h.Log.Warn("ES12 register event", "eid", p.EID, "tenant", tenant, "err", err)
 		}
@@ -367,7 +368,7 @@ func (h *Handler) cancelOrder(w http.ResponseWriter, r *http.Request) {
 	// SHALL delete it. A failure here must not fail the cancel (the order is
 	// already cancelled); it is logged, and the ES12 failure metric covers it.
 	if p.EID != "" && h.Registrar != nil {
-		meta := service.EventMeta{Tenant: tenant, ICCID: norm, MatchingID: p.MatchingID}
+		meta := es12.EventMeta{Tenant: tenant, ICCID: norm, MatchingID: p.MatchingID}
 		if err := h.Registrar.DeleteForEID(p.EID, meta); err != nil {
 			h.Log.Warn("ES12 delete event after cancelOrder", "eid", p.EID, "tenant", tenant, "err", err)
 		}

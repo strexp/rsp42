@@ -21,6 +21,7 @@ import (
 	"rsp42/internal/activationcode"
 	"rsp42/internal/asn1"
 	"rsp42/internal/cert"
+	"rsp42/internal/client/es12"
 	"rsp42/internal/crypto"
 	"rsp42/internal/kms"
 	"rsp42/internal/rsp"
@@ -388,7 +389,7 @@ func TestInstallEventDeletionIsGated(t *testing.T) {
 			}))
 			defer srv.Close()
 			notifs.Deps.Registrar = &Registrar{
-				Repo: st.Regs, Client: NewSMDSCClient(srv.URL, "2.999.10", nil),
+				Repo: st.Regs, Client: es12.NewSMDSCClient(srv.URL, "2.999.10", nil),
 				SMDPAddress: "testsmdpplus1.example.com",
 			}
 			notifs.Deps.KeepEventOnInstall = keep

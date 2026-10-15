@@ -13,6 +13,7 @@ import (
 	"rsp42/internal/api/es11"
 	"rsp42/internal/api/es12"
 	"rsp42/internal/audit"
+	es12client "rsp42/internal/client/es12"
 	"rsp42/internal/config"
 	"rsp42/internal/logging"
 	"rsp42/internal/metrics"
@@ -68,7 +69,7 @@ func cmdSMDS(prog string, args []string) int {
 			log.Error("cascade tls", "err", err)
 			return 1
 		}
-		eventSvc.Cascade = service.NewSMDSCClient("https://"+cfg.SMDS.Cascade.RootAddress+":9444", cfg.SMDS.OID, hc)
+		eventSvc.Cascade = es12client.NewSMDSCClient("https://"+cfg.SMDS.Cascade.RootAddress+":9444", cfg.SMDS.OID, hc)
 	}
 	ds, err := service.NewDSService(service.DSConfig{
 		FQDN: cfg.SMDS.FQDN, ServerPort: cfg.SMDS.Server.ES11.Port,

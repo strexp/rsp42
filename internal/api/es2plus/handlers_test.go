@@ -13,6 +13,7 @@ import (
 	"rsp42/internal/api"
 	"rsp42/internal/api/es12"
 	"rsp42/internal/api/es2plus"
+	es12client "rsp42/internal/client/es12"
 	"rsp42/internal/client/es2p"
 	"rsp42/internal/iccid"
 	"rsp42/internal/mockoperator"
@@ -51,7 +52,7 @@ func newServerWith(t *testing.T, configure func(h *es2plus.Handler, st *store.St
 	t.Cleanup(es12srv.Close)
 	h.Registrar = &service.Registrar{
 		Repo:        st.Regs,
-		Client:      service.NewSMDSCClient(es12srv.URL, "2.999.10", nil),
+		Client:      es12client.NewSMDSCClient(es12srv.URL, "2.999.10", nil),
 		SMDPAddress: "testsmdpplus1.example.com",
 		Forwarding:  true,
 	}

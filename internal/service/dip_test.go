@@ -7,6 +7,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
+	"rsp42/internal/client/es12"
 	"rsp42/internal/saipver"
 	"rsp42/internal/store"
 )
@@ -235,7 +236,7 @@ func TestEventServiceStorageErrorsAreNotNotFound(t *testing.T) {
 	repo.FailGet = boom
 	svc := NewEventService(repo, "root", "ds.example.com", time.Hour)
 
-	err := svc.Register("89049032000000000000000000000001", "dp.example.com", "E1", false, "2.999.10", EventMeta{})
+	err := svc.Register("89049032000000000000000000000001", "dp.example.com", "E1", false, "2.999.10", es12.EventMeta{})
 	require.ErrorIs(t, err, boom, "a storage failure must not be answered as EventIDInUse")
 	require.NotErrorIs(t, err, ErrEventIDInUse)
 

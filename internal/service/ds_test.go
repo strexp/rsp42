@@ -10,6 +10,7 @@ import (
 
 	"rsp42/internal/asn1"
 	"rsp42/internal/cert"
+	"rsp42/internal/client/es12"
 	"rsp42/internal/crypto"
 	"rsp42/internal/kms"
 	"rsp42/internal/rsp"
@@ -85,8 +86,8 @@ func euiccAuthenticate(t *testing.T, ds *DSService, matchingID string) (string, 
 
 func TestSMDSRegisterAndDiscover(t *testing.T) {
 	ds, events, _ := setupDS(t)
-	require.NoError(t, events.Register(testEID, "dp1.example.com", "EVT1", true, "2.999.10", EventMeta{}))
-	require.NoError(t, events.Register(testEID, "dp2.example.com", "EVT2", true, "2.999.10", EventMeta{}))
+	require.NoError(t, events.Register(testEID, "dp1.example.com", "EVT1", true, "2.999.10", es12.EventMeta{}))
+	require.NoError(t, events.Register(testEID, "dp2.example.com", "EVT2", true, "2.999.10", es12.EventMeta{}))
 
 	// Case a: empty matchingId returns all events in registration order.
 	txn, asr := euiccAuthenticate(t, ds, "")
@@ -121,7 +122,7 @@ func TestCascadeRollback(t *testing.T) {
 	// An alternative DS with a failing cascade client must roll back locally.
 	alt := NewEventService(st.Events, "alternative", "testsmds1.example.com", time.Hour)
 	alt.Cascade = failCascade{}
-	err = alt.Register(testEID, "dp.example.com", "EVT-C", true, "2.999.10", EventMeta{})
+	err = alt.Register(testEID, "dp.example.com", "EVT-C", true, "2.999.10", es12.EventMeta{})
 	require.Error(t, err)
 	recs, err := st.Events.ListByEID(testEID)
 	require.NoError(t, err)
@@ -130,9 +131,9 @@ func TestCascadeRollback(t *testing.T) {
 
 type failCascade struct{}
 
-func (failCascade) Register(string, string, string, bool, EventMeta) error { return errCascade }
-func (failCascade) Delete(string, string, EventMeta) error                 { return errCascade }
-func (failCascade) IsNotFound(error) bool                                  { return false }
+func (failCascade) Register(string, string, string, bool, es12.EventMeta) error { return errCascade }
+func (failCascade) Delete(string, string, es12.EventMeta) error                 { return errCascade }
+func (failCascade) IsNotFound(error) bool                                       { return false }
 
 var errCascade = &cascadeErr{}
 

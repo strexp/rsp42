@@ -1,4 +1,11 @@
-package service
+// Package es12 is the outbound SM-DS client for the ES12 interface. An
+// Alternative SM-DS also uses it as its ES15 cascade client, which targets the
+// Root SM-DS ES12 routes.
+//
+// It is the client counterpart of internal/api/es12, mirroring the
+// internal/client/es2p split, and is the only place service reaches the ES12
+// HTTP binding from.
+package es12
 
 import (
 	"bytes"

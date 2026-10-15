@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"rsp42/internal/cert"
+	"rsp42/internal/client/es12"
 	"rsp42/internal/rsp"
 	"rsp42/internal/store"
 )
@@ -44,11 +45,11 @@ type PointStatus struct {
 type OperatorCallback func(ctx context.Context, info ProgressInfo) error
 
 // progressMeta builds the ES12 correlation metadata for a profile.
-func progressMeta(p *store.Profile) EventMeta {
+func progressMeta(p *store.Profile) es12.EventMeta {
 	if p == nil {
-		return EventMeta{}
+		return es12.EventMeta{}
 	}
-	return EventMeta{Tenant: p.TenantID, ICCID: p.ICCID, MatchingID: p.MatchingID}
+	return es12.EventMeta{Tenant: p.TenantID, ICCID: p.ICCID, MatchingID: p.MatchingID}
 }
 
 // progressFor builds a ProgressInfo from a profile; eid overrides the stored

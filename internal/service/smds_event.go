@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"time"
 
+	"rsp42/internal/client/es12"
 	"rsp42/internal/store"
 )
 
@@ -31,7 +32,7 @@ var ErrEventNotFound = errors.New("event not found")
 // Register stores an event. For an Alternative SM-DS with forwardingIndicator
 // set, it cascades to the Root SM-DS (generating EventID2) and rolls back the
 // local record on failure.
-func (s *EventService) Register(eid, rspServerAddress, eventID string, forwardingIndicator bool, callerOID string, meta EventMeta) error {
+func (s *EventService) Register(eid, rspServerAddress, eventID string, forwardingIndicator bool, callerOID string, meta es12.EventMeta) error {
 	// A lookup error that is not "missing" is a storage failure: it must be
 	// reported, not mistaken for "the EventID is free".
 	if _, err := s.Repo.GetByKey(eid, eventID, callerOID); err == nil {
@@ -105,7 +106,7 @@ func (s *EventService) Delete(eid, eventID, callerOID string) error {
 		if s.Cascade == nil {
 			return fmt.Errorf("event: cascading to root SM-DS is not configured")
 		}
-		if err := s.Cascade.Delete(eid, rec.RootEventID, EventMeta{Tenant: rec.TenantID}); err != nil {
+		if err := s.Cascade.Delete(eid, rec.RootEventID, es12.EventMeta{Tenant: rec.TenantID}); err != nil {
 			if !s.Cascade.IsNotFound(err) {
 				return err
 			}

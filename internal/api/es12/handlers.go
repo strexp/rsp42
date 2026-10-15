@@ -12,6 +12,7 @@ import (
 
 	"rsp42/internal/api/common"
 	"rsp42/internal/cert"
+	es12client "rsp42/internal/client/es12"
 	"rsp42/internal/rsp"
 	"rsp42/internal/service"
 	"rsp42/internal/store"
@@ -42,8 +43,8 @@ func New(log *slog.Logger, events *service.EventService) *Handler {
 
 // eventMeta resolves the correlation metadata of an ES12 request: the explicit
 // headers win, otherwise the caller OID mapping applies.
-func (h *Handler) eventMeta(r *http.Request, caller string) service.EventMeta {
-	meta := service.EventMetaFromHeaders(r.Header)
+func (h *Handler) eventMeta(r *http.Request, caller string) es12client.EventMeta {
+	meta := es12client.EventMetaFromHeaders(r.Header)
 	if meta.Tenant == "" {
 		if tenant, ok := h.Tenants.Resolve(caller); ok {
 			meta.Tenant = tenant

@@ -14,6 +14,7 @@ import (
 	"rsp42/internal/api/es2plus"
 	"rsp42/internal/api/es9plus"
 	"rsp42/internal/audit"
+	"rsp42/internal/client/es12"
 	"rsp42/internal/client/es2p"
 	"rsp42/internal/config"
 	"rsp42/internal/logging"
@@ -90,7 +91,7 @@ func cmdSMDpp(prog string, args []string) int {
 		}
 		registrar := &service.Registrar{
 			Repo:        st.Regs,
-			Client:      service.NewSMDSCClient("https://"+cfg.SMDpp.ES12.SMDSAddress+":9444", cfg.SMDpp.OID, hc),
+			Client:      es12.NewSMDSCClient("https://"+cfg.SMDpp.ES12.SMDSAddress+":9444", cfg.SMDpp.OID, hc),
 			SMDPAddress: cfg.SMDpp.FQDN,
 			Forwarding:  cfg.SMDpp.ES12.ForwardingIndicator,
 			Log:         log,
@@ -106,7 +107,7 @@ func cmdSMDpp(prog string, args []string) int {
 		// registration held under the previous one is stale, and the CMAE is the
 		// only place that knows the rotation happened.
 		cmae.MatchingIDChanged = func(profile *store.Profile, previousMatchingID string) {
-			meta := service.EventMeta{Tenant: profile.TenantID, ICCID: profile.ICCID, MatchingID: previousMatchingID}
+			meta := es12.EventMeta{Tenant: profile.TenantID, ICCID: profile.ICCID, MatchingID: previousMatchingID}
 			if err := registrar.DeleteEvent(profile.EID, previousMatchingID, meta); err != nil {
 				log.Warn("ES12 delete stale event after an ACR-0 MatchingID rotation",
 					"eid", profile.EID, "eventId", previousMatchingID, "err", err)

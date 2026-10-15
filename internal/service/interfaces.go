@@ -3,6 +3,7 @@ package service
 import (
 	"time"
 
+	"rsp42/internal/client/es12"
 	"rsp42/internal/store"
 )
 
@@ -62,11 +63,11 @@ type NotificationStore interface {
 // the Alternative SM-DS authenticates with CERT.DS.TLS instead of CERT.DP.TLS,
 // and the Root side handles those requests in the ES12 handler, which
 // distinguishes the caller role from the mTLS client certificate. There is
-// therefore no separate ES15 HTTP package: SMDSCClient is the ES15 client and
-// api/es12 is the root-side handler.
+// therefore no separate ES15 HTTP package: es12.SMDSCClient is the ES15 client
+// and api/es12 is the root-side handler.
 type CascadeClient interface {
-	Register(eid, rspServerAddress, eventID string, forwardingIndicator bool, meta EventMeta) error
-	Delete(eid, eventID string, meta EventMeta) error
+	Register(eid, rspServerAddress, eventID string, forwardingIndicator bool, meta es12.EventMeta) error
+	Delete(eid, eventID string, meta es12.EventMeta) error
 	// ErrNotFound reports whether an error means "event not found" (ignorable
 	// during cascaded deletion).
 	IsNotFound(err error) bool

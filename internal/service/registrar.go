@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"log/slog"
 
+	"rsp42/internal/client/es12"
 	"rsp42/internal/metrics"
 	"rsp42/internal/store"
 )
@@ -17,7 +18,7 @@ import (
 // CancelOrder, the ACR-0 MatchingID rotation and the install-time deletion).
 type Registrar struct {
 	Repo        RegistrationStore
-	Client      *SMDSCClient
+	Client      *es12.SMDSCClient
 	SMDPAddress string
 	Forwarding  bool
 	Log         *slog.Logger
@@ -34,7 +35,7 @@ type Registrar struct {
 // ConfirmOrder resend must not be answered by the SM-DS with "EventID already in
 // use" and counted as a registration failure (Table 27's resend NOTE expects a
 // resend to take no other action).
-func (r *Registrar) Register(eid, eventID, smdsAddress string, meta EventMeta) error {
+func (r *Registrar) Register(eid, eventID, smdsAddress string, meta es12.EventMeta) error {
 	if r.Client == nil {
 		return nil
 	}
@@ -53,7 +54,7 @@ func (r *Registrar) Register(eid, eventID, smdsAddress string, meta EventMeta) e
 }
 
 // DeleteForEID deletes every active registration for the EID at the SM-DS.
-func (r *Registrar) DeleteForEID(eid string, meta EventMeta) error {
+func (r *Registrar) DeleteForEID(eid string, meta es12.EventMeta) error {
 	return r.deleteMatching(eid, meta, nil)
 }
 
@@ -62,7 +63,7 @@ func (r *Registrar) DeleteForEID(eid string, meta EventMeta) error {
 // registered under that id. Callers use it when a Profile's MatchingID changes:
 // the registration is keyed by the MatchingID, so the previous one no longer
 // matches the order (SGP.22 §3.6).
-func (r *Registrar) DeleteEvent(eid, eventID string, meta EventMeta) error {
+func (r *Registrar) DeleteEvent(eid, eventID string, meta es12.EventMeta) error {
 	if eventID == "" {
 		return nil
 	}
@@ -71,7 +72,7 @@ func (r *Registrar) DeleteEvent(eid, eventID string, meta EventMeta) error {
 
 // deleteMatching removes the active registrations selected by keep (all of them
 // when keep is nil).
-func (r *Registrar) deleteMatching(eid string, meta EventMeta, keep func(*store.Registration) bool) error {
+func (r *Registrar) deleteMatching(eid string, meta es12.EventMeta, keep func(*store.Registration) bool) error {
 	if r.Client == nil {
 		return nil
 	}

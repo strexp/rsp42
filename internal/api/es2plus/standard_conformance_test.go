@@ -16,6 +16,7 @@ import (
 	"rsp42/internal/api"
 	"rsp42/internal/api/es2plus"
 	"rsp42/internal/audit"
+	"rsp42/internal/client/es12"
 	"rsp42/internal/client/es2p"
 	"rsp42/internal/service"
 	"rsp42/internal/store"
@@ -206,13 +207,13 @@ func TestES12RegistrationFailureIsRecorded(t *testing.T) {
 	r := &service.Registrar{
 		Repo: st.Regs,
 		// Nothing listens here: the registration must fail.
-		Client:      service.NewSMDSCClient("http://127.0.0.1:1", "2.999.10", nil),
+		Client:      es12.NewSMDSCClient("http://127.0.0.1:1", "2.999.10", nil),
 		SMDPAddress: "testsmdpplus1.example.com",
 		Metrics:     reg,
 		Audit:       st.Audit,
 	}
 	err := r.Register(testEID, "M-FAIL", "testrootsmds.example.com",
-		service.EventMeta{Tenant: "carrier-a", ICCID: "8900012345678901234"})
+		es12.EventMeta{Tenant: "carrier-a", ICCID: "8900012345678901234"})
 	require.Error(t, err)
 
 	require.Contains(t, reg.Render(), `rsp42_es12_register_failures_total{tenant="carrier-a"} 1`)

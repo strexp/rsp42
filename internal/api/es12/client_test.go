@@ -11,6 +11,7 @@ import (
 
 	"rsp42/internal/api"
 	"rsp42/internal/api/es12"
+	es12client "rsp42/internal/client/es12"
 	"rsp42/internal/service"
 	"rsp42/internal/store"
 )
@@ -24,20 +25,20 @@ func TestES12RegisterDeleteRoundTrip(t *testing.T) {
 	srv := httptest.NewServer(api.NewES12Router(slog.Default(), es12.New(slog.Default(), events), api.Options{}))
 	defer srv.Close()
 
-	client := service.NewSMDSCClient(srv.URL, "2.999.10", nil)
+	client := es12client.NewSMDSCClient(srv.URL, "2.999.10", nil)
 	eid := "89049032123451234512345678901235"
 
-	require.NoError(t, client.Register(eid, "dp.example.com", "EVT9", true, service.EventMeta{}))
+	require.NoError(t, client.Register(eid, "dp.example.com", "EVT9", true, es12client.EventMeta{}))
 	// Idempotent duplicate.
-	require.NoError(t, client.Register(eid, "dp.example.com", "EVT9", true, service.EventMeta{}))
+	require.NoError(t, client.Register(eid, "dp.example.com", "EVT9", true, es12client.EventMeta{}))
 
 	recs, err := st.Events.ListByEID(eid)
 	require.NoError(t, err)
 	require.Len(t, recs, 1)
 	require.Equal(t, "2.999.10", recs[0].CallerOID)
 
-	require.NoError(t, client.Delete(eid, "EVT9", service.EventMeta{}))
-	err = client.Delete(eid, "EVT9", service.EventMeta{})
+	require.NoError(t, client.Delete(eid, "EVT9", es12client.EventMeta{}))
+	err = client.Delete(eid, "EVT9", es12client.EventMeta{})
 	require.Error(t, err)
 	require.True(t, client.IsNotFound(err))
 }
