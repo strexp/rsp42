@@ -106,20 +106,9 @@ func (r *UPPRepo) ListForTenant(tenant string) ([]*UPPTemplate, error) {
 }
 
 func (r *UPPRepo) list(query string, args ...any) ([]*UPPTemplate, error) {
-	rows, err := r.db.Query(query, args...)
-	if err != nil {
-		return nil, err
-	}
-	defer func() { _ = rows.Close() }()
-	var out []*UPPTemplate
-	for rows.Next() {
-		t, err := scanUPP(rows, false)
-		if err != nil {
-			return nil, err
-		}
-		out = append(out, t)
-	}
-	return out, rows.Err()
+	return queryAll(r.db, query, args, func(sc rowScanner) (*UPPTemplate, error) {
+		return scanUPP(sc, false)
+	})
 }
 
 // SelectBestFor returns the active template with the greatest SAIP version that
@@ -291,21 +280,8 @@ func (r *UPPRepo) UpsertArchived(t *UPPTemplate, note string) error {
 
 // ListVersions returns the archived revisions of a template, newest first.
 func (r *UPPRepo) ListVersions(tenant, name string) ([]*UPPTemplateVersion, error) {
-	rows, err := r.db.Query(`SELECT `+uppVersionCols+` FROM upp_template_versions
-		WHERE COALESCE(tenant_id,'') = ? AND name = ? ORDER BY version_no DESC`, tenant, name)
-	if err != nil {
-		return nil, err
-	}
-	defer func() { _ = rows.Close() }()
-	var out []*UPPTemplateVersion
-	for rows.Next() {
-		v, err := scanUPPVersion(rows)
-		if err != nil {
-			return nil, err
-		}
-		out = append(out, v)
-	}
-	return out, rows.Err()
+	return queryAll(r.db, `SELECT `+uppVersionCols+` FROM upp_template_versions
+		WHERE COALESCE(tenant_id,'') = ? AND name = ? ORDER BY version_no DESC`, []any{tenant, name}, scanUPPVersion)
 }
 
 // GetVersion loads one archived revision in a scope.

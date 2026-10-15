@@ -64,3 +64,23 @@ func buildWhere(conds []string) string {
 	}
 	return " WHERE " + strings.Join(conds, " AND ")
 }
+
+// queryAll runs q and scans every row with scan, replacing the hand-rolled
+// `for rows.Next()` loop the repositories used to repeat. It returns a nil
+// slice when the query matches nothing, which is what those loops returned.
+func queryAll[T any](db dbtx, q string, args []any, scan func(rowScanner) (T, error)) ([]T, error) {
+	rows, err := db.Query(q, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = rows.Close() }()
+	var out []T
+	for rows.Next() {
+		v, err := scan(rows)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, v)
+	}
+	return out, rows.Err()
+}

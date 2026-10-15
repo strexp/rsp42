@@ -105,20 +105,7 @@ func (r *ProfileRepo) getOne(query string, arg any) (*Profile, error) {
 
 // List returns all profiles ordered by creation time.
 func (r *ProfileRepo) List() ([]*Profile, error) {
-	rows, err := r.db.Query("SELECT " + profileCols + " FROM profiles ORDER BY created_at")
-	if err != nil {
-		return nil, err
-	}
-	defer func() { _ = rows.Close() }()
-	var out []*Profile
-	for rows.Next() {
-		p, err := scanProfile(rows)
-		if err != nil {
-			return nil, err
-		}
-		out = append(out, p)
-	}
-	return out, rows.Err()
+	return queryAll(r.db, "SELECT "+profileCols+" FROM profiles ORDER BY created_at", nil, scanProfile)
 }
 
 // ProfileFilter constrains a profile listing (all fields optional).
@@ -148,21 +135,12 @@ func (r *ProfileRepo) ListFiltered(f ProfileFilter, limit, offset int, sort stri
 		return nil, 0, err
 	}
 
-	rows, err := r.db.Query("SELECT "+profileCols+" FROM profiles"+clause+profileOrder(sort)+" LIMIT ? OFFSET ?",
-		append(args, limit, offset)...)
+	out, err := queryAll(r.db, "SELECT "+profileCols+" FROM profiles"+clause+profileOrder(sort)+" LIMIT ? OFFSET ?",
+		append(args, limit, offset), scanProfile)
 	if err != nil {
 		return nil, 0, err
 	}
-	defer func() { _ = rows.Close() }()
-	var out []*Profile
-	for rows.Next() {
-		p, err := scanProfile(rows)
-		if err != nil {
-			return nil, 0, err
-		}
-		out = append(out, p)
-	}
-	return out, total, rows.Err()
+	return out, total, nil
 }
 
 // profileWhere builds the WHERE conditions for a profile filter.
@@ -266,27 +244,26 @@ func (r *ProfileRepo) ListEIDs(f ProfileFilter, limit, offset int) ([]EIDSummary
 	if err := r.db.QueryRow("SELECT COUNT(DISTINCT eid) FROM profiles"+clause, args...).Scan(&total); err != nil {
 		return nil, 0, err
 	}
-	rows, err := r.db.Query(`SELECT eid, COUNT(*), SUM(CASE WHEN state = 'Installed' THEN 1 ELSE 0 END), MAX(updated_at)
-		FROM profiles`+clause+` GROUP BY eid ORDER BY eid LIMIT ? OFFSET ?`, append(args, limit, offset)...)
+	out, err := queryAll(r.db, `SELECT eid, COUNT(*), SUM(CASE WHEN state = 'Installed' THEN 1 ELSE 0 END), MAX(updated_at)
+		FROM profiles`+clause+` GROUP BY eid ORDER BY eid LIMIT ? OFFSET ?`, append(args, limit, offset), scanEIDSummary)
 	if err != nil {
 		return nil, 0, err
 	}
-	defer func() { _ = rows.Close() }()
-	var out []EIDSummary
-	for rows.Next() {
-		var e EIDSummary
-		var installed sql.NullInt64
-		var updated sql.NullInt64
-		if err := rows.Scan(&e.EID, &e.ProfileCount, &installed, &updated); err != nil {
-			return nil, 0, err
-		}
-		e.InstalledCount = int(installed.Int64)
-		if updated.Valid {
-			e.LastUpdatedAt = toTime(updated.Int64)
-		}
-		out = append(out, e)
+	return out, total, nil
+}
+
+// scanEIDSummary maps one aggregated per-EID row.
+func scanEIDSummary(sc rowScanner) (EIDSummary, error) {
+	var e EIDSummary
+	var installed, updated sql.NullInt64
+	if err := sc.Scan(&e.EID, &e.ProfileCount, &installed, &updated); err != nil {
+		return e, err
 	}
-	return out, total, rows.Err()
+	e.InstalledCount = int(installed.Int64)
+	if updated.Valid {
+		e.LastUpdatedAt = toTime(updated.Int64)
+	}
+	return e, nil
 }
 
 var profileGroupBy = map[string]string{

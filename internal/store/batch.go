@@ -61,20 +61,12 @@ func (r *BatchRepo) List(tenant string, limit, offset int) ([]*DownloadBatch, in
 	if err := r.db.QueryRow("SELECT COUNT(*) FROM download_batches WHERE COALESCE(tenant_id,'') = ?", tenant).Scan(&total); err != nil {
 		return nil, 0, err
 	}
-	rows, err := r.db.Query("SELECT "+batchCols+" FROM download_batches WHERE COALESCE(tenant_id,'') = ? ORDER BY id DESC LIMIT ? OFFSET ?", tenant, limit, offset)
+	out, err := queryAll(r.db, "SELECT "+batchCols+" FROM download_batches WHERE COALESCE(tenant_id,'') = ? ORDER BY id DESC LIMIT ? OFFSET ?",
+		[]any{tenant, limit, offset}, scanBatch)
 	if err != nil {
 		return nil, 0, err
 	}
-	defer func() { _ = rows.Close() }()
-	var out []*DownloadBatch
-	for rows.Next() {
-		b, err := scanBatch(rows)
-		if err != nil {
-			return nil, 0, err
-		}
-		out = append(out, b)
-	}
-	return out, total, rows.Err()
+	return out, total, nil
 }
 
 // UpdateState sets the batch state.

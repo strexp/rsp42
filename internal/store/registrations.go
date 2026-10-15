@@ -30,30 +30,26 @@ func (r *RegistrationRepo) Insert(eid, eventID, rspServerAddress string, forward
 
 // ListActiveByEID returns the active (not deleted) registrations for an EID.
 func (r *RegistrationRepo) ListActiveByEID(eid string) ([]*Registration, error) {
-	rows, err := r.db.Query(`SELECT id, COALESCE(tenant_id,''), eid, event_id, rsp_server_address, forwarding_indicator, registered_at, deleted_at
-		FROM smds_registrations WHERE eid=? AND deleted_at IS NULL ORDER BY id`, eid)
-	if err != nil {
+	return queryAll(r.db, `SELECT id, COALESCE(tenant_id,''), eid, event_id, rsp_server_address, forwarding_indicator, registered_at, deleted_at
+		FROM smds_registrations WHERE eid=? AND deleted_at IS NULL ORDER BY id`, []any{eid}, scanRegistration)
+}
+
+// scanRegistration maps one smds_registrations row.
+func scanRegistration(sc rowScanner) (*Registration, error) {
+	var g Registration
+	var fwd int
+	var registered int64
+	var deleted sql.NullInt64
+	if err := sc.Scan(&g.ID, &g.TenantID, &g.EID, &g.EventID, &g.RSPServerAddress, &fwd, &registered, &deleted); err != nil {
 		return nil, err
 	}
-	defer func() { _ = rows.Close() }()
-	var out []*Registration
-	for rows.Next() {
-		var g Registration
-		var fwd int
-		var registered int64
-		var deleted sql.NullInt64
-		if err := rows.Scan(&g.ID, &g.TenantID, &g.EID, &g.EventID, &g.RSPServerAddress, &fwd, &registered, &deleted); err != nil {
-			return nil, err
-		}
-		g.ForwardingIndicator = fwd != 0
-		g.RegisteredAt = toTime(registered)
-		if deleted.Valid {
-			t := toTime(deleted.Int64)
-			g.DeletedAt = &t
-		}
-		out = append(out, &g)
+	g.ForwardingIndicator = fwd != 0
+	g.RegisteredAt = toTime(registered)
+	if deleted.Valid {
+		t := toTime(deleted.Int64)
+		g.DeletedAt = &t
 	}
-	return out, rows.Err()
+	return &g, nil
 }
 
 // MarkDeleted marks a registration as deleted.

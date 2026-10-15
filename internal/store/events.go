@@ -86,44 +86,20 @@ func (r *EventRepo) GetByKey(eid, eventID, callerOID string) (*EventRecord, erro
 // ListByEID returns the active (not deleted) events for an EID, in registration
 // order.
 func (r *EventRepo) ListByEID(eid string) ([]*EventRecord, error) {
-	rows, err := r.db.Query("SELECT "+eventCols+" FROM events WHERE eid=? AND deleted_at IS NULL ORDER BY registered_at, id", eid)
-	if err != nil {
-		return nil, err
-	}
-	defer func() { _ = rows.Close() }()
-	return collectEvents(rows)
+	return queryAll(r.db, "SELECT "+eventCols+" FROM events WHERE eid=? AND deleted_at IS NULL ORDER BY registered_at, id",
+		[]any{eid}, scanEvent)
 }
 
 // ListByEIDEventID returns active events matching eid and eventID.
 func (r *EventRepo) ListByEIDEventID(eid, eventID string) ([]*EventRecord, error) {
-	rows, err := r.db.Query("SELECT "+eventCols+" FROM events WHERE eid=? AND event_id=? AND deleted_at IS NULL ORDER BY registered_at, id", eid, eventID)
-	if err != nil {
-		return nil, err
-	}
-	defer func() { _ = rows.Close() }()
-	return collectEvents(rows)
+	return queryAll(r.db, "SELECT "+eventCols+" FROM events WHERE eid=? AND event_id=? AND deleted_at IS NULL ORDER BY registered_at, id",
+		[]any{eid, eventID}, scanEvent)
 }
 
 // ListAll returns all active events.
 func (r *EventRepo) ListAll() ([]*EventRecord, error) {
-	rows, err := r.db.Query("SELECT " + eventCols + " FROM events WHERE deleted_at IS NULL ORDER BY registered_at, id")
-	if err != nil {
-		return nil, err
-	}
-	defer func() { _ = rows.Close() }()
-	return collectEvents(rows)
-}
-
-func collectEvents(rows *sql.Rows) ([]*EventRecord, error) {
-	var out []*EventRecord
-	for rows.Next() {
-		e, err := scanEvent(rows)
-		if err != nil {
-			return nil, err
-		}
-		out = append(out, e)
-	}
-	return out, rows.Err()
+	return queryAll(r.db, "SELECT "+eventCols+" FROM events WHERE deleted_at IS NULL ORDER BY registered_at, id",
+		nil, scanEvent)
 }
 
 // SoftDelete marks an event as deleted and returns whether a row was affected.
@@ -229,13 +205,8 @@ func (r *EventRepo) ListFiltered(f EventFilter, limit, offset int, now time.Time
 	if err := r.db.QueryRow("SELECT COUNT(*) FROM events"+clause, args...).Scan(&total); err != nil {
 		return nil, 0, err
 	}
-	rows, err := r.db.Query("SELECT "+eventCols+" FROM events"+clause+eventOrder(f.Sort)+" LIMIT ? OFFSET ?",
-		append(args, limit, offset)...)
-	if err != nil {
-		return nil, 0, err
-	}
-	defer func() { _ = rows.Close() }()
-	out, err := collectEvents(rows)
+	out, err := queryAll(r.db, "SELECT "+eventCols+" FROM events"+clause+eventOrder(f.Sort)+" LIMIT ? OFFSET ?",
+		append(args, limit, offset), scanEvent)
 	if err != nil {
 		return nil, 0, err
 	}

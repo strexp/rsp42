@@ -8,6 +8,10 @@ import (
 // AuditRepo writes audit rows.
 type AuditRepo struct{ db *sql.DB }
 
+// auditCols is the column list every audit read uses, so a scan cannot drift
+// from the query.
+const auditCols = `id, ts, tenant_id, actor, interface, function, subject, outcome, status_code, remote_addr, detail_json`
+
 // AuditEntry is one audit record.
 type AuditEntry struct {
 	// ID is the monotonic, never-reused audit cursor (the table declares
@@ -61,21 +65,12 @@ func (r *AuditRepo) ListFiltered(f AuditFilter, limit, offset int) ([]*AuditEntr
 	if err := r.db.QueryRow("SELECT COUNT(*) FROM audit_log"+clause, args...).Scan(&total); err != nil {
 		return nil, 0, err
 	}
-	rows, err := r.db.Query(`SELECT id, ts, tenant_id, actor, interface, function, subject, outcome, status_code, remote_addr, detail_json
-		FROM audit_log`+clause+` ORDER BY id DESC LIMIT ? OFFSET ?`, append(args, limit, offset)...)
+	out, err := queryAll(r.db, `SELECT `+auditCols+` FROM audit_log`+clause+
+		` ORDER BY id DESC LIMIT ? OFFSET ?`, append(args, limit, offset), scanAuditRow)
 	if err != nil {
 		return nil, 0, err
 	}
-	defer func() { _ = rows.Close() }()
-	var out []*AuditEntry
-	for rows.Next() {
-		e, err := scanAuditRow(rows)
-		if err != nil {
-			return nil, 0, err
-		}
-		out = append(out, e)
-	}
-	return out, total, rows.Err()
+	return out, total, nil
 }
 
 // ListAfterID returns up to limit audit entries with id > afterID, oldest
@@ -88,21 +83,8 @@ func (r *AuditRepo) ListAfterID(f AuditFilter, afterID int64, limit int) ([]*Aud
 	where, args := auditWhere(f)
 	where = append(where, "id > ?")
 	args = append(args, afterID)
-	rows, err := r.db.Query(`SELECT id, ts, tenant_id, actor, interface, function, subject, outcome, status_code, remote_addr, detail_json
-		FROM audit_log`+buildWhere(where)+` ORDER BY id ASC LIMIT ?`, append(args, limit)...)
-	if err != nil {
-		return nil, err
-	}
-	defer func() { _ = rows.Close() }()
-	var out []*AuditEntry
-	for rows.Next() {
-		e, err := scanAuditRow(rows)
-		if err != nil {
-			return nil, err
-		}
-		out = append(out, e)
-	}
-	return out, rows.Err()
+	return queryAll(r.db, `SELECT `+auditCols+` FROM audit_log`+buildWhere(where)+
+		` ORDER BY id ASC LIMIT ?`, append(args, limit), scanAuditRow)
 }
 
 // auditWhere builds the WHERE conditions for an audit filter.
@@ -158,21 +140,8 @@ func scanAuditRow(sc rowScanner) (*AuditEntry, error) {
 
 // ListBySubject returns recent audit entries for a subject (newest first).
 func (r *AuditRepo) ListBySubject(subject string, limit int) ([]*AuditEntry, error) {
-	rows, err := r.db.Query(`SELECT id, ts, tenant_id, actor, interface, function, subject, outcome, status_code, remote_addr, detail_json
-		FROM audit_log WHERE subject = ? ORDER BY id DESC LIMIT ?`, subject, limit)
-	if err != nil {
-		return nil, err
-	}
-	defer func() { _ = rows.Close() }()
-	var out []*AuditEntry
-	for rows.Next() {
-		e, err := scanAuditRow(rows)
-		if err != nil {
-			return nil, err
-		}
-		out = append(out, e)
-	}
-	return out, rows.Err()
+	return queryAll(r.db, `SELECT `+auditCols+` FROM audit_log
+		WHERE subject = ? ORDER BY id DESC LIMIT ?`, []any{subject, limit}, scanAuditRow)
 }
 
 // DeleteBefore removes audit rows older than ts (retention/GC).
@@ -186,21 +155,8 @@ func (r *AuditRepo) DeleteBefore(ts int64) (int64, error) {
 
 // List returns the most recent audit entries.
 func (r *AuditRepo) List(limit int) ([]*AuditEntry, error) {
-	rows, err := r.db.Query(`SELECT id, ts, tenant_id, actor, interface, function, subject, outcome, status_code, remote_addr, detail_json
-		FROM audit_log ORDER BY id DESC LIMIT ?`, limit)
-	if err != nil {
-		return nil, err
-	}
-	defer func() { _ = rows.Close() }()
-	var out []*AuditEntry
-	for rows.Next() {
-		e, err := scanAuditRow(rows)
-		if err != nil {
-			return nil, err
-		}
-		out = append(out, e)
-	}
-	return out, rows.Err()
+	return queryAll(r.db, `SELECT `+auditCols+` FROM audit_log
+		ORDER BY id DESC LIMIT ?`, []any{limit}, scanAuditRow)
 }
 
 var auditGroupBy = map[string]string{

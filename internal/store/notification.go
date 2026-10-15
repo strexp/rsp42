@@ -8,6 +8,26 @@ import (
 // NotificationRepo persists received notifications.
 type NotificationRepo struct{ db *sql.DB }
 
+// notificationCols is the column list every notification read uses, so a scan
+// cannot drift from the query.
+const notificationCols = `id, eid, seq_number, operation, iccid, transaction_id, final_result_json,
+		signature_ok, received_at, processed`
+
+// scanNotification maps one notifications row.
+func scanNotification(sc rowScanner) (*Notification, error) {
+	var n Notification
+	var eidN, op, ic, txn, fr sql.NullString
+	var sig, proc int
+	var received int64
+	if err := sc.Scan(&n.ID, &eidN, &n.SeqNumber, &op, &ic, &txn, &fr, &sig, &received, &proc); err != nil {
+		return nil, err
+	}
+	n.EID, n.Operation, n.ICCID, n.TransactionID, n.FinalResultJSON = eidN.String, op.String, ic.String, txn.String, fr.String
+	n.SignatureOK, n.Processed = sig != 0, proc != 0
+	n.ReceivedAt = toTime(received)
+	return &n, nil
+}
+
 // Insert stores a notification.
 func (r *NotificationRepo) Insert(n *Notification) error {
 	_, err := r.db.Exec(`INSERT INTO notifications
@@ -20,27 +40,8 @@ func (r *NotificationRepo) Insert(n *Notification) error {
 
 // ListByICCID returns notifications for an ICCID, newest first.
 func (r *NotificationRepo) ListByICCID(iccid string) ([]*Notification, error) {
-	rows, err := r.db.Query(`SELECT id, eid, seq_number, operation, iccid, transaction_id, final_result_json,
-		signature_ok, received_at, processed FROM notifications WHERE iccid = ? ORDER BY id DESC`, iccid)
-	if err != nil {
-		return nil, err
-	}
-	defer func() { _ = rows.Close() }()
-	var out []*Notification
-	for rows.Next() {
-		var n Notification
-		var eidN, op, ic, txn, fr sql.NullString
-		var sig, proc int
-		var received int64
-		if err := rows.Scan(&n.ID, &eidN, &n.SeqNumber, &op, &ic, &txn, &fr, &sig, &received, &proc); err != nil {
-			return nil, err
-		}
-		n.EID, n.Operation, n.ICCID, n.TransactionID, n.FinalResultJSON = eidN.String, op.String, ic.String, txn.String, fr.String
-		n.SignatureOK, n.Processed = sig != 0, proc != 0
-		n.ReceivedAt = toTime(received)
-		out = append(out, &n)
-	}
-	return out, rows.Err()
+	return queryAll(r.db, `SELECT `+notificationCols+` FROM notifications
+		WHERE iccid = ? ORDER BY id DESC`, []any{iccid}, scanNotification)
 }
 
 // DeleteBefore removes notifications received before ts (retention/GC).
@@ -54,27 +55,8 @@ func (r *NotificationRepo) DeleteBefore(ts int64) (int64, error) {
 
 // ListByEID returns notifications for an EID ordered by sequence number.
 func (r *NotificationRepo) ListByEID(eid string) ([]*Notification, error) {
-	rows, err := r.db.Query(`SELECT id, eid, seq_number, operation, iccid, transaction_id, final_result_json,
-		signature_ok, received_at, processed FROM notifications WHERE eid = ? ORDER BY seq_number`, eid)
-	if err != nil {
-		return nil, err
-	}
-	defer func() { _ = rows.Close() }()
-	var out []*Notification
-	for rows.Next() {
-		var n Notification
-		var eidN, op, iccid, txn, fr sql.NullString
-		var sig, proc int
-		var received int64
-		if err := rows.Scan(&n.ID, &eidN, &n.SeqNumber, &op, &iccid, &txn, &fr, &sig, &received, &proc); err != nil {
-			return nil, err
-		}
-		n.EID, n.Operation, n.ICCID, n.TransactionID, n.FinalResultJSON = eidN.String, op.String, iccid.String, txn.String, fr.String
-		n.SignatureOK, n.Processed = sig != 0, proc != 0
-		n.ReceivedAt = toTime(received)
-		out = append(out, &n)
-	}
-	return out, rows.Err()
+	return queryAll(r.db, `SELECT `+notificationCols+` FROM notifications
+		WHERE eid = ? ORDER BY seq_number`, []any{eid}, scanNotification)
 }
 
 // NotificationFilter constrains a notification listing.
@@ -106,28 +88,12 @@ func (r *NotificationRepo) ListFiltered(f NotificationFilter, limit, offset int)
 	if err := r.db.QueryRow("SELECT COUNT(*) FROM notifications"+clause, args...).Scan(&total); err != nil {
 		return nil, 0, err
 	}
-	rows, err := r.db.Query(`SELECT id, eid, seq_number, operation, iccid, transaction_id, final_result_json,
-		signature_ok, received_at, processed FROM notifications`+clause+` ORDER BY id DESC LIMIT ? OFFSET ?`,
-		append(args, limit, offset)...)
+	out, err := queryAll(r.db, `SELECT `+notificationCols+` FROM notifications`+clause+
+		` ORDER BY id DESC LIMIT ? OFFSET ?`, append(args, limit, offset), scanNotification)
 	if err != nil {
 		return nil, 0, err
 	}
-	defer func() { _ = rows.Close() }()
-	var out []*Notification
-	for rows.Next() {
-		var n Notification
-		var eidN, op, ic, txn, fr sql.NullString
-		var sig, proc int
-		var received int64
-		if err := rows.Scan(&n.ID, &eidN, &n.SeqNumber, &op, &ic, &txn, &fr, &sig, &received, &proc); err != nil {
-			return nil, 0, err
-		}
-		n.EID, n.Operation, n.ICCID, n.TransactionID, n.FinalResultJSON = eidN.String, op.String, ic.String, txn.String, fr.String
-		n.SignatureOK, n.Processed = sig != 0, proc != 0
-		n.ReceivedAt = toTime(received)
-		out = append(out, &n)
-	}
-	return out, total, rows.Err()
+	return out, total, nil
 }
 
 // Notification is a received notification row.

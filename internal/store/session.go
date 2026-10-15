@@ -143,37 +143,16 @@ func (r *SessionRepo) GCExpired(now time.Time) (int64, error) {
 
 // ListTransactions returns all session transaction ids.
 func (r *SessionRepo) ListTransactions() ([]string, error) {
-	rows, err := r.db.Query("SELECT transaction_id FROM sessions")
-	if err != nil {
-		return nil, err
-	}
-	defer func() { _ = rows.Close() }()
-	var out []string
-	for rows.Next() {
-		var id string
-		if err := rows.Scan(&id); err != nil {
-			return nil, err
-		}
-		out = append(out, id)
-	}
-	return out, rows.Err()
+	return queryAll(r.db, "SELECT transaction_id FROM sessions", nil,
+		func(sc rowScanner) (string, error) {
+			var id string
+			return id, sc.Scan(&id)
+		})
 }
 
 // ListByProfileID returns the download sessions attached to a profile, newest
 // first (used by the profile timeline).
 func (r *SessionRepo) ListByProfileID(profileID int64) ([]*Session, error) {
-	rows, err := r.db.Query(`SELECT `+sessionCols+` FROM sessions WHERE profile_id = ? ORDER BY created_at DESC`, profileID)
-	if err != nil {
-		return nil, err
-	}
-	defer func() { _ = rows.Close() }()
-	var out []*Session
-	for rows.Next() {
-		s, err := scanSession(rows)
-		if err != nil {
-			return nil, err
-		}
-		out = append(out, s)
-	}
-	return out, rows.Err()
+	return queryAll(r.db, `SELECT `+sessionCols+` FROM sessions
+		WHERE profile_id = ? ORDER BY created_at DESC`, []any{profileID}, scanSession)
 }

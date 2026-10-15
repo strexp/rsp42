@@ -93,20 +93,7 @@ func (r *TenantRepo) Get(id string) (*Tenant, error) {
 
 // List returns all tenants ordered by id.
 func (r *TenantRepo) List() ([]*Tenant, error) {
-	rows, err := r.db.Query("SELECT " + tenantCols + " FROM tenants ORDER BY id")
-	if err != nil {
-		return nil, err
-	}
-	defer func() { _ = rows.Close() }()
-	var out []*Tenant
-	for rows.Next() {
-		t, err := scanTenant(rows)
-		if err != nil {
-			return nil, err
-		}
-		out = append(out, t)
-	}
-	return out, rows.Err()
+	return queryAll(r.db, "SELECT "+tenantCols+" FROM tenants ORDER BY id", nil, scanTenant)
 }
 
 // Delete removes a tenant. Resources keep their tenant_id (dangling by design:

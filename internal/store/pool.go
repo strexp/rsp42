@@ -263,21 +263,12 @@ func (r *PoolRepo) ListPage(state, prefix string, tenant *string, limit, offset 
 	if err := r.db.QueryRow("SELECT COUNT(*) FROM iccid_pool"+clause, args...).Scan(&total); err != nil {
 		return nil, 0, err
 	}
-	rows, err := r.db.Query("SELECT "+poolCols+" FROM iccid_pool"+
-		clause+" ORDER BY iccid LIMIT ? OFFSET ?", append(args, limit, offset)...)
+	out, err := queryAll(r.db, "SELECT "+poolCols+" FROM iccid_pool"+
+		clause+" ORDER BY iccid LIMIT ? OFFSET ?", append(args, limit, offset), scanPool)
 	if err != nil {
 		return nil, 0, err
 	}
-	defer func() { _ = rows.Close() }()
-	var out []*ICCIDPoolEntry
-	for rows.Next() {
-		e, err := scanPool(rows)
-		if err != nil {
-			return nil, 0, err
-		}
-		out = append(out, e)
-	}
-	return out, total, rows.Err()
+	return out, total, nil
 }
 
 // ListRanges returns the imported ranges (newest first). A nil tenant spans
@@ -289,24 +280,20 @@ func (r *PoolRepo) ListRanges(tenant *string) ([]*ICCIDRange, error) {
 		query += ` WHERE COALESCE(tenant_id,'') = ?`
 		args = append(args, *tenant)
 	}
-	rows, err := r.db.Query(query+` ORDER BY id DESC`, args...)
-	if err != nil {
+	return queryAll(r.db, query+` ORDER BY id DESC`, args, scanICCIDRange)
+}
+
+// scanICCIDRange maps one iccid_ranges row.
+func scanICCIDRange(sc rowScanner) (*ICCIDRange, error) {
+	var rg ICCIDRange
+	var note sql.NullString
+	var created int64
+	if err := sc.Scan(&rg.ID, &rg.TenantID, &rg.Start, &rg.End, &note, &created); err != nil {
 		return nil, err
 	}
-	defer func() { _ = rows.Close() }()
-	var out []*ICCIDRange
-	for rows.Next() {
-		var rg ICCIDRange
-		var note sql.NullString
-		var created int64
-		if err := rows.Scan(&rg.ID, &rg.TenantID, &rg.Start, &rg.End, &note, &created); err != nil {
-			return nil, err
-		}
-		rg.Note = note.String
-		rg.CreatedAt = toTime(created)
-		out = append(out, &rg)
-	}
-	return out, rows.Err()
+	rg.Note = note.String
+	rg.CreatedAt = toTime(created)
+	return &rg, nil
 }
 
 // DeleteRange removes an imported range and its still-available pool entries in

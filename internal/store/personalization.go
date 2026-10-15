@@ -169,12 +169,8 @@ func (r *PersonalizationRepo) GetByIMSI(tenant, imsi string) (*Personalization, 
 
 // List returns all personalization rows ordered by ICCID then IMSI.
 func (r *PersonalizationRepo) List() ([]*Personalization, error) {
-	rows, err := r.db.Query("SELECT " + personalizationCols + " FROM personalization ORDER BY COALESCE(iccid,''), COALESCE(imsi,'')")
-	if err != nil {
-		return nil, err
-	}
-	defer func() { _ = rows.Close() }()
-	return collectPersonalization(rows)
+	return queryAll(r.db, "SELECT "+personalizationCols+" FROM personalization ORDER BY COALESCE(iccid,''), COALESCE(imsi,'')",
+		nil, scanPersonalization)
 }
 
 // ListPage returns a page of personalization rows (optionally filtered by ICCID
@@ -193,29 +189,12 @@ func (r *PersonalizationRepo) ListPage(iccidPrefix, tenant string, limit, offset
 	if err := r.db.QueryRow("SELECT COUNT(*) FROM personalization"+clause, args...).Scan(&total); err != nil {
 		return nil, 0, err
 	}
-	rows, err := r.db.Query("SELECT "+personalizationCols+" FROM personalization"+clause+
-		" ORDER BY COALESCE(iccid,''), COALESCE(imsi,'') LIMIT ? OFFSET ?", append(args, limit, offset)...)
-	if err != nil {
-		return nil, 0, err
-	}
-	defer func() { _ = rows.Close() }()
-	out, err := collectPersonalization(rows)
+	out, err := queryAll(r.db, "SELECT "+personalizationCols+" FROM personalization"+clause+
+		" ORDER BY COALESCE(iccid,''), COALESCE(imsi,'') LIMIT ? OFFSET ?", append(args, limit, offset), scanPersonalization)
 	if err != nil {
 		return nil, 0, err
 	}
 	return out, total, nil
-}
-
-func collectPersonalization(rows *sql.Rows) ([]*Personalization, error) {
-	var out []*Personalization
-	for rows.Next() {
-		p, err := scanPersonalization(rows)
-		if err != nil {
-			return nil, err
-		}
-		out = append(out, p)
-	}
-	return out, rows.Err()
 }
 
 // Delete removes a personalization row bound to an ICCID in a tenant.

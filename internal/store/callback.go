@@ -73,22 +73,9 @@ func (r *CallbackRepo) Due(now time.Time, limit int) ([]*Callback, error) {
 	if limit <= 0 {
 		limit = 100
 	}
-	rows, err := r.db.Query("SELECT "+callbackCols+` FROM es2p_callbacks
+	return queryAll(r.db, "SELECT "+callbackCols+` FROM es2p_callbacks
 		WHERE status = 'pending' AND (next_retry_at IS NULL OR next_retry_at <= ?)
-		ORDER BY id LIMIT ?`, now.Unix(), limit)
-	if err != nil {
-		return nil, err
-	}
-	defer func() { _ = rows.Close() }()
-	var out []*Callback
-	for rows.Next() {
-		c, err := scanCallback(rows)
-		if err != nil {
-			return nil, err
-		}
-		out = append(out, c)
-	}
-	return out, rows.Err()
+		ORDER BY id LIMIT ?`, []any{now.Unix(), limit}, scanCallback)
 }
 
 // MarkSent records a successful delivery.
@@ -196,21 +183,12 @@ func (r *CallbackRepo) ListFiltered(f CallbackFilter, limit, offset int) ([]*Cal
 	if err := r.db.QueryRow("SELECT COUNT(*) FROM es2p_callbacks"+clause, args...).Scan(&total); err != nil {
 		return nil, 0, err
 	}
-	rows, err := r.db.Query("SELECT "+callbackCols+" FROM es2p_callbacks"+clause+
-		" ORDER BY id DESC LIMIT ? OFFSET ?", append(args, limit, offset)...)
+	out, err := queryAll(r.db, "SELECT "+callbackCols+" FROM es2p_callbacks"+clause+
+		" ORDER BY id DESC LIMIT ? OFFSET ?", append(args, limit, offset), scanCallback)
 	if err != nil {
 		return nil, 0, err
 	}
-	defer func() { _ = rows.Close() }()
-	var out []*Callback
-	for rows.Next() {
-		c, err := scanCallback(rows)
-		if err != nil {
-			return nil, 0, err
-		}
-		out = append(out, c)
-	}
-	return out, total, rows.Err()
+	return out, total, nil
 }
 
 // Requeue puts one dead-lettered callback back on the queue, resetting its
