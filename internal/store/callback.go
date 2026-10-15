@@ -194,22 +194,32 @@ func (r *CallbackRepo) ListFiltered(f CallbackFilter, limit, offset int) ([]*Cal
 // Requeue puts one dead-lettered callback back on the queue, resetting its
 // attempt counter. It returns ErrNotFound for an unknown id and ErrConflict
 // when the callback is not in the dead-letter (failed) state.
+// Requeue returns a dead letter to the queue. The state test and the update are
+// a single statement, so two concurrent requeues cannot both read "failed" and
+// both reset the attempt counter.
 func (r *CallbackRepo) Requeue(id int64) error {
-	cur, err := r.Get(id)
+	res, err := r.db.Exec(`UPDATE es2p_callbacks
+		SET status = ?, attempts = 0, next_retry_at = ?, response = NULL
+		WHERE id = ? AND status = ?`, CallbackPending, unixNow(), id, CallbackFailed)
 	if err != nil {
 		return err
 	}
-	if cur.Status != CallbackFailed {
+	n, err := res.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if n == 0 {
+		// Nothing was requeued: either the row does not exist or it is not a
+		// dead letter. Get tells the two apart so the caller keeps the same
+		// ErrNotFound / ErrConflict contract.
+		if _, err := r.Get(id); err != nil {
+			return err
+		}
 		return ErrConflict
 	}
-	_, err = r.db.Exec(`UPDATE es2p_callbacks
-		SET status = 'pending', attempts = 0, next_retry_at = ?, response = NULL WHERE id = ?`, unixNow(), id)
-	return err
+	return nil
 }
 
-// RequeueDead re-queues up to limit dead-lettered callbacks created at or
-// before before, optionally restricted to one tenant, and returns how many were
-// re-queued.
 func (r *CallbackRepo) RequeueDead(tenant *string, before time.Time, limit int) (int64, error) {
 	if limit <= 0 {
 		limit = 100

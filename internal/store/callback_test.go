@@ -1,7 +1,9 @@
 package store
 
 import (
+	"errors"
 	"path/filepath"
+	"sync"
 	"testing"
 	"time"
 
@@ -82,4 +84,44 @@ func TestCallbackRepoListAndRequeue(t *testing.T) {
 	n, err = st.Callbacks.RequeueDead(&scope, time.Now().UTC().Add(time.Hour), 100)
 	require.NoError(t, err)
 	require.Zero(t, n)
+}
+
+// TestCallbackRequeueIsAtomic pins the fix for the read-then-write race: the
+// state test and the update are one statement, so of N concurrent requeues of
+// the same dead letter exactly one wins and the rest are conflicts.
+func TestCallbackRequeueIsAtomic(t *testing.T) {
+	st, err := Open("file:" + filepath.Join(t.TempDir(), "requeue.db"))
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = st.Close() })
+
+	id, err := st.Callbacks.Enqueue("https://bss.example/es2p", `{"iccid":"89000123456789012341"}`, 3)
+	require.NoError(t, err)
+	require.NoError(t, st.Callbacks.MarkFailed(id, "503"))
+
+	const workers = 8
+	var (
+		wg        sync.WaitGroup
+		mu        sync.Mutex
+		ok, confl int
+	)
+	for i := 0; i < workers; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			err := st.Callbacks.Requeue(id)
+			mu.Lock()
+			defer mu.Unlock()
+			switch {
+			case err == nil:
+				ok++
+			case errors.Is(err, ErrConflict):
+				confl++
+			default:
+				t.Errorf("unexpected error: %v", err)
+			}
+		}()
+	}
+	wg.Wait()
+	require.Equal(t, 1, ok, "exactly one requeue may win")
+	require.Equal(t, workers-1, confl)
 }
