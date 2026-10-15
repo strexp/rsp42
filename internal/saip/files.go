@@ -111,7 +111,7 @@ const (
 	FIDIMSI      = 0x6F07
 	FIDSPN       = 0x6F46
 	FIDKeys      = 0x6F08
-	FIDHPLMNwAcT = 0x6F31
+	FIDHPLMNwAcT = 0x6F62
 	FIDPLMNwAcT  = 0x6F60
 	FIDOPLMNwAcT = 0x6F61
 	FIDACC       = 0x6F78

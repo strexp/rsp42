@@ -73,6 +73,30 @@ func headerWithGFSTE(oids ...string) *asn1.Node {
 	return asn1.NewConstructed(TagHeader, children...)
 }
 
+// TestValidatePEIdentification pins the PEHeader.identification decode and its
+// uniqueness rule. PEHeader is AUTOMATIC TAGS, so identification is context
+// tag [1] (0x81); the universal INTEGER tag 0x02 made the check dead code.
+func TestValidatePEIdentification(t *testing.T) {
+	peWithID := func(tag []byte, id byte) *asn1.Node {
+		return asn1.NewConstructed(tag,
+			asn1.NewConstructed(peHeader,
+				asn1.NewPrimitive(peMandated, nil),
+				asn1.NewPrimitive(tagPEIdentification, []byte{id}),
+			),
+			mustOID("2.23.143.1.2.1"),
+		)
+	}
+
+	// Distinct identifications are accepted.
+	v := profileAroundMFPlus(peWithID(TagCD, 0x01), peWithID(TagTelecom, 0x02)).ValidateV231()
+	require.Empty(t, v.Errors)
+
+	// The same identification on two PEs is a hard error.
+	v = profileAroundMFPlus(peWithID(TagCD, 0x07), peWithID(TagTelecom, 0x07)).ValidateV231()
+	require.Contains(t, strings.Join(v.Errors, "\n"),
+		"PE identification 07 is used by both cd and telecom")
+}
+
 // TestValidateStructureErrors covers the structural failures the plan requires
 // /upp/validate to report.
 func TestValidateStructureErrors(t *testing.T) {

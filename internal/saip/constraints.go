@@ -103,11 +103,19 @@ func checkFcp(errf func(string, ...any), pe string, fcp *asn1.Node) {
 // checkPINCodes validates pinValue OCTET STRING (SIZE(8)) inside the
 // PE-PINCodes pinconfiguration.
 func checkPINCodes(errf func(string, ...any), pe *asn1.Node) {
-	codes := pe.Find([]byte{0xa1})
-	if codes == nil {
+	container := pe.Find([]byte{0xa1})
+	if container == nil {
 		return
 	}
-	walk(codes, func(n *asn1.Node) {
+	// pinCodes is a CHOICE: the pinconfig alternative [0] (0xa0) carries the
+	// PINConfiguration list, while filePath [1] is a shared-PIN temporary FID
+	// whose OCTET STRING is itself tagged 0x81. Only tags inside pinconfig are
+	// pinValue, so descend into it before walking.
+	cfg := container.Find([]byte{0xa0})
+	if cfg == nil {
+		return
+	}
+	walk(cfg, func(n *asn1.Node) {
 		if bytes.Equal(n.Tag, []byte{0x81}) {
 			checkSize(errf, n, 8, 8, "PINConfiguration.pinValue")
 		}

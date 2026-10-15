@@ -225,20 +225,27 @@ func peMemberIndex(tag []byte) (int, bool) {
 	case len(tag) == 1 && tag[0] >= 0xa0 && tag[0] <= 0xbe:
 		return int(tag[0] - 0xa0), true
 	case len(tag) == 2 && tag[0] == 0xbf && tag[1]&0x80 == 0:
-		// Long-form tag number: 31 + the following base-128 byte.
-		return 31 + int(tag[1]), true
+		// Long-form tag number: 0xBF is the high-tag-number marker and the
+		// following base-128 byte IS the number (31..127), not 31 plus it.
+		return int(tag[1]), true
 	}
 	return 0, false
 }
 
-// fdKind classifies the file-descriptor byte (ETSI TS 102 221 §9.2.1.1) as
-// "df" or "ef"; the low three bits are the file structure, the next three the
-// file type (7 = DF).
+// fdKind classifies the file-descriptor byte (ETSI TS 102 221 §11.1.1.4.3) as
+// "df" or "ef": b8 is 0, b7 is the shareable bit, b6..b4 the file type (7 = DF)
+// and b3..b1 the structure. The file type is therefore (b>>3)&7.
 func fdKind(b byte) string {
 	if b&0x80 != 0 {
 		return ""
 	}
-	switch (b >> 4) & 0x7 {
+	// BER-TLV EF (TS 102 221 Table 11.5): the non-shareable code point is 0x39
+	// and the shareable one 0x79. Its file-type bits are 111, which would
+	// otherwise be read as a DF.
+	if b&0xbf == 0x39 {
+		return "ef"
+	}
+	switch (b >> 3) & 0x7 {
 	case 7:
 		return "df"
 	case 0, 1:

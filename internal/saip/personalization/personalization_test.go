@@ -236,6 +236,43 @@ func TestApplyOperatorOverrides(t *testing.T) {
 	}
 }
 
+// TestApplyPLMNTargetsHPLMNwAcT pins the FID fix: the PLMN list goes to
+// EF.HPLMNwAcT (6F62). The constant previously held 0x6F31 (EF.HPPLMN, a
+// 1-octet file), so the PLMN record overwrote EF.HPPLMN and EF.HPLMNwAcT was
+// never written.
+func TestApplyPLMNTargetsHPLMNwAcT(t *testing.T) {
+	require.Equal(t, uint16(0x6F62), uint16(saip.FIDHPLMNwAcT), "EF.HPLMNwAcT is FID 6F62")
+
+	file := func(fid, content []byte) *asn1.Node {
+		return asn1.NewConstructed(asn1.Ctx(2, true),
+			asn1.NewConstructed([]byte{0xa1}, asn1.NewPrimitive([]byte{0x83}, fid)),
+			asn1.NewPrimitive([]byte{0x83}, content),
+		)
+	}
+	tid, err := asn1.EncodeOID("2.23.143.1.2.13")
+	require.NoError(t, err)
+	hdr := asn1.NewConstructed(saip.TagHeader,
+		asn1.NewPrimitive([]byte{0x80}, []byte{2}),
+		asn1.NewPrimitive([]byte{0x81}, []byte{3}),
+	)
+	pe := asn1.NewConstructed(saip.TagOptUSIM,
+		asn1.NewConstructed([]byte{0xa0}, asn1.NewPrimitive([]byte{0x80}, nil)),
+		asn1.NewPrimitive([]byte{0x81}, tid),
+		file([]byte{0x6f, 0x31}, []byte{0x0a}),                   // EF.HPPLMN, 1 octet
+		file([]byte{0x6f, 0x62}, []byte{0x00, 0x00, 0x00, 0x00}), // EF.HPLMNwAcT
+	)
+	seq := &saip.Sequence{Elements: []*asn1.Node{hdr, pe}}
+
+	require.NoError(t, (&Engine{}).Apply(seq, &Data{
+		PLMN: []PLMNRecord{{MCC: "208", MNC: "01", AcT: 0x8000}},
+	}))
+
+	// 208/01 → 02 F8 10, AcT 8000, written to EF.HPLMNwAcT.
+	require.Equal(t, []byte{0x02, 0xf8, 0x10, 0x80, 0x00}, seq.FindFile(saip.FIDHPLMNwAcT).Body())
+	// The 1-octet EF.HPPLMN (6F31) is untouched.
+	require.Equal(t, []byte{0x0a}, seq.FindFile(0x6f31).Body())
+}
+
 // decodeMSISDN reverses the EF.MSISDN encoding (length, TON/NPI, swapped BCD).
 func decodeMSISDN(b []byte) string {
 	if len(b) < 3 {

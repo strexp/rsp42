@@ -58,6 +58,7 @@ func ParseHeader(pe *asn1.Node) (*Header, error) {
 func (h *Header) SetICCID(iccid []byte) {
 	if n := h.Node.Find(hdrICCID); n != nil {
 		n.Value = append([]byte(nil), iccid...)
+		h.ICCID = iccid
 		return
 	}
 	h.Node.AppendChild(asn1.NewPrimitive(hdrICCID, iccid))

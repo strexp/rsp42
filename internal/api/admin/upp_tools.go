@@ -51,7 +51,7 @@ var personalizationTargets = map[string][]string{
 	"adm2":           {"pinCodes"},
 	"puk1":           {"pukCodes"},
 	"spn":            {"6F46"},
-	"plmn":           {"6F60", "6F31", "6F61"},
+	"plmn":           {"6F60", "6F62", "6F61"},
 	"msisdn":         {"6F40"},
 	"acc":            {"6F78"},
 	"sdKeys":         {"securityDomain"},

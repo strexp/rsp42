@@ -244,6 +244,102 @@ func TestValidateTemplateFileUnknownFID(t *testing.T) {
 	require.Contains(t, strings.Join(v.Warnings, "\n"), "not part of the V2.3.1 mf template")
 }
 
+// TestPEMemberIndexHighTagForm pins the BER high-tag-number decode of a PE
+// member tag: tags 31..127 are 0xBF followed by the number itself, so the
+// index is tag[1], not 31+tag[1] (which shifted every member above 30).
+func TestPEMemberIndexHighTagForm(t *testing.T) {
+	for _, tc := range []struct {
+		idx int
+		tag []byte
+	}{
+		{31, []byte{0xbf, 0x1f}},
+		{33, []byte{0xbf, 0x21}},
+		{39, []byte{0xbf, 0x27}},
+	} {
+		got, ok := peMemberIndex(tc.tag)
+		require.True(t, ok, "peMemberIndex(%x)", tc.tag)
+		require.Equal(t, tc.idx, got, "peMemberIndex(%x)", tc.tag)
+	}
+	// Three-byte high-tag-number forms (>= 128) are not PE members.
+	_, ok := peMemberIndex([]byte{0xbf, 0x81, 0x00})
+	require.False(t, ok)
+}
+
+// TestValidateHighMemberIndexTemplateRow pins that a PE member above index 30
+// with no explicit fileID is matched to the correct Annex A row: PE-OPT-USIM
+// member 33 is EF VBS (row 31), a transparent EF.
+func TestValidateHighMemberIndexTemplateRow(t *testing.T) {
+	member := fileWithContent(33, []byte{0x00},
+		asn1.NewPrimitive(tagFcpPinStatus, []byte{0x01, 0x0a}),
+	)
+	errs := strings.Join(profileAroundMFPlus(templatePE(TagOptUSIM, member)).ValidateV231().Errors, "\n")
+	require.Contains(t, errs, "EF VBS")
+	require.Contains(t, errs, "pinStatusTemplateDO is not allowed for an EF")
+}
+
+// TestFDKindFileTypeBits pins the ETSI TS 102 221 §11.1.1.4.3 file-descriptor
+// decode: the file type is (b>>3)&7, so the ordinary EF descriptors 0x41
+// (transparent), 0x42 (linear fixed) and 0x46 (cyclic) are EF-like, while 0x78
+// is a DF. The BER-TLV EF code points 0x39/0x79 keep their file-type bits 111
+// but are EFs, not DFs.
+func TestFDKindFileTypeBits(t *testing.T) {
+	for _, b := range []byte{0x41, 0x42, 0x46, 0x39, 0x79, 0x00} {
+		require.Equal(t, "ef", fdKind(b), "fdKind(%02X)", b)
+	}
+	require.Equal(t, "df", fdKind(0x78), "fdKind(78)")
+	require.Empty(t, fdKind(0x82), "fdKind(82) has b8 set")
+}
+
+// TestValidateTemplateFileTypeEFDescriptor pins the corrected classification in
+// the §8.3.3 "file type must not change" check.
+func TestValidateTemplateFileTypeEFDescriptor(t *testing.T) {
+	// The MF template row is a DF, so a transparent-EF descriptor (0x41) is a
+	// mismatch (it was silently unclassified before the mask fix).
+	mf := templatePE(TagMF,
+		fileWithContent(2, []byte{0x00},
+			asn1.NewPrimitive(tagFcpFileID, []byte{0x3f, 0x00}),
+			asn1.NewPrimitive(tagFcpFileDescriptor, []byte{0x41, 0x21}),
+			asn1.NewPrimitive(tagFcpPinStatus, []byte{0x01, 0x0a}),
+		),
+	)
+	require.Contains(t, strings.Join(profileAroundMF(mf).ValidateV231().Errors, "\n"),
+		"fileDescriptor declares a ef but the template defines a df")
+
+	// A BER-TLV EF descriptor (0x79) on an EF row is accepted.
+	usim := templatePE(TagUSIM, adfMember(),
+		fileWithContent(3, make([]byte, 9),
+			asn1.NewPrimitive(tagFcpFileID, []byte{0x6f, 0x07}),
+			asn1.NewPrimitive(tagFcpEFSize, []byte{0x09}),
+			asn1.NewPrimitive(tagFcpFileDescriptor, []byte{0x79, 0x21}),
+		),
+	)
+	require.Empty(t, profileAroundMFPlus(usim).ValidateV231().Errors)
+}
+
+// TestValidatePINCodesSharedFilePath pins that the pinCodes filePath CHOICE
+// alternative (a1 { 81 <path> }) is not mistaken for a short pinValue, while a
+// short pinValue inside the pinconfig alternative is still rejected.
+func TestValidatePINCodesSharedFilePath(t *testing.T) {
+	filePath := asn1.NewConstructed(TagPinCodes,
+		asn1.NewConstructed(peHeader, asn1.NewPrimitive(peMandated, nil)),
+		asn1.NewConstructed([]byte{0xa1}, asn1.NewPrimitive([]byte{0x81}, []byte{0x01, 0x02})),
+	)
+	errs := strings.Join(profileAroundMFPlus(filePath).ValidateV231().Errors, "\n")
+	require.NotContains(t, errs, "pinValue")
+
+	pinconfig := asn1.NewConstructed(TagPinCodes,
+		asn1.NewConstructed(peHeader, asn1.NewPrimitive(peMandated, nil)),
+		asn1.NewConstructed([]byte{0xa1}, asn1.NewConstructed([]byte{0xa0},
+			asn1.NewConstructed([]byte{0x30},
+				asn1.NewPrimitive([]byte{0x80}, []byte{0x01}),
+				asn1.NewPrimitive([]byte{0x81}, make([]byte, 7)),
+			),
+		)),
+	)
+	require.Contains(t, strings.Join(profileAroundMFPlus(pinconfig).ValidateV231().Errors, "\n"),
+		"PINConfiguration.pinValue: value is 7 octets, minimum is 8")
+}
+
 // TestValidateValueRanges pins the ASN.1 SIZE/INTEGER domain checks (R1).
 func TestValidateValueRanges(t *testing.T) {
 	// ProfileHeader.iccid must be 10 octets.

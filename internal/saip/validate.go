@@ -260,20 +260,24 @@ func validateFileEntry(v *Validation, pe string, idx int, entry *asn1.Node) {
 
 // peIdentification returns the PEHeader identification number of a profile
 // element, when it carries a PEHeader.
+//
+// PEHeader is SEQUENCE { mandated NULL OPTIONAL, identification UInt15 } under
+// AUTOMATIC TAGS, so identification is context tag [1] (0x81), not the
+// universal INTEGER tag 0x02 (every TS.48 vector encodes a0 05 80 00 81 01 xx).
 func peIdentification(e *asn1.Node) ([]byte, bool) {
 	h := e.Find(peHeader)
 	if h == nil {
 		return nil, false
 	}
-	id := h.Find(tagInteger)
+	id := h.Find(tagPEIdentification)
 	if id == nil {
 		return nil, false
 	}
 	return id.Value, true
 }
 
-// tagInteger is the universal INTEGER tag of PEHeader.identification.
-var tagInteger = []byte{0x02}
+// tagPEIdentification is the AUTOMATIC TAGS [1] tag of PEHeader.identification.
+var tagPEIdentification = []byte{0x81}
 
 // tagDoNotCreate is the File CHOICE alternative [0] (NULL).
 var tagDoNotCreate = []byte{0x80}

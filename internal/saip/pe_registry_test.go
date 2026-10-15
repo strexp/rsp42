@@ -20,9 +20,11 @@ func peTagByName(name string) []byte {
 	return nil
 }
 
-// TestPEDescriptorNames pins the SAIP V2.3.1 PE_Definitions tag → canonical name
-// registry that PEName derives from peDescriptors. These literals are spec data
-// (the PE CHOICE alternative names), not a restatement of the descriptor table.
+// TestPEDescriptorNames pins the PE tag → canonical name registry that PEName
+// derives from peDescriptors: the 25 SAIP V2.3.1 PE_Definitions names plus the
+// three named V3.x template PEs (df-snpn, iot, opt-iot). These literals are spec
+// data (the PE CHOICE alternative names), not a restatement of the descriptor
+// table.
 func TestPEDescriptorNames(t *testing.T) {
 	expected := map[string]string{
 		"a0": "header", "a1": "genericFileManagement", "a2": "pinCodes", "a3": "pukCodes",
@@ -33,7 +35,7 @@ func TestPEDescriptorNames(t *testing.T) {
 		"b9": "csim", "ba": "opt-csim", "bb": "eap", "bc": "df-5gs", "bd": "df-saip",
 		"be": "df-snpn", "bf20": "iot", "bf21": "opt-iot",
 	}
-	require.Len(t, expected, 28, "SAIP V2.3.1 PE_Definitions names 28 PEs")
+	require.Len(t, expected, 28, "25 V2.3.1 PE_Definitions names plus 3 named V3.x template PEs")
 
 	seenTag := map[string]bool{}
 	seenName := map[string]bool{}
@@ -47,7 +49,7 @@ func TestPEDescriptorNames(t *testing.T) {
 		seenName[name] = true
 	}
 	require.Len(t, peDescriptors, len(expected)+2,
-		"the registry holds the named V2.3.1 PEs plus the two unnamed post-baseline PEs")
+		"the registry holds the named PEs (25 V2.3.1 + 3 V3.x) plus the two unnamed post-baseline PEs")
 
 	// Post-V2.3.1 PEs the baseline must recognise but PEName never named, and
 	// any unknown tag, stay unnamed.
