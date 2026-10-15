@@ -59,8 +59,46 @@ func TestAuditObservesRequestScope(t *testing.T) {
 	require.NoError(t, json.Unmarshal(bytes.TrimSpace(raw), &row))
 	require.Equal(t, "requester-1", row.Actor, "audit actor must come from the request scope")
 	require.Equal(t, "carrier-1", row.TenantID, "audit tenant must come from the request scope")
-	require.Equal(t, "/gsma/rsp2/es2plus/downloadOrder", row.Function)
+	// The protocol path is reduced to the function name, so
+	// GET /audit?function=downloadOrder matches (see middleware.auditFunction).
+	require.Equal(t, "downloadOrder", row.Function)
 	require.Equal(t, "Executed-Success", row.Outcome)
+}
+
+// TestAuditRecordsUnmappedDetail pins that a handler-contributed detail reaches
+// the audit row: the ES2+ tenant-attribution warning is the first user.
+func TestAuditRecordsUnmappedDetail(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "audit.log")
+	l, err := audit.New(nil, "file", path)
+	require.NoError(t, err)
+	defer func() { _ = l.Close() }()
+
+	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		common.SetActor(r.Context(), "operator-a")
+		common.AddDetail(r.Context(), "warning", "unmapped")
+		common.SetFunction(r.Context(), "downloadOrder")
+		w.WriteHeader(http.StatusOK)
+	})
+
+	log := slog.New(slog.NewTextHandler(io.Discard, nil))
+	r := base(log, Options{Audit: l}, "es2p")
+	r.Post("/gsma/rsp2/asn1", handler)
+
+	srv := httptest.NewServer(r)
+	defer srv.Close()
+	resp, err := http.Post(srv.URL+"/gsma/rsp2/asn1", "application/json", nil)
+	require.NoError(t, err)
+	require.NoError(t, resp.Body.Close())
+
+	raw, err := os.ReadFile(path)
+	require.NoError(t, err)
+	var row struct {
+		Function string         `json:"function"`
+		Detail   map[string]any `json:"detail"`
+	}
+	require.NoError(t, json.Unmarshal(bytes.TrimSpace(raw), &row))
+	require.Equal(t, "downloadOrder", row.Function, "the scope function overrides the generic ASN.1 path")
+	require.Equal(t, "unmapped", row.Detail["warning"])
 }
 
 // TestAdminRouterSkipsMiddlewareAudit pins that health and metrics scrapes do

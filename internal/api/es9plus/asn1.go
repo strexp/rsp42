@@ -29,6 +29,9 @@ func (h *Handler) asn1Binding(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+	// One path carries every function, so name the function explicitly for the
+	// audit row (the middleware falls back to the path otherwise).
+	common.SetFunction(r.Context(), fn.String())
 
 	switch fn {
 	case rsp.FuncInitiateAuthentication:

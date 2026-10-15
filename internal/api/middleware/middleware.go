@@ -169,7 +169,8 @@ func RequestScope(next http.Handler) http.Handler {
 
 // Audit records each request to the configured audit sinks. The actor and
 // tenant come from the request scope (mTLS subject, ES2+ requester identifier,
-// or the ES12 caller OID); X-Request-ID is kept as a correlation detail.
+// or the ES12 caller OID); X-Request-ID is kept as a correlation detail, and any
+// detail the handler contributed to the scope is merged in.
 func Audit(l *audit.Logger, iface string) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -179,11 +180,18 @@ func Audit(l *audit.Logger, iface string) func(http.Handler) http.Handler {
 			if sw.status >= 400 {
 				outcome = "Failed"
 			}
+			function := auditFunction(r.URL.Path)
 			var actor, tenant string
+			detail := map[string]any{}
 			if s := common.ScopeFrom(r.Context()); s != nil {
 				actor, tenant = s.Actor, s.TenantID
+				if s.Function != "" {
+					function = s.Function
+				}
+				for k, v := range s.Detail {
+					detail[k] = v
+				}
 			}
-			detail := map[string]any{}
 			if id := r.Header.Get("X-Request-ID"); id != "" {
 				detail["requestId"] = id
 			}
@@ -194,7 +202,7 @@ func Audit(l *audit.Logger, iface string) func(http.Handler) http.Handler {
 				Actor:      actor,
 				TenantID:   tenant,
 				Interface:  iface,
-				Function:   r.URL.Path,
+				Function:   function,
 				Outcome:    outcome,
 				StatusCode: fmt.Sprintf("%d", sw.status),
 				RemoteAddr: r.RemoteAddr,
@@ -202,6 +210,30 @@ func Audit(l *audit.Logger, iface string) func(http.Handler) http.Handler {
 			})
 		})
 	}
+}
+
+// auditFunction reduces a protocol path to the function name the caller invoked,
+// so `GET /audit?function=downloadOrder` matches and groupBy=function groups by
+// function rather than by path. The RSP interfaces name the function in the last
+// segment (/gsma/rsp2/es2plus/downloadOrder); the ASN.1 binding uses one generic
+// path for every function, so its handler sets the name on the request scope
+// instead. Anything else (the management API) keeps its path.
+func auditFunction(path string) string {
+	const prefix = "/gsma/rsp2/"
+	if !strings.HasPrefix(path, prefix) {
+		return path
+	}
+	rest := path[len(prefix):]
+	i := strings.IndexByte(rest, '/')
+	if i < 0 || i == len(rest)-1 {
+		return path // e.g. /gsma/rsp2/asn1: the path does not name a function
+	}
+	iface, fn := rest[:i], rest[i+1:]
+	switch iface {
+	case "es2plus", "es9plus", "es11", "es12", "es15":
+		return fn
+	}
+	return path
 }
 
 // MaxBody limits the size of request bodies and publishes the budget in the
