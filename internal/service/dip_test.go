@@ -211,6 +211,98 @@ func TestInventoryReserveReleaseFailureSurfaces(t *testing.T) {
 	require.ErrorContains(t, err, "state write failed")
 }
 
+// TestInventoryExplicitICCIDObeysPoolTenant pins Q7 through the ICCIDPool seam:
+// naming an ICCID that is available in another tenant's pool is a conflict, and
+// the owner's own entry is untouched.
+func TestInventoryExplicitICCIDObeysPoolTenant(t *testing.T) {
+	const iccid = "89000123456789012341"
+	pool := newFakeICCIDPool().own(iccid, "carrier-a")
+	pool.state[iccid] = "available"
+	repo := newFakeProfileStore()
+	inv := NewInventory(repo, "8900012", "00101")
+	inv.Pool = pool
+
+	_, err := inv.Allocate(AllocateRequest{ICCID: iccid, Tenant: "carrier-b", ProfileType: "operational"})
+	require.ErrorIs(t, err, ErrICCIDInUse)
+	require.Zero(t, repo.Creates)
+
+	// The owner may take it, and the entry keeps its tenant.
+	got, err := inv.Allocate(AllocateRequest{ICCID: iccid, Tenant: "carrier-a", ProfileType: "operational"})
+	require.NoError(t, err)
+	require.Equal(t, iccid, got.ICCID)
+	entry, err := pool.Get(iccid)
+	require.NoError(t, err)
+	require.Equal(t, "carrier-a", entry.TenantID)
+	require.Equal(t, "allocated", entry.State)
+
+	// A blocked entry stays unusable for everyone, including its owner.
+	blocked := "89000123456789012358"
+	pool.state[blocked] = "blocked"
+	pool.own(blocked, "carrier-a")
+	_, err = inv.Allocate(AllocateRequest{ICCID: blocked, Tenant: "carrier-a", ProfileType: "operational"})
+	require.ErrorIs(t, err, ErrICCIDInUse)
+}
+
+// TestInventoryReallocatesCancelledProfile pins Q1 through the ProfileCreator
+// seam: an Available row is re-issued in place, and only a Profile that was
+// never downloaded qualifies.
+func TestInventoryReallocatesCancelledProfile(t *testing.T) {
+	const iccid = "89000123456789012341"
+	existing := &store.Profile{
+		ICCID: iccid, TenantID: "carrier-a", ProfileType: "operational",
+		State: store.StateAvailable, MatchingID: "MATCH-OLD",
+	}
+	repo := newFakeProfileStore(existing)
+	inv := NewInventory(repo, "8900012", "00101")
+
+	got, err := inv.Allocate(AllocateRequest{
+		ICCID: iccid, Tenant: "carrier-a", ProfileType: "operational",
+		EID: "89049032000000000000000000000001",
+	})
+	require.NoError(t, err)
+	require.Equal(t, existing, got, "the row is re-used, not replaced")
+	require.Equal(t, store.StateLinked, got.State)
+	require.Empty(t, got.MatchingID, "the cancelled order's MatchingID is cleared")
+	require.Zero(t, repo.Creates)
+	require.Equal(t, 1, repo.Updates)
+
+	// A Profile that was downloaded before is not re-issued by a new order.
+	downloaded := &store.Profile{
+		ICCID: "89000123456789012358", TenantID: "carrier-a",
+		State: store.StateAvailable, DownloadAttempts: 1,
+	}
+	repo2 := newFakeProfileStore(downloaded)
+	inv2 := NewInventory(repo2, "8900012", "00101")
+	_, err = inv2.Allocate(AllocateRequest{ICCID: downloaded.ICCID, Tenant: "carrier-a"})
+	require.ErrorIs(t, err, ErrICCIDInUse)
+
+	// Another tenant's Available row is equally off limits.
+	foreign := &store.Profile{ICCID: "89000123456789012358", TenantID: "carrier-b", State: store.StateAvailable}
+	repo3 := newFakeProfileStore(foreign)
+	inv3 := NewInventory(repo3, "8900012", "00101")
+	_, err = inv3.Allocate(AllocateRequest{ICCID: foreign.ICCID, Tenant: "carrier-a"})
+	require.ErrorIs(t, err, ErrICCIDInUse)
+}
+
+// TestInventoryReuseClaimFailureKeepsProfile pins that a failed pool claim on a
+// *re-issued* Profile does not delete the row: it predates the call, and an
+// Available row with an unclaimed entry is consistent.
+func TestInventoryReuseClaimFailureKeepsProfile(t *testing.T) {
+	const iccid = "89000123456789012341"
+	existing := &store.Profile{ICCID: iccid, TenantID: "carrier-a", State: store.StateAvailable}
+	repo := newFakeProfileStore(existing)
+	pool := newFakeICCIDPool(iccid)
+	pool.FailClaim = errors.New("pool is on fire")
+	inv := NewInventory(repo, "8900012", "00101")
+	inv.Pool = pool
+
+	_, err := inv.Allocate(AllocateRequest{ICCID: iccid, Tenant: "carrier-a", ProfileType: "operational"})
+	require.ErrorContains(t, err, "pool is on fire")
+	require.Zero(t, repo.Deletes, "a pre-existing row must not be rolled back")
+	require.Equal(t, 1, len(repo.byICCID))
+	require.Equal(t, store.StateAvailable, existing.State, "the row is untouched, so a retry can re-issue it")
+}
+
 // TestVersionHelpersViaFakes is a guard on the interface shape used above: the
 // resolution API takes a version set, not a scalar (N11 reservation).
 func TestVersionHelpersViaFakes(t *testing.T) {

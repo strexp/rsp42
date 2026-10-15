@@ -85,6 +85,11 @@ type Deps struct {
 	Metrics MetricCounter
 	// AuditRepo, when set, records ES12 registration failures.
 	AuditRepo AuditWriter
+	// FQDN is the SM-DP+ address this deployment is reachable at (the same
+	// value the admin API uses in an Activation Code). ConfirmOrder returns it
+	// as Table 26's optional `smdpAddress`, so an operator that only talks ES2+
+	// can build the Activation Code without out-of-band configuration.
+	FQDN string
 }
 
 // Handler serves the ES2+ interface.

@@ -14,6 +14,152 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// TestAdminTenantReassignConflict covers Q2 at the HTTP boundary: a forced
+// reassignment that would violate a per-tenant unique key answers a named 409
+// with the offending tables, and migrates nothing.
+func TestAdminTenantReassignConflict(t *testing.T) {
+	srv, _ := newTestServer(t)
+	base := srv.URL + "/admin/api/v1"
+
+	for _, id := range []string{"carrier-a", "carrier-b"} {
+		status, _ := testutil.DoJSON(t, "POST", base+"/tenants", map[string]any{"id": id})
+		require.Equal(t, 200, status)
+	}
+	// The same external_ref in two scopes is exactly the collision the raw
+	// UPDATE used to turn into a 500.
+	for _, tenant := range []string{"carrier-a", "carrier-b"} {
+		status, _ := testutil.DoJSON(t, "POST", base+"/profiles", map[string]any{
+			"tenant": tenant, "externalRef": "shared-ref",
+		})
+		require.Equal(t, 201, status)
+	}
+
+	status, raw := testutil.DoJSON(t, "DELETE", base+"/tenants/carrier-a?force=true&reassignTo=carrier-b", nil)
+	require.Equal(t, 409, status, string(raw))
+	var conflict struct {
+		Code    string `json:"code"`
+		Details struct {
+			Reason string   `json:"reason"`
+			Tables []string `json:"tables"`
+		} `json:"details"`
+	}
+	require.NoError(t, json.Unmarshal(raw, &conflict))
+	require.Equal(t, "conflict", conflict.Code)
+	require.Equal(t, "reassign_conflict", conflict.Details.Reason)
+	require.Contains(t, conflict.Details.Tables, "profiles")
+
+	// Nothing moved and the tenant still exists.
+	status, raw = testutil.DoJSON(t, "GET", base+"/profiles?tenant=carrier-a", nil)
+	require.Equal(t, 200, status)
+	require.Contains(t, string(raw), `"total":1`)
+	status, _ = testutil.DoJSON(t, "GET", base+"/tenants/carrier-a", nil)
+	require.Equal(t, 200, status)
+
+	// A template name collision is reported the same way, without needing a
+	// second request to discover it.
+	der, err := os.ReadFile("../../../testdata/upp/TS48v1_A.der")
+	require.NoError(t, err)
+	data := base64.StdEncoding.EncodeToString(der)
+	for _, tenant := range []string{"carrier-a", "carrier-b"} {
+		status, _ = testutil.DoJSON(t, "POST", base+"/upp", map[string]any{
+			"name": "shared-tpl", "tenant": tenant, "data": data,
+		})
+		require.Equal(t, 200, status)
+	}
+	status, raw = testutil.DoJSON(t, "DELETE", base+"/tenants/carrier-a?force=true&reassignTo=carrier-b", nil)
+	require.Equal(t, 409, status, string(raw))
+	require.NoError(t, json.Unmarshal(raw, &conflict))
+	require.Contains(t, conflict.Details.Tables, "profiles")
+	require.Contains(t, conflict.Details.Tables, "upp_templates")
+}
+
+// TestAdminTenantReassignMigratesRanges covers Q3: an imported ICCID range is
+// a tenant resource, so it counts in `usage` and follows a forced reassignment
+// to the new owner.
+func TestAdminTenantReassignMigratesRanges(t *testing.T) {
+	srv, _ := newTestServer(t)
+	base := srv.URL + "/admin/api/v1"
+
+	for _, id := range []string{"carrier-a", "carrier-b"} {
+		status, _ := testutil.DoJSON(t, "POST", base+"/tenants", map[string]any{"id": id})
+		require.Equal(t, 200, status)
+	}
+	status, _ := testutil.DoJSON(t, "POST", base+"/iccid-ranges", map[string]any{
+		"tenant": "carrier-a", "start": "89000123456789012340", "end": "89000123456789012359",
+	})
+	require.Equal(t, 201, status)
+
+	// The range is visible in the owner's usage.
+	status, raw := testutil.DoJSON(t, "GET", base+"/tenants/carrier-a", nil)
+	require.Equal(t, 200, status)
+	require.Contains(t, string(raw), `"ranges":1`)
+
+	// Without force the lone range still blocks the delete.
+	status, raw = testutil.DoJSON(t, "DELETE", base+"/tenants/carrier-a", nil)
+	require.Equal(t, 409, status, string(raw))
+	require.Contains(t, string(raw), `"code":"tenant_in_use"`)
+	require.Contains(t, string(raw), `"ranges":1`)
+
+	// force + reassignTo moves it to the new owner.
+	status, _ = testutil.DoJSON(t, "DELETE", base+"/tenants/carrier-a?force=true&reassignTo=carrier-b", nil)
+	require.Equal(t, 204, status)
+
+	status, raw = testutil.DoJSON(t, "GET", base+"/tenants/carrier-b", nil)
+	require.Equal(t, 200, status)
+	require.Contains(t, string(raw), `"ranges":1`)
+
+	status, raw = testutil.DoJSON(t, "GET", base+"/iccid-ranges?tenant=carrier-b", nil)
+	require.Equal(t, 200, status)
+	require.Contains(t, string(raw), `"total":1`)
+	status, raw = testutil.DoJSON(t, "GET", base+"/iccid-ranges?tenant=carrier-a", nil)
+	require.Equal(t, 200, status)
+	require.Contains(t, string(raw), `"total":0`)
+}
+
+// TestAdminPersonalizationDuplicateIMSIIsConflict covers Q4: a duplicate IMSI
+// is a stable 409 conflict, and a bulk import reports it per record instead of
+// failing the whole batch.
+func TestAdminPersonalizationDuplicateIMSIIsConflict(t *testing.T) {
+	srv, _ := newTestServer(t)
+	base := srv.URL + "/admin/api/v1"
+	const shared = "001010123456063"
+
+	status, _ := testutil.DoJSON(t, "PUT", base+"/personalization/89000123456789012341", map[string]any{
+		"imsi": shared, "k": "465B5CE8B199B49FAA5F0A2EE238A6BC",
+	})
+	require.Equal(t, 200, status)
+
+	status, raw := testutil.DoJSON(t, "PUT", base+"/personalization/89000123456789012358", map[string]any{
+		"imsi": shared, "k": "465B5CE8B199B49FAA5F0A2EE238A6BC",
+	})
+	require.Equal(t, 409, status, string(raw))
+	require.Contains(t, string(raw), `"code":"conflict"`)
+	require.Contains(t, string(raw), `"reason":"credential_conflict"`)
+
+	// The rejected row was not written.
+	status, _ = testutil.DoJSON(t, "GET", base+"/personalization/89000123456789012358", nil)
+	require.Equal(t, 404, status)
+
+	// A batch keeps going: the good record lands, the duplicate is reported.
+	const fresh = "001010123456099"
+	status, raw = testutil.DoJSON(t, "POST", base+"/personalization/import", map[string]any{
+		"records": []map[string]any{
+			{"iccid": "89000123456789012341", "imsi": fresh, "spn": "OK"},
+			{"iccid": "89000123456789012358", "imsi": fresh, "spn": "DUP"},
+		},
+	})
+	require.Equal(t, 200, status, string(raw))
+	require.Contains(t, string(raw), `"imported":1`)
+	require.Contains(t, string(raw), `"ok":false`)
+	require.Contains(t, string(raw), "already assigned")
+
+	status, raw = testutil.DoJSON(t, "GET", base+"/personalization/89000123456789012341", nil)
+	require.Equal(t, 200, status)
+	require.Contains(t, string(raw), fresh)
+	status, _ = testutil.DoJSON(t, "GET", base+"/personalization/89000123456789012358", nil)
+	require.Equal(t, 404, status, "the duplicate record must not be written")
+}
+
 func TestAdminTenantsCRUDAndTenantFilters(t *testing.T) {
 	srv, _ := newTestServer(t)
 	base := srv.URL + "/admin/api/v1"

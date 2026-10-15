@@ -58,6 +58,9 @@ func cmdSMDpp(prog string, args []string) int {
 		// profileType, ES12 registration failures) are described by the registry
 		// but never incremented.
 		Metrics: reg,
+		// Table 26's optional smdpAddress: this SM-DP+ knows the FQDN every
+		// Activation Code for it must carry.
+		FQDN: cfg.SMDpp.FQDN,
 	})
 
 	// The Operator-facing ES2+ client is shared by the progress callbacks and

@@ -87,6 +87,47 @@ func TestPersonalizationCredentialsPool(t *testing.T) {
 	require.Zero(t, n)
 }
 
+// TestPersonalizationDuplicateIMSIIsConflict covers Q4: binding an IMSI that is
+// already assigned to another Profile in the same scope is reported as
+// ErrConflict, not as an opaque driver error. Without it the management API
+// answered a bare 500, which callers treat as retryable and which turns "we
+// handed out a duplicate IMSI" into "rsp42 is broken".
+func TestPersonalizationDuplicateIMSIIsConflict(t *testing.T) {
+	st := openTestStore(t)
+
+	require.NoError(t, st.Perso.Upsert(&Personalization{
+		TenantID: "carrier-a", ICCID: "8900012000000000001", IMSI: "001010000000001", K: []byte{1},
+	}))
+
+	// A second ICCID claiming the same IMSI in the same scope conflicts.
+	err := st.Perso.Upsert(&Personalization{
+		TenantID: "carrier-a", ICCID: "8900012000000000002", IMSI: "001010000000001", K: []byte{2},
+	})
+	require.ErrorIs(t, err, ErrConflict)
+	require.Contains(t, err.Error(), "001010000000001")
+
+	// Moving an existing row onto another row's IMSI conflicts as well.
+	require.NoError(t, st.Perso.Upsert(&Personalization{
+		TenantID: "carrier-a", ICCID: "8900012000000000003", IMSI: "001010000000003",
+	}))
+	err = st.Perso.Upsert(&Personalization{
+		TenantID: "carrier-a", ICCID: "8900012000000000003", IMSI: "001010000000001",
+	})
+	require.ErrorIs(t, err, ErrConflict)
+
+	// Another tenant may reuse the IMSI: the index is per tenant scope.
+	require.NoError(t, st.Perso.Upsert(&Personalization{
+		TenantID: "carrier-b", ICCID: "8900012000000000004", IMSI: "001010000000001",
+	}))
+
+	// The rejected writes changed nothing.
+	_, err = st.Perso.GetByICCID("carrier-a", "8900012000000000002")
+	require.ErrorIs(t, err, ErrNotFound)
+	row, err := st.Perso.GetByICCID("carrier-a", "8900012000000000003")
+	require.NoError(t, err)
+	require.Equal(t, "001010000000003", row.IMSI)
+}
+
 // TestCredentialsPoolRereserveAfterUnbind covers the cycle "reserve -> release
 // -> reserve again": the second reservation must not collide with the previous
 // binding of the same ICCID.

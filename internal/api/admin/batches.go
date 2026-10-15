@@ -77,7 +77,14 @@ func (h *Handler) createBatch(w http.ResponseWriter, r *http.Request) {
 				writeQuotaErr(w, err)
 				return
 			}
-			adminhttp.WriteErr(w, http.StatusInternalServerError, "allocated "+strconv.Itoa(allocated)+" of "+strconv.Itoa(req.Count)+": "+err.Error())
+			// A pool whose entry cannot become a Profile is a conflict to
+			// resolve, not a server fault (see service.ErrNoProfileAvailable).
+			partial := "allocated " + strconv.Itoa(allocated) + " of " + strconv.Itoa(req.Count) + ": " + err.Error()
+			if errors.Is(err, service.ErrNoProfileAvailable) {
+				adminhttp.WriteErr(w, http.StatusConflict, partial)
+				return
+			}
+			adminhttp.WriteErr(w, http.StatusInternalServerError, partial)
 			return
 		}
 		p.BatchID = &id

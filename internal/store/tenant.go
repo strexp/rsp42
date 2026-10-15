@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 )
 
@@ -117,35 +118,63 @@ type TenantUsage struct {
 	PoolEntries     int `json:"poolEntries"`
 	Batches         int `json:"batches"`
 	Personalization int `json:"personalization"`
+	Ranges          int `json:"ranges"`
 }
 
 // Empty reports whether nothing references the tenant.
 func (u TenantUsage) Empty() bool {
 	return u.Profiles == 0 && u.Templates == 0 && u.PoolEntries == 0 &&
-		u.Batches == 0 && u.Personalization == 0
+		u.Batches == 0 && u.Personalization == 0 && u.Ranges == 0
 }
 
-// tenantScopedTables are the resource tables carrying a tenant_id.
-var tenantScopedTables = []string{
-	"profiles", "upp_templates", "iccid_pool", "download_batches", "personalization",
+// tenantScopedTables are the resource tables carrying a tenant_id, each with the
+// usage counter it feeds. A table that is missing here is silently left behind
+// by a forced reassignment and undercounted by Usage, so the two halves cannot
+// drift: they read the same list.
+var tenantScopedTables = []struct {
+	table string
+	count func(*TenantUsage) *int
+}{
+	{"profiles", func(u *TenantUsage) *int { return &u.Profiles }},
+	{"upp_templates", func(u *TenantUsage) *int { return &u.Templates }},
+	{"iccid_pool", func(u *TenantUsage) *int { return &u.PoolEntries }},
+	{"download_batches", func(u *TenantUsage) *int { return &u.Batches }},
+	{"personalization", func(u *TenantUsage) *int { return &u.Personalization }},
+	{"iccid_ranges", func(u *TenantUsage) *int { return &u.Ranges }},
 }
 
 // Usage counts every resource that references the tenant.
 func (r *TenantRepo) Usage(id string) (TenantUsage, error) {
 	var u TenantUsage
-	dst := []*int{&u.Profiles, &u.Templates, &u.PoolEntries, &u.Batches, &u.Personalization}
-	for i, table := range tenantScopedTables {
-		if err := r.db.QueryRow("SELECT COUNT(*) FROM "+table+" WHERE tenant_id = ?", id).Scan(dst[i]); err != nil {
+	for _, scope := range tenantScopedTables {
+		if err := r.db.QueryRow("SELECT COUNT(*) FROM "+scope.table+" WHERE tenant_id = ?", id).
+			Scan(scope.count(&u)); err != nil {
 			return TenantUsage{}, err
 		}
 	}
 	return u, nil
 }
 
+// ReassignConflictError reports that a forced tenant deletion cannot complete
+// because the target scope already holds a resource with the same per-tenant
+// unique key: profiles.external_ref, upp_templates.name (two tenants commonly
+// both have a "default"), or personalization.imsi. It is a data conflict the
+// operator has to resolve, not a server fault, so the management API answers a
+// named 409 instead of a bare 500.
+type ReassignConflictError struct {
+	// Tables lists the conflicting resource tables, in tenantScopedTables order.
+	Tables []string
+}
+
+func (e *ReassignConflictError) Error() string {
+	return "store: reassign conflicts in " + strings.Join(e.Tables, ", ")
+}
+
 // DeleteWithReassign moves every resource of a tenant to reassignTo (an empty
 // string means the platform-global scope, i.e. tenant_id = NULL) and then
 // deletes the tenant, in one transaction. It returns ErrNotFound when the
-// tenant does not exist.
+// tenant does not exist, and *ReassignConflictError when a per-tenant unique
+// index would be violated in the target scope.
 func (r *TenantRepo) DeleteWithReassign(id, reassignTo string) error {
 	tx, err := r.db.Begin()
 	if err != nil {
@@ -154,10 +183,35 @@ func (r *TenantRepo) DeleteWithReassign(id, reassignTo string) error {
 	defer func() { _ = tx.Rollback() }()
 
 	target := nullStr(reassignTo)
-	for _, table := range tenantScopedTables {
-		if _, err := tx.Exec("UPDATE "+table+" SET tenant_id = ? WHERE tenant_id = ?", target, id); err != nil {
+	var conflicts []string
+	for _, scope := range tenantScopedTables {
+		// The unique index is the authority (a pre-check would race), but its
+		// violation must be reported by table rather than parsed out of the
+		// driver's message. Each table is migrated inside a savepoint so a
+		// conflict can be rolled back on its own and every conflicting table is
+		// collected before the transaction is abandoned.
+		if _, err := tx.Exec("SAVEPOINT reassign"); err != nil {
 			return err
 		}
+		if _, err := tx.Exec("UPDATE "+scope.table+" SET tenant_id = ? WHERE tenant_id = ?", target, id); err != nil {
+			if !IsUniqueViolation(err) {
+				return err
+			}
+			if _, err := tx.Exec("ROLLBACK TO reassign"); err != nil {
+				return err
+			}
+			if _, err := tx.Exec("RELEASE reassign"); err != nil {
+				return err
+			}
+			conflicts = append(conflicts, scope.table)
+			continue
+		}
+		if _, err := tx.Exec("RELEASE reassign"); err != nil {
+			return err
+		}
+	}
+	if len(conflicts) > 0 {
+		return &ReassignConflictError{Tables: conflicts}
 	}
 	res, err := tx.Exec("DELETE FROM tenants WHERE id = ?", id)
 	if err != nil {

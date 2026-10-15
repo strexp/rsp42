@@ -31,14 +31,49 @@ func sameResend(p *store.Profile, req AllocateRequest) bool {
 	return true
 }
 
+// reusable reports whether an existing Profile row can be re-allocated by this
+// request. SGP.22 Table 29 puts a cancelled order's Profile back into Available
+// "available for future use", and the state machine allows
+// Available --> Allocated/Linked on a new DownloadOrder, so the row is re-used
+// in place: the Profile keeps its ICCID (and therefore its personalization).
+//
+// A Profile that was ever downloaded is deliberately NOT reused. The sanctioned
+// redownload path is Installed -> Released after a Delete Notification, not a
+// fresh DownloadOrder; reusing a downloaded row would hand the same credentials
+// (ICCID/IMSI/Ki) to a second eUICC.
+func reusable(p *store.Profile, req AllocateRequest) bool {
+	return p.State == store.StateAvailable &&
+		p.TenantID == req.Tenant &&
+		p.DownloadAttempts == 0 &&
+		p.InstalledAt == nil
+}
+
+// reallocate overwrites the download-order attributes of a reusable Profile.
+// The identity (ICCID, IMSI) is preserved; every attribute that belonged to the
+// cancelled order is cleared, so a stale MatchingID, confirmation code or SM-DS
+// address cannot leak into the new order.
+func reallocate(p *store.Profile, req AllocateRequest, state store.ProfileState) {
+	p.State = state
+	p.EID = req.EID
+	p.ProfileType = req.ProfileType
+	p.ExternalRef = req.ExternalRef
+	p.UPPTemplate = req.UPPTemplate
+	p.MatchingID = ""
+	p.CCHash = nil
+	p.CCRequired = false
+	p.SMDSAddress = ""
+	p.ReleaseFlag = false
+	p.ErrorReason = ""
+}
+
 // ICCIDPool reserves and recycles ICCIDs from an operator-managed pool.
 type ICCIDPool interface {
 	Reserve(tenant, eid, reference string, ttl time.Duration) (string, error)
 	Claim(iccid string, profileID int64) error
 	SetState(iccid, state, note string) error
-	// State reports a pool entry's state ("available", "allocated", "blocked"),
-	// or store.ErrNotFound when the ICCID is not managed by the pool.
-	State(iccid string) (string, error)
+	// Get reports a pool entry (state, owning tenant), or store.ErrNotFound when
+	// the ICCID is not managed by the pool at all.
+	Get(iccid string) (*store.ICCIDPoolEntry, error)
 }
 
 // AllocateRequest parameterizes a profile allocation (ES2+.DownloadOrder or the
@@ -70,9 +105,15 @@ var ErrQuotaExceeded = errors.New("service: quota exceeded")
 var ErrInvalidICCID = errors.New("service: invalid iccid")
 
 // ErrICCIDInUse indicates that an operator-supplied ICCID cannot be issued
-// (already in use, blocked, or otherwise unavailable). It lets the ES2+ layer
+// (already in use, blocked, or owned by another tenant). It lets the ES2+ layer
 // answer 8.2.1/3.3 instead of a generic allocation failure (C3).
 var ErrICCIDInUse = errors.New("service: iccid not available")
+
+// ErrNoProfileAvailable indicates that the requested Profile Type has no usable
+// ICCID: the pool has no entry left, or the entry it offered cannot be issued
+// (its Profile row is not reusable). It maps to the same ES2+ code as quota
+// exhaustion (8.2.5/3.7): "no Profile available for the requested Profile Type".
+var ErrNoProfileAvailable = errors.New("service: no profile available")
 
 // Inventory allocates ICCIDs and creates profile rows for ES2+.DownloadOrder. If
 // a Pool is set it is preferred; otherwise an ICCID is generated on demand.
@@ -115,6 +156,32 @@ func (inv *Inventory) checkQuota(tenant string) error {
 	return nil
 }
 
+// checkPool applies the pool's rules to an ICCID this caller named explicitly.
+// A blocked entry is never issued, and an entry owned by another tenant is not
+// this caller's to take (tenant isolation). An ICCID the pool does not know
+// about is allowed: the pool is an optional inventory source, not a closed
+// world, so a deployment that never imports ranges keeps working.
+func (inv *Inventory) checkPool(iccid, tenant string) error {
+	if inv.Pool == nil {
+		return nil
+	}
+	e, err := inv.Pool.Get(iccid)
+	switch {
+	case err == nil:
+		if e.State == "blocked" {
+			return fmt.Errorf("%w: ICCID %s is blocked", ErrICCIDInUse, iccid)
+		}
+		if e.TenantID != tenant {
+			return fmt.Errorf("%w: ICCID %s belongs to another tenant", ErrICCIDInUse, iccid)
+		}
+		return nil
+	case errors.Is(err, store.ErrNotFound):
+		return nil
+	default:
+		return err
+	}
+}
+
 // NewInventory builds an Inventory.
 func NewInventory(repo ProfileCreator, iccidPrefix, imsi string) *Inventory {
 	return &Inventory{Profiles: repo, ICCIDPrefix: iccidPrefix, IMSI: imsi}
@@ -126,6 +193,10 @@ func NewInventory(repo ProfileCreator, iccidPrefix, imsi string) *Inventory {
 // this value"); otherwise a unique ICCID is taken from the tenant's pool or
 // generated from the configured prefix. When req.EID is non-empty the profile
 // starts in Linked, otherwise in Allocated (SGP.22 §3.1.6).
+//
+// An ICCID whose Profile is already in Allocated/Linked is a resend (Table 24
+// NOTE) and an ICCID whose Profile is back in Available is re-allocated in place
+// (Table 29); every other state is 8.2.1/3.3 / a conflict.
 func (inv *Inventory) Allocate(req AllocateRequest) (*store.Profile, error) {
 	state := store.StateAllocated
 	if req.EID != "" {
@@ -158,21 +229,32 @@ func (inv *Inventory) Allocate(req AllocateRequest) (*store.Profile, error) {
 			if sameResend(existing, req) {
 				return existing, nil
 			}
-			return nil, fmt.Errorf("%w: ICCID %s is already in use (state %s)", ErrICCIDInUse, iccid, existing.State)
+			// A cancelled order leaves the row in Available. Table 29 says the
+			// ICCID is then "available for future use", so re-issue the same
+			// Profile row instead of refusing it (Q1). The quota is not
+			// re-checked: the row already counts against it.
+			if !reusable(existing, req) {
+				return nil, fmt.Errorf("%w: ICCID %s is already in use (state %s)", ErrICCIDInUse, iccid, existing.State)
+			}
+			if err := inv.checkPool(iccid, req.Tenant); err != nil {
+				return nil, err
+			}
+			if err := inv.claimReused(existing); err != nil {
+				return nil, err
+			}
+			reallocate(existing, req, state)
+			if err := inv.Profiles.Update(existing); err != nil {
+				return nil, err
+			}
+			return existing, nil
 		} else if !errors.Is(gerr, store.ErrNotFound) {
 			return nil, gerr
 		}
 		if err := inv.checkQuota(req.Tenant); err != nil {
 			return nil, err
 		}
-		// An operator-supplied ICCID that the pool knows about must still obey
-		// the pool: a blocked ICCID is never issued.
-		if inv.Pool != nil {
-			if state, serr := inv.Pool.State(iccid); serr == nil && state == "blocked" {
-				return nil, fmt.Errorf("%w: ICCID %s is blocked", ErrICCIDInUse, iccid)
-			} else if serr != nil && !errors.Is(serr, store.ErrNotFound) {
-				return nil, serr
-			}
+		if err := inv.checkPool(iccid, req.Tenant); err != nil {
+			return nil, err
 		}
 		p := newProfile(iccid)
 		if _, err := inv.Profiles.Create(p); err != nil {
@@ -189,24 +271,54 @@ func (inv *Inventory) Allocate(req AllocateRequest) (*store.Profile, error) {
 	}
 
 	// Prefer an operator-imported ICCID from the tenant's pool when one is
-	// available. A failed profile insert returns the reservation to the pool.
+	// available. A generation from the configured prefix is the fallback for a
+	// tenant whose pool is empty, not for one whose pool entry cannot be issued:
+	// minting an ICCID outside the operator's inventory would leak a value the
+	// operator never imported.
 	if inv.Pool != nil {
 		iccid, err := inv.Pool.Reserve(req.Tenant, req.EID, req.Reference, inv.ReserveTTL)
 		switch {
 		case err == nil:
 			p := newProfile(iccid)
-			if _, cerr := inv.Profiles.Create(p); cerr != nil {
-				// The reservation is useless; hand it back so the ICCID is not
-				// parked behind a profile that does not exist.
-				if rerr := inv.Pool.SetState(iccid, "available", ""); rerr != nil {
-					return nil, fmt.Errorf("service: release reservation %s: %w", iccid, rerr)
-				}
-			} else {
-				if cerr := inv.claimReservation(p); cerr != nil {
-					return nil, cerr
+			_, cerr := inv.Profiles.Create(p)
+			if cerr == nil {
+				if err := inv.claimReservation(p); err != nil {
+					return nil, err
 				}
 				return p, nil
 			}
+			if store.IsUniqueViolation(cerr) {
+				// The pool offered an ICCID that already has a Profile row. After
+				// a cancelOrder{Available} that row is re-issuable (Q1); in any
+				// other state it is not.
+				existing, gerr := inv.Profiles.GetByICCID(iccid)
+				switch {
+				case gerr == nil && reusable(existing, req):
+					if err := inv.claimReused(existing); err != nil {
+						return nil, err
+					}
+					reallocate(existing, req, state)
+					if err := inv.Profiles.Update(existing); err != nil {
+						return nil, err
+					}
+					return existing, nil
+				case gerr != nil && !errors.Is(gerr, store.ErrNotFound):
+					return nil, gerr
+				}
+				// Not reusable (another tenant, or already downloaded). Hand the
+				// reservation back and fail: the caller must fix the pool entry
+				// rather than be served an ICCID from outside the pool.
+				if rerr := inv.Pool.SetState(iccid, "available", ""); rerr != nil {
+					return nil, fmt.Errorf("service: release reservation %s: %w", iccid, rerr)
+				}
+				return nil, fmt.Errorf("%w: pooled ICCID %s already has a Profile", ErrNoProfileAvailable, iccid)
+			}
+			// A storage failure: the reservation is useless, so hand it back. A
+			// failed release is surfaced because the ICCID would otherwise leak.
+			if rerr := inv.Pool.SetState(iccid, "available", ""); rerr != nil {
+				return nil, fmt.Errorf("service: release reservation %s: %w", iccid, rerr)
+			}
+			return nil, fmt.Errorf("service: create profile %s: %w", iccid, cerr)
 		case errors.Is(err, store.ErrNotFound):
 			// No pooled ICCID for this tenant: fall through to generation.
 		default:
@@ -241,6 +353,20 @@ func (inv *Inventory) claimReservation(p *store.Profile) error {
 	}
 	if err := inv.Pool.Claim(p.ICCID, p.ID); err != nil {
 		_ = inv.Profiles.Delete(p.ICCID)
+		return fmt.Errorf("service: claim ICCID %s: %w", p.ICCID, err)
+	}
+	return nil
+}
+
+// claimReused attaches a re-issued (pre-existing) Profile to its pool entry.
+// Unlike claimReservation it never deletes the row on failure: the row predates
+// this call, and "Available row, unclaimed pool entry" is a consistent state the
+// next attempt can re-issue from.
+func (inv *Inventory) claimReused(p *store.Profile) error {
+	if inv.Pool == nil {
+		return nil
+	}
+	if err := inv.Pool.Claim(p.ICCID, p.ID); err != nil {
 		return fmt.Errorf("service: claim ICCID %s: %w", p.ICCID, err)
 	}
 	return nil

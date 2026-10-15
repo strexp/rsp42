@@ -45,7 +45,7 @@ func (h *Handler) downloadOrder(w http.ResponseWriter, r *http.Request) {
 		switch {
 		case errors.Is(err, service.ErrInvalidICCID):
 			writeFailure(w, status.CodeInvalidRequest, err.Error())
-		case errors.Is(err, service.ErrQuotaExceeded):
+		case errors.Is(err, service.ErrQuotaExceeded), errors.Is(err, service.ErrNoProfileAvailable):
 			writeFailure(w, status.CodeNoMoreProfileAvailable, err.Error())
 		case errors.Is(err, service.ErrICCIDInUse):
 			writeFailure(w, status.CodeICCIDInUse, err.Error())

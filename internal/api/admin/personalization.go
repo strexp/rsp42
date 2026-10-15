@@ -2,11 +2,13 @@ package admin
 
 import (
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"net/http"
 	"rsp42/internal/api/adminhttp"
 	"rsp42/internal/hexutil"
 	"rsp42/internal/iccid"
+	"rsp42/internal/store"
 
 	"github.com/go-chi/chi/v5"
 
@@ -168,6 +170,14 @@ func (h *Handler) putPerso(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := h.Perso.Put(tenant, d); err != nil {
+		// A duplicate IMSI (or a duplicate ICCID) is a data conflict the caller
+		// has to resolve, not a server fault: 409 keeps it distinguishable from
+		// a real 500, which callers are entitled to retry.
+		if errors.Is(err, store.ErrConflict) {
+			adminhttp.WriteJSON(w, http.StatusConflict, adminhttp.ErrorBodyDetails("conflict",
+				err.Error(), map[string]any{"reason": "credential_conflict"}))
+			return
+		}
 		adminhttp.WriteErr(w, http.StatusInternalServerError, err.Error())
 		return
 	}
@@ -201,26 +211,32 @@ func (h *Handler) importPerso(w http.ResponseWriter, r *http.Request) {
 		writeTenantErr(w, err)
 		return
 	}
+	// Per-record results: one duplicate IMSI or malformed record must not throw
+	// away the rest of the batch. ImportResult already models this shape.
+	type result struct {
+		ICCID string `json:"iccid"`
+		OK    bool   `json:"ok"`
+		Error string `json:"error,omitempty"`
+	}
+	results := make([]result, 0, len(req.Records))
 	n := 0
 	for i, rec := range req.Records {
 		iccid := iccid.Normalize(rec.ICCID)
+		res := result{ICCID: iccid}
 		if iccid == "" {
-			adminhttp.WriteErr(w, http.StatusBadRequest, fmt.Sprintf("record %d has no iccid", i+1))
-			return
+			res.Error = fmt.Sprintf("record %d has no iccid", i+1)
+		} else if d, derr := rec.toData(iccid); derr != nil {
+			res.Error = fmt.Sprintf("record %d: %v", i+1, derr)
+		} else if perr := h.Perso.Put(tenant, d); perr != nil {
+			res.Error = perr.Error()
+		} else {
+			res.OK = true
+			n++
 		}
-		d, err := rec.toData(iccid)
-		if err != nil {
-			adminhttp.WriteErr(w, http.StatusBadRequest, fmt.Sprintf("record %d: %v", i+1, err))
-			return
-		}
-		if err := h.Perso.Put(tenant, d); err != nil {
-			adminhttp.WriteErr(w, http.StatusInternalServerError, err.Error())
-			return
-		}
-		n++
+		results = append(results, res)
 	}
 	h.audit(r, "importPersonalization", "", "Executed-Success", map[string]any{"records": n, "tenant": tenant})
-	adminhttp.WriteJSON(w, http.StatusOK, map[string]any{"imported": n})
+	adminhttp.WriteJSON(w, http.StatusOK, map[string]any{"imported": n, "results": results})
 }
 
 // importPersoPool imports credentials that have no ICCID yet (IMSI + K/OPc), to

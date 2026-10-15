@@ -17,11 +17,13 @@ type ProfileStore interface {
 	Delete(iccid string) error
 }
 
-// ProfileCreator creates profiles, looks them up for resend detection, and
-// removes one again when a later allocation step fails (the ICCID pool claim).
+// ProfileCreator creates profiles, looks them up for resend detection, updates
+// one in place when a cancelled ICCID is re-issued, and removes one again when a
+// later allocation step fails (the ICCID pool claim).
 type ProfileCreator interface {
 	Create(p *store.Profile) (int64, error)
 	GetByICCID(iccid string) (*store.Profile, error)
+	Update(p *store.Profile) error
 	Delete(iccid string) error
 }
 

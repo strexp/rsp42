@@ -246,7 +246,7 @@ func TestUnmappedRequesterSignals(t *testing.T) {
 	inv.Pool = st.Pool
 	h := es2plus.New(es2plus.Deps{
 		Log: log, Profiles: st.Profiles, Orders: service.NewOrderService(st.Profiles),
-		Inventory: inv, OrderAudit: st.Orders,
+		Inventory: inv, OrderAudit: st.Orders, FQDN: "testsmdpplus1.example.com",
 	})
 	// One mapping exists, so an unmapped requester is a real attribution miss.
 	h.RequesterTenants = service.NewTenantResolver([]service.RequesterTenant{

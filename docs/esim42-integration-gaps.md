@@ -499,6 +499,71 @@
 
 ---
 
+## 13. 第五轮：esim42 `todo/06` §"待裁决"的裁决与落地
+
+> 来源：esim42 `todo/06` 的 Q1–Q7（该节标题写"四个"、表格实有 7 行，编号亦乱序）。
+> 基线：rsp42 `ec29b86`。判定原则与前几轮一致：**以 SGP.22 为准**；多租户隔离是
+> rsp42 自己的承诺，按 `docs/interfaces.md`「Tenant attribution」执行。
+> 结论中 **Q1/Q2/Q3/Q4/Q6/Q7 由 rsp42 修**，**Q5 属 esim42 建模**（rsp42 无需改）。
+
+| # | 现象（esim42 侧描述） | rsp42 判定 | 处置 | 标准依据 / 证据 |
+|---|---|---|---|---|
+| **Q7** | `downloadOrder` 用他人租户的池中 ICCID 会被接受 | **Bug（多租户隔离）** | `Inventory.Allocate` 的显式 ICCID 路径改为查 `PoolRepo.Get` 并校验池条目归属；不一致 → `8.2.1/3.3`，池条目的 `tenant_id`／状态不变 | SGP.22 对多租户无定义，这是本仓库 `interfaces.md`「Tenant attribution」与 `../esim42/todo/02` §2.3/§9 A23 的承诺；`PoolRepo.Claim` 只写 `profile_id`，原先会把 A 的号记到 B 的 profile 上 |
+| **Q1** | 取消后的 ICCID 在删除 profile 行前无法再次下发 | **Bug（规范一致性）** | 新增 `reusable`/`reallocate`：`Available` 行原地复用（保持 ICCID/IMSI/个性化，改写 eid/profileType/template/externalRef，清空 matchingId/CC/SM-DS/errorReason）；判定条件为 **同租户 + `DownloadAttempts==0` + `InstalledAt==nil`**。附带修复池路径：撞唯一键时不再静默生成池外 ICCID，不可复用 → `8.2.5/3.7` 并交还预约 | Table 29：`Available` = "released back to the inventory and **available for future use**"；状态图 `Available --> Allocated/Linked : ES2+.DownloadOrder`。非复用状态仍 `8.2.1/3.3` |
+| **Q2** | `DELETE /tenants/{id}?force=true&reassignTo=` 的唯一键冲突是裸 500 | **Bug（可运维性）** | `DeleteWithReassign` 逐表 SAVEPOINT 探测，按驱动码 `IsUniqueViolation` 收集冲突表并整体回滚；handler 映射 `409 conflict` + `details{reason:reassign_conflict,tables:[...]}` | 冲突索引实际有 **3** 个：`idx_profiles_extref`、**`idx_upp_tenant_name`（esim42 未列，且"两租户都有 default"是常态）**、`idx_perso_tenant_imsi` |
+| **Q3** | `iccid_ranges` 不在 `tenantScopedTables` | **Bug（数据完整性）** | 集合加入 `iccid_ranges`；`TenantUsage` 增 `ranges`（`usage.Empty()` 一并计入，否则"只有号段的租户"会在不带 force 的删除下留下悬挂行）；OpenAPI `TenantUsage` 同步 | 号段是租户资源，reassign 后新属主 `GET /iccid-ranges?tenant=` 必须看得到 |
+| **Q4** | 重复 IMSI 是裸 500，而 esim42 把 `internal_error` 标为可重试 | **Bug（错误语义）** | `upsertPersonalization` 的 INSERT/UPDATE 唯一键冲突 → `store.ErrConflict`；`PUT /personalization/{iccid}` → `409 conflict` + `details.reason=credential_conflict`；`POST /personalization/import` 改为 per-record `results[]`，一条重复不再废掉整批 | 裸 500 让调用方对**不可能成功**的写入做无意义重试；具名/派生 409 可直接判别 |
+| **Q6** | 激活码里的 SM-DP+ 地址（`confirmOrder.smdpAddress` 恒为空串） | **疏漏（3 行）** | `es2plus.Deps` 增 `FQDN`，`confirmOrder` 回填 `smdpp.fqdn`（配置必填，见 `config/validate.go`）；为空时**省略**该字段而非发空串 | Table 26：`smdpAddress` 为 **O**（可选），语义是"本次下载应使用的 SM-DP+ 地址"；本机 `GET /profiles/{iccid}/activationCode` 早已用同一 FQDN 生成完整激活码（含 OID/CC） |
+| **Q5** | 全局模板的 claim 无归属运营商（`claims.carrier_id NOT NULL`） | **非 rsp42 问题** | rsp42 无需改：`resolveProfileType` 对 `"/<template>"` 按**调用方作用域**解析（`GetForTenant`），不要求 tenant 为 `""` | esim42 侧建议 seed 保留的 `platform` 运营商；rsp42 侧 profile 的租户仍由 ES2+ requester 映射决定，故平台 claim 若要落到 `""` 需给 esim42 增一个映射到 `""` 的 requester（该决定在 esim42） |
+
+**给 esim42 的对外回执（本轮变更）**：
+
+1. 契约锁需重跑一次：`openapi.json` 的 `TenantUsage` 增了 `ranges`（`components.schemas` 变化），
+   `DELETE /tenants/{id}` 的 409 与 `PUT /personalization/{iccid}` 的 409 文档化（`paths` 变化）。
+   流程：替换 `packages/rsp-client/src/openapi.snapshot.json` → `pnpm --filter @esim42/rsp-client generate`
+   → 更新 `openapi.snapshot.meta.json` 的 `commit`/`digest` → `pnpm rsp:contract` 四项全绿。
+   **本轮实测**（`RSP42_OPENAPI=../rsp42/internal/api/openapi/openapi.json pnpm rsp:contract`）：
+   仅 `live-match` 漂移，`snapshot-structure`/`types-current` 不漂移，即"只差一次刻意重基线"。
+   新 digest = `b2a36175f37d9be80c1c60c091ed3595d9a1f7c2cc3680566e9778edc8a7df95`
+   （旧 = `b0ff2e11e89315a003be6f9463d3fb8c26b7a24b23650fdaa1aae1caf1ef3499`，`info.version` 仍 `0.2.0`，
+   再次印证 `info.version` 不是变更信号）。
+2. 无新增**具名**错误码：两处新语义都用**派生码 `conflict` + `details.reason`**，
+   所以 esim42 的 `ADMIN_CODE_MAP` 不需要加条目（esim42 对未登记的 code 会记为
+   `unknownCode` 契约漂移告警，这是刻意避开的）。
+3. 8.2.1/3.3、8.2.5/3.7 的语义有扩展（见上表 Q1/Q7），esim42 的
+   `ES2P_ERROR_MAP` 现有条目（`iccid_unusable`、`quota_or_pool_exhausted`）**不需要改**。
+4. `confirmOrder` 现在返回 `smdpAddress`：esim42 可以直接用它拼激活码；
+   更完整的形态仍是 rsp42 的 `GET /profiles/{iccid}/activationCode`（带 OID 与 CC 位）。
+   **调研（能否删掉 `rsp.smdp_address` 兜底，仅结论不落地）**：
+   - 现在可以删。esim42 里该设置只有一处消费者（`claims/routes.ts` 的前置检查 → `template.smdpAddress`），
+     而 `orchestrator` 已经是"confirmOrder 的 `smdpAddress` 优先、设置兜底"。
+   - 但**不能只删设置**：前置检查同时也是"没地址就不消耗 ICCID"的 fail-fast。删掉它必须补一个
+     **confirmOrder 之后**的检查——地址仍为空则回滚（`cancelOrder {Available}`）并以不可重试码失败，
+     否则会重现 M3 首轮那种 `state=issued` 但 `activationCode=null` 的残单。
+   - 这条运行时检查是必要的，因为 **契约锁覆盖不到它**：锁定的是 rsp42 的管理 OpenAPI
+     （`openapi`/`paths`/`components.schemas`），ES2+ 不在其中，所以"某个 rsp42 版本不回
+     `smdpAddress`"在 CI 上不可见。
+   - 建议形态：删前置检查，把 `rsp.smdp_address` 降级为**可选覆盖/对账项**（设了就以它为准并比对
+     rsp42 的返回值，不一致就告警），或直接改用 `GET /profiles/{iccid}/activationCode`。
+     完全删设置也可行，代价是失去"对外发布的 FQDN 与 `smdpp.fqdn` 不同"这一合法场景的旋钮。
+5. Q1 修好后，esim42 编排里"cancel 后补一发 `DELETE /profiles/{iccid}`"的权宜可以删除；
+   A17 的原意（取消的 Profile 的 ICCID 可被再次领取）现在由 rsp42 原生保证。
+
+**本轮验证**（`go build ./... && go vet ./... && go test ./... -count=1`、`gofmt -l cmd internal` 为空）：
+
+| 面 | 新增/扩展的测试 |
+|---|---|
+| service（DIP 伪造实现） | `TestInventoryExplicitICCIDObeysPoolTenant`（Q7/blocked）、`TestInventoryReallocatesCancelledProfile`（Q1 正/反例 + 他租户） |
+| store | `TestDeleteWithReassignReportsUniqueConflicts`（profiles/upp_templates 两类冲突 + 回滚断言）、`TestUsageCountsImportedRanges`（无池条目仍阻塞删除、范围随 reassign 迁移）、`TestPersonalizationDuplicateIMSIIsConflict`（insert 与 update 两条路径、跨租户不冲突） |
+| ES2+（真实 SQLite + 真 handler） | `TestDownloadOrderRejectsForeignPooledICCID`（Q7：8.2.1/3.3 + 池条目未改属 + 无 profile 行）、`TestDownloadOrderReusesCancelledICCID`（Q1：同一行、MatchingID 清空、可再次换 EID）、`TestDownloadOrderDoesNotReuseDownloadedProfile`、`TestPooledAllocationReusesCancelledICCID`、`TestPooledAllocationDoesNotMintOutsideThePool`（8.2.5/3.7 + 预约交还 + 不生成池外号）、`TestConfirmOrderReturnsSMDPAddress`（Q6） |
+| Admin API | `TestAdminTenantReassignConflict`（409 + `details.tables`，profiles 与 upp_templates 各一）、`TestAdminTenantReassignMigratesRanges`（Q3：usage/阻塞/迁移/可见性）、`TestAdminPersonalizationDuplicateIMSIIsConflict`（Q4：409 + per-record 批量结果） |
+
+**顺带修正的测试夹具缺陷**：`internal/api/es2plus` 的 `newServerWith` 没有把
+`st.Pool` 注入 `OrderService`，与生产装配（`internal/cli/smdpp_graph.go`）不一致，
+导致"取消订单归还池条目"在测试里从未发生。已按生产装配补齐。
+
+---
+
 ## 附：第三轮复核的方法与边界
 
 - **判定基线**：本仓库 `89308b2`；逐条对照 `internal/store/migrations/`、`internal/api/openapi/openapi.json`、`internal/rsp/status/status.go`、`config/config.example.yaml` 与相关测试。

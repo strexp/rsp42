@@ -945,7 +945,8 @@
           "templates",
           "poolEntries",
           "batches",
-          "personalization"
+          "personalization",
+          "ranges"
         ],
         "properties": {
           "profiles": {
@@ -962,6 +963,10 @@
           },
           "personalization": {
             "type": "integer"
+          },
+          "ranges": {
+            "type": "integer",
+            "description": "Imported ICCID ranges owned by the tenant."
           }
         }
       },
@@ -2561,7 +2566,7 @@
             "$ref": "#/components/responses/Error"
           },
           "409": {
-            "description": "tenant_in_use: the response carries a top-level `usage` object.",
+            "description": "tenant_in_use (without force; the response carries a top-level `usage` object), or reassign_conflict (with force; the target scope already holds a resource with the same per-tenant unique key, and the response carries `details.reason=reassign_conflict` with `details.tables`).",
             "$ref": "#/components/responses/Error"
           }
         }
@@ -4494,7 +4499,7 @@
         },
         "responses": {
           "200": {
-            "description": "OK",
+            "description": "OK; each record is attempted independently and reported in `results[]`, so one duplicate IMSI or malformed record does not discard the batch.",
             "content": {
               "application/json": {
                 "schema": {
@@ -4618,6 +4623,10 @@
             }
           },
           "400": {
+            "$ref": "#/components/responses/Error"
+          },
+          "409": {
+            "description": "credential_conflict: the IMSI is already assigned to another Profile in this scope (`details.reason=credential_conflict`).",
             "$ref": "#/components/responses/Error"
           },
           "500": {

@@ -99,7 +99,7 @@ func upsertPersonalization(db dbtx, p *Personalization) error {
 			nullStr(p.SPN), nullStr(p.Algorithm), p.Rotation, p.Xoring, p.NumberOfKeccak,
 			nullStr(p.PLMN), nullStr(p.MSISDN), p.ACC, nullStr(p.FilePatches), now, existing.ID)
 		if err != nil {
-			return err
+			return credentialConflict(err, p)
 		}
 		p.ID = existing.ID
 		p.CreatedAt = existing.CreatedAt
@@ -115,11 +115,26 @@ func upsertPersonalization(db dbtx, p *Personalization) error {
 		p.Rotation, p.Xoring, p.NumberOfKeccak, nullStr(p.PLMN), nullStr(p.MSISDN), p.ACC, nullStr(p.FilePatches),
 		created, now)
 	if err != nil {
-		return err
+		return credentialConflict(err, p)
 	}
 	p.ID, _ = res.LastInsertId()
 	p.CreatedAt, p.UpdatedAt = toTime(created), toTime(now)
 	return nil
+}
+
+// credentialConflict turns a tenant-scoped uniqueness failure into ErrConflict.
+// personalization is unique per (tenant, iccid) and per (tenant, imsi), so the
+// interesting collision is "this IMSI is already bound to another Profile in
+// the scope". Reporting it as a plain server error made callers retry a write
+// that can never succeed, and hid an operator mistake behind "rsp42 is broken".
+func credentialConflict(err error, p *Personalization) error {
+	if !IsUniqueViolation(err) {
+		return err
+	}
+	if p.IMSI != "" {
+		return fmt.Errorf("%w: imsi %q is already assigned in this scope: %w", ErrConflict, p.IMSI, err)
+	}
+	return fmt.Errorf("%w: credentials are already assigned in this scope: %w", ErrConflict, err)
 }
 
 // lookupPersonalization finds a row by ICCID when set, otherwise by IMSI within

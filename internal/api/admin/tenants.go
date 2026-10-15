@@ -178,11 +178,21 @@ func (h *Handler) deleteTenant(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	if err := h.Tenants.DeleteWithReassign(id, reassignTo); err != nil {
-		if errors.Is(err, store.ErrNotFound) {
+		var conflict *store.ReassignConflictError
+		switch {
+		case errors.Is(err, store.ErrNotFound):
 			adminhttp.WriteErr(w, http.StatusNotFound, "unknown tenant")
-			return
+		case errors.As(err, &conflict):
+			// The target scope already holds a resource with the same
+			// per-tenant unique key (external_ref, template name or IMSI). It
+			// is a data conflict to resolve, not a server fault, so it gets a
+			// 409 carrying the offending tables instead of a bare 500.
+			adminhttp.WriteJSON(w, http.StatusConflict, adminhttp.ErrorBodyDetails("conflict",
+				"the target scope already holds resources with the same unique key; resolve the duplicates first",
+				map[string]any{"reason": "reassign_conflict", "tables": conflict.Tables}))
+		default:
+			adminhttp.WriteErr(w, http.StatusInternalServerError, err.Error())
 		}
-		adminhttp.WriteErr(w, http.StatusInternalServerError, err.Error())
 		return
 	}
 	h.audit(r, "deleteTenant", id, "Executed-Success", map[string]any{"force": true, "reassignTo": reassignTo})

@@ -36,11 +36,12 @@ func newServerWith(t *testing.T, configure func(h *es2plus.Handler, st *store.St
 	t.Cleanup(func() { _ = st.Close() })
 
 	orders := service.NewOrderService(st.Profiles)
+	orders.Pool = st.Pool
 	inventory := service.NewInventory(st.Profiles, "8900012", "00101")
 	inventory.Pool = st.Pool
 	h := es2plus.New(es2plus.Deps{
 		Log: slog.Default(), Profiles: st.Profiles, Orders: orders, Inventory: inventory,
-		OrderAudit: st.Orders,
+		OrderAudit: st.Orders, FQDN: "testsmdpplus1.example.com",
 	})
 	if configure != nil {
 		configure(h, st, inventory)

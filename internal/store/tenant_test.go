@@ -217,6 +217,93 @@ func TestProfileTenantFilterAndExternalRef(t *testing.T) {
 	require.Equal(t, 3, total)
 }
 
+// TestDeleteWithReassignReportsUniqueConflicts covers Q2: a per-tenant unique
+// index (external_ref, template name, IMSI) turns a forced reassignment into a
+// typed conflict instead of a bare driver error, and nothing is migrated.
+func TestDeleteWithReassignReportsUniqueConflicts(t *testing.T) {
+	st := openTestStore(t)
+	for _, id := range []string{"carrier-a", "carrier-b", "carrier-c", "carrier-d"} {
+		require.NoError(t, st.Tenants.Upsert(&Tenant{ID: id, Name: id}))
+	}
+
+	// profiles.external_ref is unique per tenant scope.
+	mk := func(tenant, iccid string) {
+		_, err := st.Profiles.Create(&Profile{
+			ICCID: iccid, State: StateAllocated, TenantID: tenant, ExternalRef: "order-1",
+		})
+		require.NoError(t, err)
+	}
+	mk("carrier-a", "89000123456789012341")
+	mk("carrier-b", "89000123456789012358")
+
+	err := st.Tenants.DeleteWithReassign("carrier-a", "carrier-b")
+	var conflict *ReassignConflictError
+	require.ErrorAs(t, err, &conflict)
+	require.Contains(t, conflict.Tables, "profiles")
+
+	// The whole transaction rolled back: the tenant and the ownership survive.
+	_, err = st.Tenants.Get("carrier-a")
+	require.NoError(t, err)
+	p, err := st.Profiles.GetByICCID("89000123456789012341")
+	require.NoError(t, err)
+	require.Equal(t, "carrier-a", p.TenantID)
+
+	// A scope without a clash migrates cleanly.
+	require.NoError(t, st.Tenants.DeleteWithReassign("carrier-a", ""))
+	moved, err := st.Profiles.GetByICCID("89000123456789012341")
+	require.NoError(t, err)
+	require.Empty(t, moved.TenantID)
+
+	// upp_templates.name is unique per tenant too: two tenants commonly both
+	// own a "default", which is the conflict a bare 500 hid the longest.
+	tpl := func(tenant, name string) *UPPTemplate {
+		return &UPPTemplate{Name: name, TenantID: tenant, SAIPMajor: 2, SHA256: tenant + name, Bytes: []byte{1}, Active: true}
+	}
+	require.NoError(t, st.UPP.Upsert(tpl("carrier-c", "default")))
+	require.NoError(t, st.UPP.Upsert(tpl("carrier-d", "default")))
+	err = st.Tenants.DeleteWithReassign("carrier-c", "carrier-d")
+	require.ErrorAs(t, err, &conflict)
+	require.Contains(t, conflict.Tables, "upp_templates")
+}
+
+// TestUsageCountsImportedRanges covers the other half of Q3: an imported range
+// is a tenant resource, so it counts toward `usage` and toward the deletion
+// guard even when its pool entries are gone.
+func TestUsageCountsImportedRanges(t *testing.T) {
+	st := openTestStore(t)
+	require.NoError(t, st.Tenants.Upsert(&Tenant{ID: "carrier-a", Name: "A"}))
+
+	_, _, _, err := st.Pool.ImportRange("carrier-a", "89000123456789012340", "89000123456789012359", "")
+	require.NoError(t, err)
+
+	usage, err := st.Tenants.Usage("carrier-a")
+	require.NoError(t, err)
+	require.Equal(t, 1, usage.Ranges)
+	require.NotZero(t, usage.PoolEntries)
+	require.False(t, usage.Empty())
+
+	// Emptying the pool without deleting the range keeps the tenant non-empty:
+	// a plain DELETE would otherwise leave the range dangling.
+	_, err = st.DB.Exec(`DELETE FROM iccid_pool WHERE tenant_id = 'carrier-a'`)
+	require.NoError(t, err)
+	usage, err = st.Tenants.Usage("carrier-a")
+	require.NoError(t, err)
+	require.Equal(t, 1, usage.Ranges)
+	require.Zero(t, usage.PoolEntries)
+	require.False(t, usage.Empty(), "a lone range still blocks a plain delete")
+
+	// The range follows a forced reassignment to the new owner.
+	require.NoError(t, st.Tenants.Upsert(&Tenant{ID: "carrier-b", Name: "B"}))
+	require.NoError(t, st.Tenants.DeleteWithReassign("carrier-a", "carrier-b"))
+	usage, err = st.Tenants.Usage("carrier-b")
+	require.NoError(t, err)
+	require.Equal(t, 1, usage.Ranges)
+	newOwner := "carrier-b"
+	ranges, err := st.Pool.ListRanges(&newOwner)
+	require.NoError(t, err)
+	require.Len(t, ranges, 1)
+}
+
 func TestAuditAndEventTenantFilters(t *testing.T) {
 	st := openTestStore(t)
 	now := time.Now().UTC()

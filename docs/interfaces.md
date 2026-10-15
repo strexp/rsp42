@@ -53,6 +53,13 @@ answers `8.2.1/1.2` on the order functions that address an existing Profile
 `8.2.1/3.3` (the ICCID cannot be issued); using another tenant's Profile
 Type/template answers `8.2.5/1.2`.
 
+`downloadOrder`'s ICCID rule covers the pool too, not just existing Profiles: an
+ICCID that is present in another tenant's `iccid_pool` is refused with
+`8.2.1/3.3` before any Profile is created, and the pool entry keeps its owner.
+An ICCID the pool does not know about is still allowed — the pool is an optional
+inventory source, not a closed world — so a deployment that never imports ranges
+keeps working.
+
 ### Profile/template selection
 
 `downloadOrder.profileType` is "content free information defined by the
@@ -98,6 +105,25 @@ answers `Executed-Success` with that ICCID and performs no further action, so an
 operator retry after a lost response is safe. The comparison is on the supplied
 values only: an omitted `profileType`/`eid` matches any stored one.
 
+An ICCID whose Profile is in `Available` — the state `cancelOrder` with
+`finalProfileStatusIndicator=Available` puts it in, and which Table 29 defines as
+"available for future use" — is **re-issued in place** by a later
+`downloadOrder`: the same Profile row goes back to `Allocated`/`Linked` with the
+new order's `eid`, `profileType`, template and external ref, and the cancelled
+order's `matchingId`, confirmation code and SM-DS address are cleared. The
+Profile identity (ICCID, IMSI, personalization) is preserved. A Profile that was
+ever downloaded is **not** re-issued this way: the sanctioned redownload path is
+`Installed -> Released` after a Delete Notification. Any other state
+(`Confirmed`, `Released`, `Downloaded`, `Installed`, `Error`, `Unavailable`)
+still answers `8.2.1/3.3`.
+
+The same rule applies when `downloadOrder` omits the ICCID and the pool hands out
+the lowest available entry: a collision with a re-issuable `Available` row
+re-uses that row, and any other collision answers `8.2.5/3.7` rather than
+silently generating an ICCID from `profiles.iccid_pool_prefix` — an operator's
+imported inventory is never bypassed, and the reservation is handed straight back
+to the pool.
+
 ### ConfirmOrder verifications
 
 - A supplied `matchingId` must consist only of upper case alphanumeric
@@ -111,6 +137,12 @@ values only: an omitted `profileType`/`eid` matches any stored one.
   an order with no EID answers `8.1.1/2.2` (Table 27).
 - A `confirmOrder.eid` that disagrees with the order answers `8.1.1/3.10` (Table
   27; see also the idempotency note below).
+- The success response carries Table 26's optional `smdpAddress` as this
+  deployment's configured `smdpp.fqdn`, so an operator that only talks ES2+ can
+  build the Activation Code (`1$<fqdn>$<matchingId>`) without out-of-band
+  configuration. `GET /profiles/{iccid}/activationCode` remains the
+  authoritative form: it also carries the SM-DP+ OID and the confirmation-code
+  flag.
 
 ### CancelOrder verifications
 
@@ -385,10 +417,24 @@ accept `state`, `eid`, `externalRef`, `batchId`, `q` (substring), `from`, `to`,
 `groupBy=state|day|tenant|profile_type` (N7).
 
 `GET /tenants/{id}` returns `usage`
-(`profiles`, `templates`, `poolEntries`, `batches`, `personalization`) purely
-from rsp42's own tables; it does **not** know about the caller's own records
-(e.g. a `credential_assignments` table), so a caller that gates tenant deletion
-on references has to count those separately and combine both.
+(`profiles`, `templates`, `poolEntries`, `batches`, `personalization`, `ranges`)
+purely from rsp42's own tables; it does **not** know about the caller's own
+records (e.g. a `credential_assignments` table), so a caller that gates tenant
+deletion on references has to count those separately and combine both. The six
+counters are exactly the tables a forced reassignment migrates
+(`DELETE /tenants/{id}?force=true&reassignTo=`), so a non-empty `usage` is always
+the set of rows that would move; `iccid_ranges` is included, which closes the
+case of a tenant that owns a range but whose pool entries were already consumed
+or deleted.
+
+A forced reassignment migrates each of those tables inside a savepoint, so a
+per-tenant unique key that already exists in the target scope answers
+**`409 conflict`** with `details.reason=reassign_conflict` and
+`details.tables=[...]` listing every offending table (`profiles.external_ref`,
+`upp_templates.name` — two tenants commonly both own a `default` — and
+`personalization.imsi`). Nothing is migrated and the tenant still exists; the
+operator resolves the duplicates and retries. Before this, the same collision
+reached the caller as a bare `500 internal_error`.
 
 ### Quotas
 
@@ -400,7 +446,10 @@ same code as an exhausted ICCID pool — profile quota and pool exhaustion are
 deliberately indistinguishable on ES2+, and `GET /tenants/{id}` (`usage`) plus
 `GET /iccid-pool/stats` are the way to tell them apart before sending an order.
 An ICCID that is merely unusable (in use or blocked) answers `8.2.1/3.3`
-instead.
+instead. The same `8.2.5/3.7` answers a `downloadOrder` without an ICCID whose
+pool hands out an entry that cannot become a Profile (see "Resend semantics"):
+"no Profile available for the requested Profile Type" covers both an exhausted
+pool and a pool whose head is stuck behind a non-re-issuable row.
 
 ### Response envelopes
 
@@ -427,9 +476,19 @@ status. `code` is either derived from the HTTP status (`invalid_request`,
 
 A syntactically invalid ICCID (not 19/20 digits with a valid Luhn check digit) is
 `400 invalid_request`; a well-formed ICCID that cannot be issued (in use,
-blocked) is `409 conflict`. The same distinction applies on ES2+:
+blocked, or owned by another tenant) is `409 conflict`. The same distinction
+applies on ES2+:
 `downloadOrder` answers `8.1/1.2` for a malformed ICCID and `8.2.1/3.3` for one
 that cannot be issued.
+
+Two further data conflicts are `409 conflict` with a `details.reason` rather than
+a named code (so a caller that only knows the status-derived vocabulary can still
+branch on them): `credential_conflict` when `PUT /personalization/{iccid}` (or a
+bulk import) binds an IMSI that is already assigned in the same scope, and
+`reassign_conflict` on a forced tenant deletion (see "Tenant scoping and
+filters"). `POST /personalization/import` answers `200` with a per-record
+`results[]` (`{iccid, ok, error}`) so one rejected record does not discard the
+batch; `imported` is the count that succeeded.
 
 ### Audit attribution
 

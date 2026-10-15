@@ -203,14 +203,23 @@ func (f *fakePersoResolver) Resolve(tenant, iccid, imsi string) (*personalizatio
 type fakeICCIDPool struct {
 	available []string
 	state     map[string]string
-	Reserves  int
+	// owner records each entry's tenant; the zero value means "unknown", which
+	// Get reports as an empty tenant (the platform scope).
+	owner    map[string]string
+	Reserves int
 	// FailClaim / FailSetState inject a storage failure into the pool path.
 	FailClaim    error
 	FailSetState error
 }
 
 func newFakeICCIDPool(available ...string) *fakeICCIDPool {
-	return &fakeICCIDPool{available: available, state: map[string]string{}}
+	return &fakeICCIDPool{available: available, state: map[string]string{}, owner: map[string]string{}}
+}
+
+// own records the tenant that owns an entry without reserving it.
+func (f *fakeICCIDPool) own(iccid, tenant string) *fakeICCIDPool {
+	f.owner[iccid] = tenant
+	return f
 }
 
 func (f *fakeICCIDPool) Reserve(tenant, eid, reference string, ttl time.Duration) (string, error) {
@@ -240,12 +249,12 @@ func (f *fakeICCIDPool) SetState(iccid, state, note string) error {
 	return nil
 }
 
-func (f *fakeICCIDPool) State(iccid string) (string, error) {
+func (f *fakeICCIDPool) Get(iccid string) (*store.ICCIDPoolEntry, error) {
 	s, ok := f.state[iccid]
 	if !ok {
-		return "", store.ErrNotFound
+		return nil, store.ErrNotFound
 	}
-	return s, nil
+	return &store.ICCIDPoolEntry{ICCID: iccid, TenantID: f.owner[iccid], State: s}, nil
 }
 
 // fakeEventStore implements EventStore for the SM-DS event tests, with failure

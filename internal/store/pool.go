@@ -140,15 +140,25 @@ func (r *PoolRepo) Reserve(tenant, eid, reference string, ttl time.Duration) (st
 	return iccid, tx.Commit()
 }
 
+// Get loads one pool entry, or ErrNotFound when the ICCID is not in the pool at
+// all. The service layer uses it to apply the pool's rules (state and owning
+// tenant) to an operator-supplied ICCID.
+func (r *PoolRepo) Get(iccid string) (*ICCIDPoolEntry, error) {
+	e, err := scanPool(r.db.QueryRow("SELECT "+poolCols+" FROM iccid_pool WHERE iccid = ?", iccid))
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, fmt.Errorf("store: iccid pool %q: %w", iccid, ErrNotFound)
+	}
+	return e, err
+}
+
 // State returns a pool entry's state, or ErrNotFound when the ICCID is not in
 // the pool at all.
 func (r *PoolRepo) State(iccid string) (string, error) {
-	var state string
-	err := r.db.QueryRow(`SELECT state FROM iccid_pool WHERE iccid = ?`, iccid).Scan(&state)
-	if errors.Is(err, sql.ErrNoRows) {
-		return "", ErrNotFound
+	e, err := r.Get(iccid)
+	if err != nil {
+		return "", err
 	}
-	return state, err
+	return e.State, nil
 }
 
 // Claim attaches an ICCID to a profile: the reservation deadline is cleared (so

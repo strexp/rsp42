@@ -109,7 +109,14 @@ func (h *Handler) confirmOrder(w http.ResponseWriter, r *http.Request) {
 			h.Log.Warn("ES12 register event", "eid", p.EID, "tenant", tenant, "err", err)
 		}
 	}
-	extra := map[string]any{"matchingId": matchingID, "smdpAddress": ""}
+	// Table 26: `smdpAddress` is the SM-DP+ address to use for this specific
+	// download order. It is optional, but when the deployment knows its own
+	// FQDN there is no reason to withhold it: without it an operator has to
+	// configure the address out of band to build an Activation Code.
+	extra := map[string]any{"matchingId": matchingID}
+	if h.FQDN != "" {
+		extra["smdpAddress"] = h.FQDN
+	}
 	// Table 26: the EID SHALL be returned when it is bound to this order.
 	if p.EID != "" {
 		extra["eid"] = p.EID
