@@ -145,6 +145,10 @@ func (h *Handler) createProfile(w http.ResponseWriter, r *http.Request) {
 			writeQuotaErr(w, err)
 			return
 		}
+		if errors.Is(err, service.ErrInvalidICCID) {
+			adminhttp.WriteJSON(w, http.StatusBadRequest, adminhttp.ErrorBody("invalid_request", err.Error()))
+			return
+		}
 		adminhttp.WriteErr(w, http.StatusConflict, err.Error())
 		return
 	}

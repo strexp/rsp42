@@ -196,7 +196,9 @@ A BSS/OSS-facing management API is served on the admin listener under
 `/admin/api/v1` (JSON; no UI). It has no authentication and must be deployed on a
 trusted network. `GET /admin/api/v1/openapi.json` serves the complete OpenAPI 3.0
 description (schemas and error model included); the same document is checked in
-at `internal/api/admin/openapi.json`.
+at `internal/api/admin/openapi/openapi.json`. Every 2xx answer declares its response
+schema there, and the test suite validates real responses against the declared
+schema (`internal/api/admin/contract_test.go`).
 
 | Area | Endpoints |
 |---|---|
@@ -239,12 +241,32 @@ prefix for ascending). `GET /profiles/stats` also accepts
 `tenants.profile_quota` is enforced at allocation time on both the Admin API and
 ES2+ (the ES2+ answer is `8.2.1/3.8`).
 
+### Response envelopes
+
+List endpoints answer one of two shapes:
+
+- **paginated** (`page`, `size`, `total`, `items`): `/profiles`, `/batches`,
+  `/iccid-pool`, `/personalization`, `/callbacks`, `/notifications`, `/audit`
+  (page mode), `/eids`;
+- **unbounded** (`items`, `total`): `/tenants`, `/upp`, `/upp/{name}/versions`,
+  `/iccid-ranges`.
+
+Both always carry `items`; an empty list is `[]`, never `null`. `GET /audit`
+switches to the incremental cursor shape (`items`, `nextAfterId`, `hasMore`, no
+paging fields) when `afterId` is given (N1).
+
 ### Errors
 
 Management API errors are `{"code": "...", "message": "..."}` with the HTTP
 status. Codes are stable and machine-readable (`invalid_request`, `not_found`,
 `conflict`, `not_implemented`, `internal_error`, `unknown_tenant`,
 `idempotency_key_reused`, `idempotency_key_in_flight`).
+
+A syntactically invalid ICCID (not 19/20 digits with a valid Luhn check digit) is
+`400 invalid_request`; a well-formed ICCID that cannot be issued (in use,
+blocked) is `409 conflict`. The same distinction applies on ES2+:
+`downloadOrder` answers `8.1/1.2` for a malformed ICCID and `8.2.1/3.3` for one
+that cannot be issued.
 
 ### Audit attribution
 

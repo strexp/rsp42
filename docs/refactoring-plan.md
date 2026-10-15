@@ -615,11 +615,19 @@
 | 本轮 | **`jsonschema/v6` 落地为真实用途**：新增 `internal/api/admin/contract_test.go`，用发布在 `openapi.json` 里的 schema 校验真实响应（错误体 → `Error`、分页列表 → `Page`、资源体 → `Profile`/`Tenant`/`UPPTemplate`、请求体 → `CreateProfileRequest`）。这兑现了 `docs/dependencies.md` 原有的登记（并修正其表述为「管理 API 契约测试」），且不改任何生产行为 |
 | 本轮 | **移除未使用的 `gopkg.in/yaml.v3`**：viper 已通过 `go.yaml.in/yaml/v3` 覆盖 YAML，`go mod tidy` 后 go.mod/go.sum 相应收敛，注册表同步 |
 
-契约测试立即发现三处文档/实现漂移（保留为待决项，未擅自改契约）：
+契约测试立即发现五处文档/实现漂移，**本轮已全部修复**：
 
-1. `openapi.json` 的 path **没有任何 200 响应体 schema**（只有 `{"description":"OK"}`），`Profile`/`Tenant`/`UPPTemplate` 等 schema 未被任何 path 引用——文档可读性/可校验性有限；本次测试直接按 schema 名校验，属于在文档补齐之前的过渡手段。
-2. `GET /admin/api/v1/iccid-ranges` 只返回 `{"items":[...]}`，是全仓唯一不带 `total` 的列表端点（与其余 `items+total` 或 `items+page+size+total` 不一致）。
-3. `POST /admin/api/v1/profiles` 对**格式非法的 ICCID** 返回 **409 conflict**（`createProfile` 把所有分配失败都映射为 409），更合理的是 400 `invalid_request`；测试已按现状固定。
+| # | 漂移 | 修复 |
+|---|---|---|
+| 1 | `openapi.json` 的 path 没有任何 200 响应体 schema（只有 `{"description":"OK"}`），`Profile`/`Tenant`/`UPPTemplate` 等 schema 未被任何 path 引用 | 为全部 66 个操作补上响应体 schema（新增 21 个 schema：列表信封 `ProfilesPage`/`BatchesPage`/…/`TenantsList`/`UPPTemplatesList`/`IDCCIDRangesList`、资源 `Callback`/`Notification`/`ICCIDRange`/`EIDSummary`/`UPPTemplateVersion`/`UPPInspection`/`UPPField`，以及 `StatsBuckets`/`BatchDetail`/`ActivationCode`/`UPPSchema`/`UPPValidation`/`UPPRender`/`UPPDecoded`/`AuditCursor` 等）；`/audit` 的两种形态用 `AuditResponse = oneOf[AuditPage, AuditCursor]` 表达 |
+| 2 | `GET /iccid-ranges` 只返回 `{"items":[...]}`，是全仓唯一不带 `total` 的列表端点 | 改为 `{"items":[...], "total":n}` |
+| 3 | `POST /profiles` 对格式非法的 ICCID 返回 409 conflict | 新增 `service.ErrInvalidICCID`，管理 API 返回 `400 invalid_request`、ES2+ 返回 `8.1/1.2`；`ErrICCIDInUse`（已占用）仍是 409 / `8.2.1/3.3` |
+| 4 | 契约测试还发现 `GET /eids` 在空结果时返回 `"items":null`（其余端点返回 `[]`） | `adminhttp.WriteListEnvelope` 改为 `[E any](… []E)` 并归一化 nil 切片，从根上保证空列表是 `[]` |
+| 5 | `GET /audit` 的游标形态与分页形态在文档里只描述了一种 | 见 #1 的 `AuditResponse`；契约测试同时覆盖两种形态 |
+
+契约测试同时收紧为：遍历整个文档要求每个 2xx（204 除外）都声明可编译的 JSON schema；并按**该操作声明的 schema**校验真实响应，而不是测试自选的 schema 名。SM-DS 侧新增 `internal/api/dsadmin/contract_test.go`，对过滤后的文档做同样校验。
+
+`docs/interfaces.md` 同步更新：修正 `openapi.json` 的新路径、写明两种列表信封与「空列表是 `[]`」、以及 ICCID 非法（400/`8.1/1.2`）与不可用（409/`8.2.1/3.3`）的区别。
 
 ### 执行期间确认的额外结论
 

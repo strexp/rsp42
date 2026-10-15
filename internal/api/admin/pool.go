@@ -158,7 +158,7 @@ func (h *Handler) listRanges(w http.ResponseWriter, r *http.Request) {
 	for _, rg := range items {
 		views = append(views, rangeView{ID: rg.ID, Tenant: rg.TenantID, Start: rg.Start, End: rg.End, Note: rg.Note, CreatedAt: rg.CreatedAt})
 	}
-	adminhttp.WriteJSON(w, http.StatusOK, map[string]any{"items": views})
+	adminhttp.WriteJSON(w, http.StatusOK, map[string]any{"items": views, "total": len(views)})
 }
 
 func (h *Handler) importRange(w http.ResponseWriter, r *http.Request) {

@@ -149,7 +149,14 @@ func ParsePage(r *http.Request) (page, size int) {
 
 // WriteListEnvelope writes the shared paginated list body
 // `{"items": ..., "page": ..., "size": ..., "total": ...}`.
-func WriteListEnvelope[T any](w http.ResponseWriter, items T, page, size, total int) {
+//
+// items is a slice rather than any: an empty list must serialize as [] and never
+// as null, which a nil slice from a repository would produce and which breaks
+// clients that iterate the array unconditionally.
+func WriteListEnvelope[E any](w http.ResponseWriter, items []E, page, size, total int) {
+	if items == nil {
+		items = []E{}
+	}
 	WriteJSON(w, http.StatusOK, map[string]any{
 		"items": items, "page": page, "size": size, "total": total,
 	})

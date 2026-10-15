@@ -597,6 +597,1178 @@
             "type": "integer"
           }
         }
+      },
+      "Callback": {
+        "type": "object",
+        "required": [
+          "id",
+          "url",
+          "notificationPointId",
+          "state",
+          "attempts",
+          "createdAt"
+        ],
+        "properties": {
+          "id": {
+            "type": "integer"
+          },
+          "url": {
+            "type": "string"
+          },
+          "notificationPointId": {
+            "type": "integer"
+          },
+          "state": {
+            "type": "string"
+          },
+          "attempts": {
+            "type": "integer"
+          },
+          "nextAttemptAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "response": {
+            "type": "string"
+          },
+          "payload": {
+            "type": "object",
+            "additionalProperties": true,
+            "description": "The notification body as queued."
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "Notification": {
+        "type": "object",
+        "required": [
+          "id",
+          "seqNumber",
+          "operation",
+          "signatureOk",
+          "processed",
+          "receivedAt"
+        ],
+        "properties": {
+          "id": {
+            "type": "integer"
+          },
+          "eid": {
+            "type": "string"
+          },
+          "seqNumber": {
+            "type": "integer"
+          },
+          "operation": {
+            "type": "string"
+          },
+          "iccid": {
+            "type": "string"
+          },
+          "transactionId": {
+            "type": "string"
+          },
+          "signatureOk": {
+            "type": "boolean"
+          },
+          "processed": {
+            "type": "boolean"
+          },
+          "receivedAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "ICCIDRange": {
+        "type": "object",
+        "required": [
+          "id",
+          "start",
+          "end",
+          "createdAt"
+        ],
+        "properties": {
+          "id": {
+            "type": "integer"
+          },
+          "tenant": {
+            "type": "string"
+          },
+          "start": {
+            "type": "string"
+          },
+          "end": {
+            "type": "string"
+          },
+          "note": {
+            "type": "string"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "EIDSummary": {
+        "type": "object",
+        "required": [
+          "eid",
+          "profileCount",
+          "installedCount",
+          "lastUpdatedAt"
+        ],
+        "properties": {
+          "eid": {
+            "type": "string"
+          },
+          "profileCount": {
+            "type": "integer"
+          },
+          "installedCount": {
+            "type": "integer"
+          },
+          "lastUpdatedAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "TenantUsage": {
+        "type": "object",
+        "required": [
+          "profiles",
+          "templates",
+          "poolEntries",
+          "batches",
+          "personalization"
+        ],
+        "properties": {
+          "profiles": {
+            "type": "integer"
+          },
+          "templates": {
+            "type": "integer"
+          },
+          "poolEntries": {
+            "type": "integer"
+          },
+          "batches": {
+            "type": "integer"
+          },
+          "personalization": {
+            "type": "integer"
+          }
+        }
+      },
+      "UPPInspection": {
+        "type": "object",
+        "required": [
+          "saipMajor",
+          "saipMinor",
+          "saip",
+          "sha256",
+          "size",
+          "services",
+          "gfste",
+          "elements",
+          "files",
+          "warnings"
+        ],
+        "properties": {
+          "saipMajor": {
+            "type": "integer"
+          },
+          "saipMinor": {
+            "type": "integer"
+          },
+          "saip": {
+            "type": "string"
+          },
+          "sha256": {
+            "type": "string"
+          },
+          "size": {
+            "type": "integer"
+          },
+          "profileType": {
+            "type": "string"
+          },
+          "iccid": {
+            "type": "string"
+          },
+          "services": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "gfste": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "elements": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": [
+                "tag",
+                "size"
+              ],
+              "properties": {
+                "tag": {
+                  "type": "string"
+                },
+                "name": {
+                  "type": "string"
+                },
+                "size": {
+                  "type": "integer"
+                }
+              }
+            },
+            "description": "ProfileElements in wire order."
+          },
+          "files": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": [
+                "fid",
+                "bodySize"
+              ],
+              "properties": {
+                "fid": {
+                  "type": "string"
+                },
+                "pename": {
+                  "type": "string"
+                },
+                "bodySize": {
+                  "type": "integer"
+                }
+              }
+            },
+            "description": "Files found in the package."
+          },
+          "warnings": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Non-fatal inconsistencies."
+          },
+          "errors": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Hard SAIP V2.3.1 constraint violations (N13)."
+          }
+        }
+      },
+      "UPPField": {
+        "type": "object",
+        "required": [
+          "name",
+          "type",
+          "required",
+          "applicable",
+          "targets",
+          "requiredIn"
+        ],
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "type": {
+            "type": "string"
+          },
+          "required": {
+            "type": "boolean"
+          },
+          "applicable": {
+            "type": "boolean"
+          },
+          "targets": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "requiredIn": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "note": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string"
+          },
+          "pattern": {
+            "type": "string"
+          },
+          "minLength": {
+            "type": "integer"
+          },
+          "maxLength": {
+            "type": "integer"
+          },
+          "enum": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "ProfilesPage": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/Page"
+          },
+          {
+            "type": "object",
+            "required": [
+              "items"
+            ],
+            "properties": {
+              "items": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/Profile"
+                }
+              }
+            }
+          }
+        ],
+        "description": "A page of Profile records."
+      },
+      "BatchesPage": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/Page"
+          },
+          {
+            "type": "object",
+            "required": [
+              "items"
+            ],
+            "properties": {
+              "items": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/Batch"
+                }
+              }
+            }
+          }
+        ],
+        "description": "A page of Batch records."
+      },
+      "PoolEntriesPage": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/Page"
+          },
+          {
+            "type": "object",
+            "required": [
+              "items"
+            ],
+            "properties": {
+              "items": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/PoolEntry"
+                }
+              }
+            }
+          }
+        ],
+        "description": "A page of pool entry records."
+      },
+      "PersonalizationPage": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/Page"
+          },
+          {
+            "type": "object",
+            "required": [
+              "items"
+            ],
+            "properties": {
+              "items": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/Personalization"
+                }
+              }
+            }
+          }
+        ],
+        "description": "A page of personalization records."
+      },
+      "CallbacksPage": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/Page"
+          },
+          {
+            "type": "object",
+            "required": [
+              "items"
+            ],
+            "properties": {
+              "items": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/Callback"
+                }
+              }
+            }
+          }
+        ],
+        "description": "A page of callback records."
+      },
+      "NotificationsPage": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/Page"
+          },
+          {
+            "type": "object",
+            "required": [
+              "items"
+            ],
+            "properties": {
+              "items": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/Notification"
+                }
+              }
+            }
+          }
+        ],
+        "description": "A page of notification records."
+      },
+      "AuditPage": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/Page"
+          },
+          {
+            "type": "object",
+            "required": [
+              "items"
+            ],
+            "properties": {
+              "items": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/AuditEntry"
+                }
+              }
+            }
+          }
+        ],
+        "description": "A page of audit records."
+      },
+      "EIDsPage": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/Page"
+          },
+          {
+            "type": "object",
+            "required": [
+              "items"
+            ],
+            "properties": {
+              "items": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/EIDSummary"
+                }
+              }
+            }
+          }
+        ],
+        "description": "A page of EID summary records."
+      },
+      "EventsPage": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/Page"
+          },
+          {
+            "type": "object",
+            "required": [
+              "items"
+            ],
+            "properties": {
+              "items": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/Event"
+                }
+              }
+            }
+          }
+        ],
+        "description": "A page of SM-DS event records."
+      },
+      "TenantsList": {
+        "type": "object",
+        "required": [
+          "items",
+          "total"
+        ],
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Tenant"
+            }
+          },
+          "total": {
+            "type": "integer"
+          }
+        },
+        "description": "All tenant records (no paging)."
+      },
+      "UPPTemplatesList": {
+        "type": "object",
+        "required": [
+          "items",
+          "total"
+        ],
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/UPPTemplate"
+            }
+          },
+          "total": {
+            "type": "integer"
+          }
+        },
+        "description": "All template records (no paging)."
+      },
+      "UPPVersionsList": {
+        "type": "object",
+        "required": [
+          "items",
+          "total"
+        ],
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/UPPTemplateVersion"
+            }
+          },
+          "total": {
+            "type": "integer"
+          }
+        },
+        "description": "All template version records (no paging)."
+      },
+      "UPPTemplateVersion": {
+        "type": "object",
+        "required": [
+          "id",
+          "name",
+          "versionNo",
+          "saip",
+          "sha256",
+          "size",
+          "createdAt"
+        ],
+        "properties": {
+          "id": {
+            "type": "integer"
+          },
+          "tenant": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "versionNo": {
+            "type": "integer"
+          },
+          "saip": {
+            "type": "string"
+          },
+          "sha256": {
+            "type": "string"
+          },
+          "size": {
+            "type": "integer"
+          },
+          "note": {
+            "type": "string"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "AuditCursor": {
+        "type": "object",
+        "required": [
+          "items",
+          "nextAfterId",
+          "hasMore"
+        ],
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AuditEntry"
+            }
+          },
+          "nextAfterId": {
+            "type": "integer"
+          },
+          "hasMore": {
+            "type": "boolean"
+          }
+        },
+        "description": "Cursor mode of GET /audit (?afterId=&limit=): no page/size, the caller continues from nextAfterId."
+      },
+      "StatsBuckets": {
+        "type": "object",
+        "required": [
+          "groupBy",
+          "total",
+          "buckets"
+        ],
+        "properties": {
+          "groupBy": {
+            "type": "string"
+          },
+          "total": {
+            "type": "integer"
+          },
+          "buckets": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": [
+                "key",
+                "count"
+              ],
+              "properties": {
+                "key": {
+                  "type": "string"
+                },
+                "count": {
+                  "type": "integer"
+                }
+              }
+            }
+          }
+        }
+      },
+      "BatchDetail": {
+        "type": "object",
+        "required": [
+          "batch",
+          "states"
+        ],
+        "properties": {
+          "batch": {
+            "$ref": "#/components/schemas/Batch"
+          },
+          "states": {
+            "type": "object",
+            "additionalProperties": true,
+            "description": "Profile count per state."
+          }
+        }
+      },
+      "BatchActionResult": {
+        "type": "object",
+        "required": [
+          "applied",
+          "failed"
+        ],
+        "properties": {
+          "applied": {
+            "type": "integer"
+          },
+          "failed": {
+            "type": "integer"
+          }
+        }
+      },
+      "BulkProfileResult": {
+        "type": "object",
+        "required": [
+          "action",
+          "results"
+        ],
+        "properties": {
+          "action": {
+            "type": "string"
+          },
+          "results": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": [
+                "iccid",
+                "ok"
+              ],
+              "properties": {
+                "iccid": {
+                  "type": "string"
+                },
+                "ok": {
+                  "type": "boolean"
+                },
+                "error": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        }
+      },
+      "ImportResult": {
+        "type": "object",
+        "required": [
+          "imported"
+        ],
+        "properties": {
+          "imported": {
+            "type": "integer"
+          },
+          "results": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": [
+                "iccid",
+                "ok"
+              ],
+              "properties": {
+                "iccid": {
+                  "type": "string"
+                },
+                "ok": {
+                  "type": "boolean"
+                },
+                "error": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        }
+      },
+      "PoolImportResult": {
+        "type": "object",
+        "required": [
+          "imported",
+          "results"
+        ],
+        "properties": {
+          "imported": {
+            "type": "integer"
+          },
+          "results": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": [
+                "imsi",
+                "ok"
+              ],
+              "properties": {
+                "imsi": {
+                  "type": "string"
+                },
+                "ok": {
+                  "type": "boolean"
+                },
+                "error": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        }
+      },
+      "RangeImportResult": {
+        "type": "object",
+        "required": [
+          "rangeId",
+          "inserted",
+          "skipped",
+          "tenant"
+        ],
+        "properties": {
+          "rangeId": {
+            "type": "integer"
+          },
+          "inserted": {
+            "type": "integer"
+          },
+          "skipped": {
+            "type": "integer"
+          },
+          "tenant": {
+            "type": "string"
+          }
+        }
+      },
+      "RangeDeleteResult": {
+        "type": "object",
+        "required": [
+          "removed"
+        ],
+        "properties": {
+          "removed": {
+            "type": "integer"
+          }
+        }
+      },
+      "RetryDeadResult": {
+        "type": "object",
+        "required": [
+          "requeued"
+        ],
+        "properties": {
+          "requeued": {
+            "type": "integer"
+          }
+        }
+      },
+      "ReserveICCIDResult": {
+        "type": "object",
+        "required": [
+          "iccid",
+          "state",
+          "tenant"
+        ],
+        "properties": {
+          "iccid": {
+            "type": "string"
+          },
+          "state": {
+            "type": "string"
+          },
+          "tenant": {
+            "type": "string"
+          },
+          "imsi": {
+            "type": "string"
+          }
+        }
+      },
+      "ICCIDStateResult": {
+        "type": "object",
+        "required": [
+          "iccid",
+          "state"
+        ],
+        "properties": {
+          "iccid": {
+            "type": "string"
+          },
+          "state": {
+            "type": "string"
+          }
+        }
+      },
+      "PoolStats": {
+        "type": "object",
+        "required": [
+          "states",
+          "ranges",
+          "available"
+        ],
+        "properties": {
+          "states": {
+            "type": "object",
+            "additionalProperties": true,
+            "description": "Pool entry count per state."
+          },
+          "ranges": {
+            "type": "integer"
+          },
+          "available": {
+            "type": "integer"
+          },
+          "credentials_unbound": {
+            "type": "integer"
+          }
+        }
+      },
+      "ProfileTimeline": {
+        "type": "object",
+        "required": [
+          "iccid",
+          "events"
+        ],
+        "properties": {
+          "iccid": {
+            "type": "string"
+          },
+          "events": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": [
+                "time",
+                "kind",
+                "action"
+              ],
+              "properties": {
+                "time": {
+                  "type": "string",
+                  "format": "date-time"
+                },
+                "kind": {
+                  "type": "string"
+                },
+                "action": {
+                  "type": "string"
+                },
+                "detail": {
+                  "type": "string"
+                },
+                "signed": {
+                  "type": "boolean"
+                },
+                "processed": {
+                  "type": "boolean"
+                }
+              }
+            }
+          }
+        }
+      },
+      "ActivationCode": {
+        "type": "object",
+        "required": [
+          "matchingId",
+          "activationCode",
+          "qrContent"
+        ],
+        "properties": {
+          "matchingId": {
+            "type": "string"
+          },
+          "activationCode": {
+            "type": "string"
+          },
+          "qrContent": {
+            "type": "string"
+          }
+        }
+      },
+      "UPPSchema": {
+        "type": "object",
+        "required": [
+          "template",
+          "inspection",
+          "fields"
+        ],
+        "properties": {
+          "template": {
+            "$ref": "#/components/schemas/UPPTemplate"
+          },
+          "inspection": {
+            "$ref": "#/components/schemas/UPPInspection"
+          },
+          "fields": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/UPPField"
+            }
+          }
+        }
+      },
+      "UPPValidation": {
+        "type": "object",
+        "required": [
+          "valid",
+          "inspection",
+          "warnings",
+          "errors"
+        ],
+        "properties": {
+          "valid": {
+            "type": "boolean"
+          },
+          "inspection": {
+            "$ref": "#/components/schemas/UPPInspection"
+          },
+          "warnings": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "errors": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "UPPRender": {
+        "type": "object",
+        "required": [
+          "rendered"
+        ],
+        "properties": {
+          "rendered": {
+            "type": "boolean"
+          },
+          "inspection": {
+            "$ref": "#/components/schemas/UPPInspection"
+          },
+          "bytes": {
+            "type": "integer"
+          },
+          "template": {
+            "$ref": "#/components/schemas/UPPTemplate"
+          },
+          "error": {
+            "type": "string"
+          }
+        }
+      },
+      "UPPDecoded": {
+        "type": "object",
+        "required": [
+          "name",
+          "major",
+          "minor",
+          "services",
+          "gfste",
+          "elements",
+          "files"
+        ],
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "major": {
+            "type": "integer"
+          },
+          "minor": {
+            "type": "integer"
+          },
+          "profileType": {
+            "type": "string"
+          },
+          "iccid": {
+            "type": "string"
+          },
+          "services": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "gfste": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "elements": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": [
+                "tag",
+                "size"
+              ],
+              "properties": {
+                "tag": {
+                  "type": "string"
+                },
+                "name": {
+                  "type": "string"
+                },
+                "size": {
+                  "type": "integer"
+                }
+              }
+            }
+          },
+          "files": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": [
+                "fid",
+                "bodySize"
+              ],
+              "properties": {
+                "fid": {
+                  "type": "string"
+                },
+                "peName": {
+                  "type": "string"
+                },
+                "bodySize": {
+                  "type": "integer"
+                }
+              }
+            }
+          }
+        }
+      },
+      "ICCIDRangesList": {
+        "type": "object",
+        "description": "All imported ICCID ranges (no paging).",
+        "required": [
+          "items",
+          "total"
+        ],
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ICCIDRange"
+            }
+          },
+          "total": {
+            "type": "integer"
+          }
+        }
+      },
+      "AuditResponse": {
+        "description": "GET /audit answers either the paginated page (default) or the cursor shape when ?afterId= is given.",
+        "oneOf": [
+          {
+            "$ref": "#/components/schemas/AuditPage"
+          },
+          {
+            "$ref": "#/components/schemas/AuditCursor"
+          }
+        ]
       }
     },
     "responses": {
@@ -621,7 +1793,14 @@
         "summary": "List tenants",
         "responses": {
           "200": {
-            "description": "OK"
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TenantsList"
+                }
+              }
+            }
           }
         }
       },
@@ -642,10 +1821,27 @@
         },
         "responses": {
           "200": {
-            "description": "OK"
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Tenant"
+                }
+              }
+            }
           },
           "400": {
             "$ref": "#/components/responses/Error"
+          },
+          "201": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Tenant"
+                }
+              }
+            }
           }
         }
       }
@@ -668,7 +1864,14 @@
         "summary": "Get a tenant (including its resource `usage` counts, N3)",
         "responses": {
           "200": {
-            "description": "OK"
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Tenant"
+                }
+              }
+            }
           },
           "404": {
             "$ref": "#/components/responses/Error"
@@ -692,7 +1895,14 @@
         },
         "responses": {
           "200": {
-            "description": "OK"
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Tenant"
+                }
+              }
+            }
           },
           "400": {
             "$ref": "#/components/responses/Error"
@@ -812,7 +2022,14 @@
         ],
         "responses": {
           "200": {
-            "description": "OK"
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProfilesPage"
+                }
+              }
+            }
           }
         }
       },
@@ -838,7 +2055,14 @@
         },
         "responses": {
           "201": {
-            "description": "Created"
+            "description": "Created",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Profile"
+                }
+              }
+            }
           },
           "400": {
             "$ref": "#/components/responses/Error"
@@ -881,7 +2105,14 @@
         ],
         "responses": {
           "200": {
-            "description": "OK"
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StatsBuckets"
+                }
+              }
+            }
           }
         }
       }
@@ -894,7 +2125,14 @@
         "summary": "Apply an action (confirm|cancel|release|delete) to a list of ICCIDs",
         "responses": {
           "200": {
-            "description": "OK"
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BulkProfileResult"
+                }
+              }
+            }
           }
         }
       }
@@ -907,7 +2145,14 @@
         "summary": "Export profiles (format=csv|json, same filters as the list)",
         "responses": {
           "200": {
-            "description": "OK"
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProfilesPage"
+                }
+              }
+            }
           }
         }
       }
@@ -925,7 +2170,14 @@
         ],
         "responses": {
           "200": {
-            "description": "OK"
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ImportResult"
+                }
+              }
+            }
           }
         },
         "requestBody": {
@@ -975,7 +2227,14 @@
         "summary": "Get a profile",
         "responses": {
           "200": {
-            "description": "OK"
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Profile"
+                }
+              }
+            }
           },
           "404": {
             "$ref": "#/components/responses/Error"
@@ -989,7 +2248,14 @@
         "summary": "Update mutable profile fields",
         "responses": {
           "200": {
-            "description": "OK"
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Profile"
+                }
+              }
+            }
           }
         }
       },
@@ -1013,7 +2279,14 @@
         "summary": "Merged order + notification + session + audit timeline for a profile",
         "responses": {
           "200": {
-            "description": "OK"
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProfileTimeline"
+                }
+              }
+            }
           }
         }
       }
@@ -1026,7 +2299,24 @@
         "summary": "Confirm the download order",
         "responses": {
           "200": {
-            "description": "OK"
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Profile"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Profile"
+                }
+              }
+            }
           }
         }
       }
@@ -1039,7 +2329,24 @@
         "summary": "Cancel the download order (returns the ICCID to the pool)",
         "responses": {
           "200": {
-            "description": "OK"
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Profile"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Profile"
+                }
+              }
+            }
           }
         }
       }
@@ -1052,7 +2359,24 @@
         "summary": "Release the profile",
         "responses": {
           "200": {
-            "description": "OK"
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Profile"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Profile"
+                }
+              }
+            }
           }
         }
       }
@@ -1078,7 +2402,14 @@
         ],
         "responses": {
           "200": {
-            "description": "OK"
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ActivationCode"
+                }
+              }
+            }
           }
         }
       }
@@ -1096,7 +2427,14 @@
         ],
         "responses": {
           "200": {
-            "description": "OK"
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UPPTemplatesList"
+                }
+              }
+            }
           }
         }
       },
@@ -1133,7 +2471,14 @@
         },
         "responses": {
           "200": {
-            "description": "OK"
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UPPTemplate"
+                }
+              }
+            }
           },
           "400": {
             "$ref": "#/components/responses/Error"
@@ -1172,7 +2517,17 @@
         },
         "responses": {
           "200": {
-            "description": "OK"
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UPPValidation"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
           }
         }
       }
@@ -1185,7 +2540,14 @@
         "summary": "Dry-run: render a template with personalization values (allocates nothing)",
         "responses": {
           "200": {
-            "description": "OK"
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UPPRender"
+                }
+              }
+            }
           },
           "400": {
             "$ref": "#/components/responses/Error"
@@ -1214,7 +2576,14 @@
         "summary": "Get UPP metadata",
         "responses": {
           "200": {
-            "description": "OK"
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UPPTemplate"
+                }
+              }
+            }
           },
           "404": {
             "$ref": "#/components/responses/Error"
@@ -1241,7 +2610,15 @@
         "summary": "Download the UPP DER",
         "responses": {
           "200": {
-            "description": "OK"
+            "description": "OK",
+            "content": {
+              "application/octet-stream": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              }
+            }
           }
         }
       }
@@ -1254,7 +2631,14 @@
         "summary": "Decoded UPP view (header, services, GFSTE, elements, files)",
         "responses": {
           "200": {
-            "description": "OK"
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UPPDecoded"
+                }
+              }
+            }
           }
         }
       }
@@ -1267,7 +2651,14 @@
         "summary": "Personalization field schema (types, required, length constraints)",
         "responses": {
           "200": {
-            "description": "OK"
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UPPSchema"
+                }
+              }
+            }
           }
         }
       }
@@ -1280,7 +2671,14 @@
         "summary": "Enable a UPP template",
         "responses": {
           "200": {
-            "description": "OK"
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UPPTemplate"
+                }
+              }
+            }
           }
         }
       }
@@ -1293,7 +2691,14 @@
         "summary": "Disable a UPP template",
         "responses": {
           "200": {
-            "description": "OK"
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UPPTemplate"
+                }
+              }
+            }
           }
         }
       }
@@ -1323,7 +2728,24 @@
         },
         "responses": {
           "201": {
-            "description": "Created"
+            "description": "Created",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UPPTemplate"
+                }
+              }
+            }
+          },
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UPPTemplate"
+                }
+              }
+            }
           }
         }
       }
@@ -1336,7 +2758,14 @@
         "summary": "Promote a tenant template to global (tenant_id = NULL)",
         "responses": {
           "200": {
-            "description": "OK"
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UPPTemplate"
+                }
+              }
+            }
           }
         }
       }
@@ -1360,7 +2789,14 @@
         ],
         "responses": {
           "200": {
-            "description": "OK"
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BatchesPage"
+                }
+              }
+            }
           }
         }
       },
@@ -1376,7 +2812,14 @@
         ],
         "responses": {
           "201": {
-            "description": "Created"
+            "description": "Created",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Batch"
+                }
+              }
+            }
           }
         }
       }
@@ -1399,7 +2842,14 @@
         "summary": "Get a batch and its state breakdown",
         "responses": {
           "200": {
-            "description": "OK"
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BatchDetail"
+                }
+              }
+            }
           }
         }
       },
@@ -1423,7 +2873,14 @@
         "summary": "List the profiles in a batch",
         "responses": {
           "200": {
-            "description": "OK"
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProfilesPage"
+                }
+              }
+            }
           }
         }
       }
@@ -1436,7 +2893,14 @@
         "summary": "Confirm all profiles in a batch",
         "responses": {
           "200": {
-            "description": "OK"
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BatchActionResult"
+                }
+              }
+            }
           }
         }
       }
@@ -1449,7 +2913,14 @@
         "summary": "Cancel all profiles in a batch",
         "responses": {
           "200": {
-            "description": "OK"
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BatchActionResult"
+                }
+              }
+            }
           }
         }
       }
@@ -1533,7 +3004,14 @@
         ],
         "responses": {
           "200": {
-            "description": "OK"
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuditResponse"
+                }
+              }
+            }
           }
         }
       }
@@ -1571,7 +3049,14 @@
         ],
         "responses": {
           "200": {
-            "description": "OK"
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StatsBuckets"
+                }
+              }
+            }
           }
         }
       }
@@ -1612,7 +3097,14 @@
         ],
         "responses": {
           "200": {
-            "description": "OK"
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NotificationsPage"
+                }
+              }
+            }
           }
         }
       }
@@ -1650,7 +3142,14 @@
         ],
         "responses": {
           "200": {
-            "description": "OK"
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PoolEntriesPage"
+                }
+              }
+            }
           }
         }
       }
@@ -1668,7 +3167,14 @@
         ],
         "responses": {
           "200": {
-            "description": "OK"
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PoolStats"
+                }
+              }
+            }
           }
         }
       }
@@ -1705,7 +3211,14 @@
         },
         "responses": {
           "200": {
-            "description": "OK"
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReserveICCIDResult"
+                }
+              }
+            }
           },
           "409": {
             "$ref": "#/components/responses/Error"
@@ -1721,7 +3234,14 @@
         "summary": "Return an ICCID to the pool",
         "responses": {
           "200": {
-            "description": "OK"
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ICCIDStateResult"
+                }
+              }
+            }
           }
         }
       }
@@ -1734,7 +3254,14 @@
         "summary": "Block an ICCID",
         "responses": {
           "200": {
-            "description": "OK"
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ICCIDStateResult"
+                }
+              }
+            }
           }
         }
       }
@@ -1752,7 +3279,14 @@
         ],
         "responses": {
           "200": {
-            "description": "OK"
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ICCIDRangesList"
+                }
+              }
+            }
           }
         }
       },
@@ -1791,7 +3325,24 @@
         },
         "responses": {
           "201": {
-            "description": "Created"
+            "description": "Created",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RangeImportResult"
+                }
+              }
+            }
+          },
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RangeImportResult"
+                }
+              }
+            }
           }
         }
       }
@@ -1814,7 +3365,14 @@
         "summary": "Delete an ICCID range",
         "responses": {
           "200": {
-            "description": "OK"
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RangeDeleteResult"
+                }
+              }
+            }
           }
         }
       }
@@ -1855,7 +3413,14 @@
         ],
         "responses": {
           "200": {
-            "description": "OK"
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PersonalizationPage"
+                }
+              }
+            }
           }
         }
       }
@@ -1868,7 +3433,14 @@
         "summary": "Export personalization (format=csv|json; includes K/OPc)",
         "responses": {
           "200": {
-            "description": "OK"
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PersonalizationPage"
+                }
+              }
+            }
           }
         }
       }
@@ -1881,7 +3453,14 @@
         "summary": "Bulk import personalization records",
         "responses": {
           "200": {
-            "description": "OK"
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ImportResult"
+                }
+              }
+            }
           }
         }
       }
@@ -1915,7 +3494,14 @@
         },
         "responses": {
           "200": {
-            "description": "OK"
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PoolImportResult"
+                }
+              }
+            }
           }
         }
       }
@@ -1938,7 +3524,14 @@
         "summary": "Get a record (?reveal=1 to include K/OPc)",
         "responses": {
           "200": {
-            "description": "OK"
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Personalization"
+                }
+              }
+            }
           },
           "404": {
             "$ref": "#/components/responses/Error"
@@ -1952,7 +3545,14 @@
         "summary": "Create/replace a record",
         "responses": {
           "200": {
-            "description": "OK"
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Personalization"
+                }
+              }
+            }
           }
         }
       },
@@ -2030,7 +3630,14 @@
         ],
         "responses": {
           "200": {
-            "description": "OK"
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EventsPage"
+                }
+              }
+            }
           }
         }
       },
@@ -2089,7 +3696,14 @@
         },
         "responses": {
           "201": {
-            "description": "Created"
+            "description": "Created",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Event"
+                }
+              }
+            }
           },
           "400": {
             "$ref": "#/components/responses/Error"
@@ -2163,7 +3777,14 @@
         ],
         "responses": {
           "200": {
-            "description": "OK"
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EIDsPage"
+                }
+              }
+            }
           }
         }
       }
@@ -2214,7 +3835,14 @@
         ],
         "responses": {
           "200": {
-            "description": "OK"
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CallbacksPage"
+                }
+              }
+            }
           }
         }
       }
@@ -2238,7 +3866,14 @@
         "summary": "Re-queue one dead-lettered callback (resets attempts and delivers immediately)",
         "responses": {
           "200": {
-            "description": "OK"
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Callback"
+                }
+              }
+            }
           },
           "404": {
             "$ref": "#/components/responses/Error"
@@ -2280,7 +3915,14 @@
         },
         "responses": {
           "200": {
-            "description": "OK"
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RetryDeadResult"
+                }
+              }
+            }
           },
           "400": {
             "$ref": "#/components/responses/Error"
@@ -2309,7 +3951,14 @@
         ],
         "responses": {
           "200": {
-            "description": "OK"
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UPPVersionsList"
+                }
+              }
+            }
           }
         }
       }
@@ -2343,7 +3992,14 @@
         ],
         "responses": {
           "200": {
-            "description": "OK"
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UPPTemplate"
+                }
+              }
+            }
           },
           "404": {
             "$ref": "#/components/responses/Error"

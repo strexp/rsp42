@@ -173,6 +173,8 @@ func (h *Handler) downloadOrder(w http.ResponseWriter, r *http.Request) {
 		// from "this ICCID cannot be issued" (8.2.1/3.3) and a generic
 		// allocation failure (8.2/4.2).
 		switch {
+		case errors.Is(err, service.ErrInvalidICCID):
+			writeFailure(w, rsp.CodeInvalidRequest, err.Error())
 		case errors.Is(err, service.ErrQuotaExceeded):
 			writeFailure(w, rsp.CodeNoMoreProfileAvailable, err.Error())
 		case errors.Is(err, service.ErrICCIDInUse):

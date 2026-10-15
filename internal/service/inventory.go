@@ -63,6 +63,12 @@ type AllocateRequest struct {
 // ErrQuotaExceeded indicates that a tenant quota is exhausted.
 var ErrQuotaExceeded = errors.New("service: quota exceeded")
 
+// ErrInvalidICCID reports an operator-supplied ICCID that is not syntactically
+// valid (19 or 20 digits with a valid Luhn check digit). It is separate from
+// ErrICCIDInUse so the interfaces can answer "invalid request" instead of a
+// conflict (the ES2+ and admin layers have different codes for the two).
+var ErrInvalidICCID = errors.New("service: invalid iccid")
+
 // ErrICCIDInUse indicates that an operator-supplied ICCID cannot be issued
 // (already in use, blocked, or otherwise unavailable). It lets the ES2+ layer
 // answer 8.2.1/3.3 instead of a generic allocation failure (C3).
@@ -141,7 +147,7 @@ func (inv *Inventory) Allocate(req AllocateRequest) (*store.Profile, error) {
 	if req.ICCID != "" {
 		iccid, err := canonicalICCID(req.ICCID)
 		if err != nil {
-			return nil, err
+			return nil, fmt.Errorf("%w: %w", ErrInvalidICCID, err)
 		}
 		// Table 24 NOTE (SGP.22 §5.3.1): when the Profile is already in
 		// Allocated/Linked state and this call would produce the same result,
