@@ -288,3 +288,34 @@ func (r *ProfileRepo) ListEIDs(f ProfileFilter, limit, offset int) ([]EIDSummary
 	}
 	return out, total, rows.Err()
 }
+
+var profileGroupBy = map[string]string{
+	"state":        "state",
+	"tenant":       "COALESCE(tenant_id,'')",
+	"profile_type": "COALESCE(profile_type,'')",
+	"day":          "strftime('%Y-%m-%d', created_at, 'unixepoch')",
+}
+
+// Stats returns profile counts grouped by groupBy ("state" by default).
+func (r *ProfileRepo) Stats(f ProfileFilter, groupBy string) ([]StatCount, error) {
+	expr, err := statGroupBy(groupBy, profileGroupBy, "state")
+	if err != nil {
+		return nil, err
+	}
+	conds, args := profileWhere(f)
+	rows, err := r.db.Query(`SELECT `+expr+` AS k, COUNT(*) FROM profiles`+buildWhere(conds)+
+		` GROUP BY k ORDER BY COUNT(*) DESC, k ASC`, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = rows.Close() }()
+	out := []StatCount{}
+	for rows.Next() {
+		var sc StatCount
+		if err := rows.Scan(&sc.Key, &sc.Count); err != nil {
+			return nil, err
+		}
+		out = append(out, sc)
+	}
+	return out, rows.Err()
+}

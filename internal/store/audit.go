@@ -202,3 +202,36 @@ func (r *AuditRepo) List(limit int) ([]*AuditEntry, error) {
 	}
 	return out, rows.Err()
 }
+
+var auditGroupBy = map[string]string{
+	"function":  "COALESCE(function,'')",
+	"tenant":    "COALESCE(tenant_id,'')",
+	"interface": "COALESCE(interface,'')",
+	"outcome":   "COALESCE(outcome,'')",
+	"actor":     "COALESCE(actor,'')",
+	"day":       "strftime('%Y-%m-%d', ts, 'unixepoch')",
+}
+
+// Stats returns audit counts grouped by groupBy ("function" by default).
+func (r *AuditRepo) Stats(f AuditFilter, groupBy string) ([]StatCount, error) {
+	expr, err := statGroupBy(groupBy, auditGroupBy, "function")
+	if err != nil {
+		return nil, err
+	}
+	conds, args := auditWhere(f)
+	rows, err := r.db.Query(`SELECT `+expr+` AS k, COUNT(*) FROM audit_log`+buildWhere(conds)+
+		` GROUP BY k ORDER BY COUNT(*) DESC, k ASC`, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = rows.Close() }()
+	out := []StatCount{}
+	for rows.Next() {
+		var sc StatCount
+		if err := rows.Scan(&sc.Key, &sc.Count); err != nil {
+			return nil, err
+		}
+		out = append(out, sc)
+	}
+	return out, rows.Err()
+}
