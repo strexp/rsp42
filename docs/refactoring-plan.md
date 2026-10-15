@@ -265,8 +265,37 @@
 
 | 阶段 | 提交 | 状态 |
 |---|---|---|
-| 0 护栏 | — | 待开始 |
-| 1 机械搬移 | — | 待开始 |
+| 0 护栏 | `95fdb62` | 完成（`internal/archcheck`：层次边、叶子包、bertlv 单点引用；`testutil` 规则随 1.1 加入） |
+| 1 机械搬移 | 见下表 | 完成 |
 | 2 包边界 | — | 待开始 |
 | 3 去重与接口 | — | 待开始 |
 | 4 文档对齐 | — | 待开始 |
+
+### 阶段 1 明细
+
+| # | 提交 | 内容 |
+|---|---|---|
+| 1.1 | `cf3162f` | `testutil/mockoperator` → `internal/mockoperator`；`admin mock-operator` 命令保留；archcheck 加入 testutil 规则 |
+| 1.2 | `7c72c86` | 删除 `cert/config.go`，配置映射移入组合根；`cert` 不再 import `config` |
+| 1.3 | `8ee6ebc` | `service/cert_verify.go` → `internal/cert`（含测试）；`ecdsaKey` 保留在 service 以冻结错误文本 |
+| 1.4 | `7ae663f` | `service/iccid_decode.go` → `iccid.DecodeBCD`（含特征化测试） |
+| 1.5 | `f5a3864` | `service/upp_inspect.go` → `internal/uppinspect` |
+| 1.6 | `089a937` | `service/address.go` → `rsp.AddressMatches`（含测试） |
+| 1.7 | `6e9e3a5` | `service/smdsc.go` → `internal/client/es12`；service 不再 import `net/http` |
+| 1.8 | `8381d13` | `rsp.tlvBytes` → `asn1.RawTagged`；能力测试移入 `internal/asn1` |
+| 1.9 | `adbad87` | 新增 `internal/hexutil`，收敛 8 处 uppercase-hex |
+| 1.10 | `d28da16` | 删除死代码（`asn1bind.SubjectCode`、`ICCIDPoolEntry.Expired`、`RenderResult`、`ClampSize/ClampPage` 收私有）与 9 段孤儿注释 |
+| 1.11 | `25216df` | 状态码词表 → `internal/rsp/status`（rsp 自身不引用它） |
+
+### 执行期间的偏差（已判定，不影响目标）
+
+1. **`internal/testutil` 的手写 TLV 编码器保留**。1.8 原计划"一并收敛"，但
+   `length_test_helper.go` 的注释明确要求测试用独立编码器构造期望值（否则测试会与
+   被测产品编码器"共同出错"）。这是有意的独立性，故保留并在此登记。
+2. **`middleware.Chain` 保留**。它无生产调用方，但 `cors_test.go` 用它作为测试
+   helper；删除需要改写测试，收益不足。
+3. **`rsp.GetByName` / `SelectBest` / `BindPair` 保留**。均为导出 API，生产无调用，
+   但被各自包的测试直接使用；按"零引用才删"的保守口径保留。
+4. **1.11 采用整体迁移（而非在 `rsp` 保留别名）**。因为 `rsp` 自身对状态码零引用，
+   迁移后两个包完全解耦；保留别名只能做到"同一实现两个名字"，无法消除 `rsp` 依赖。
+
