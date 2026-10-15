@@ -31,6 +31,20 @@ type certProvider interface {
 	CI() *x509.Certificate
 }
 
+// ecdsaKey asserts that a crypto.Signer is an ECDSA private key.
+//
+// It wraps cert.ECDSAKey because the message reaches the ES9+ client through
+// common.WriteStatusFailure, which renders a non-StatusCode error as the
+// failure message: the text and its "service:" prefix are part of the observed
+// response and must not move with the helper.
+func ecdsaKey(s stdcrypto.Signer) (*ecdsa.PrivateKey, error) {
+	k, ok := cert.ECDSAKey(s)
+	if !ok {
+		return nil, fmt.Errorf("service: key is not ECDSA")
+	}
+	return k, nil
+}
+
 // cmKind classifies a CMAE failure so each role can map it to its own
 // interface-specific status code (ES9+ 8.x vs ES11 8.9.x).
 type cmKind int
@@ -222,7 +236,7 @@ func (c *cmaeCore) verify(transactionID string, authenticateServerResponse []byt
 	if err != nil {
 		return nil, cmErr(cmCertChain, "invalid EUM certificate")
 	}
-	intermediates, err := parseCertificates(ok.OtherCertsInChain)
+	intermediates, err := cert.ParseCertificates(ok.OtherCertsInChain)
 	if err != nil {
 		return nil, cmErr(cmCertChain, "invalid certificate in otherCertsInChain")
 	}
@@ -230,7 +244,7 @@ func (c *cmaeCore) verify(transactionID string, authenticateServerResponse []byt
 	if id := c.certs.IdentityByCIKeyID(sess.CICertID); id != nil {
 		ci = id.CI
 	}
-	if err := validateEUICCChain(euiccCert, eumCert, intermediates, ci, sess.CICertID); err != nil {
+	if err := cert.ValidateEUICCChain(euiccCert, eumCert, intermediates, ci, sess.CICertID); err != nil {
 		return nil, cmErr(cmCertChain, err.Error())
 	}
 
@@ -258,7 +272,7 @@ func (c *cmaeCore) verify(transactionID string, authenticateServerResponse []byt
 		return nil, cmErr(cmChallengeMismatch, "serverChallenge mismatch")
 	}
 
-	eid := eidFromCert(euiccCert)
+	eid := cert.EIDFromCert(euiccCert)
 	if eid == "" {
 		return nil, cmErr(cmEID, "eUICC certificate has no EID")
 	}

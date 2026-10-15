@@ -1,4 +1,4 @@
-package service
+package cert
 
 import (
 	"crypto/ecdsa"
@@ -52,14 +52,14 @@ func TestValidateEUICCChainWithIntermediate(t *testing.T) {
 	euicc, _ := genTestCert(t, "eUICC", false, eum, eumKey)
 
 	// Without the intermediate the chain cannot reach the CI.
-	require.Error(t, validateEUICCChain(euicc, eum, nil, ci, ci.SubjectKeyId))
+	require.Error(t, ValidateEUICCChain(euicc, eum, nil, ci, ci.SubjectKeyId))
 
 	// With otherCertsInChain the chain verifies.
-	require.NoError(t, validateEUICCChain(euicc, eum, []*x509.Certificate{inter}, ci, ci.SubjectKeyId))
+	require.NoError(t, ValidateEUICCChain(euicc, eum, []*x509.Certificate{inter}, ci, ci.SubjectKeyId))
 
 	// An unrelated trust anchor is rejected.
 	other, _ := genTestCert(t, "Other", true, nil, nil)
-	require.Error(t, validateEUICCChain(euicc, eum, []*x509.Certificate{inter}, other, other.SubjectKeyId))
+	require.Error(t, ValidateEUICCChain(euicc, eum, []*x509.Certificate{inter}, other, other.SubjectKeyId))
 }
 
 func TestValidateEUICCChainDirect(t *testing.T) {
@@ -67,8 +67,8 @@ func TestValidateEUICCChainDirect(t *testing.T) {
 	eum, eumKey := genTestCert(t, "EUM", true, ci, ciKey)
 	euicc, _ := genTestCert(t, "eUICC", false, eum, eumKey)
 
-	require.NoError(t, validateEUICCChain(euicc, eum, nil, ci, ci.SubjectKeyId))
+	require.NoError(t, ValidateEUICCChain(euicc, eum, nil, ci, ci.SubjectKeyId))
 	// EUM must be signed by the selected CI (AKI/SKI shortcut).
 	other, _ := genTestCert(t, "Other", true, nil, nil)
-	require.Error(t, validateEUICCChain(euicc, eum, nil, other, other.SubjectKeyId))
+	require.Error(t, ValidateEUICCChain(euicc, eum, nil, other, other.SubjectKeyId))
 }

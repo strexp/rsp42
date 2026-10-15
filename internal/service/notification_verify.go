@@ -4,6 +4,7 @@ import (
 	"crypto/ecdsa"
 	"crypto/x509"
 
+	"rsp42/internal/cert"
 	"rsp42/internal/crypto"
 	"rsp42/internal/rsp"
 	"rsp42/internal/store"
@@ -113,7 +114,7 @@ func (n *NotificationService) verifyOtherSigned(o *rsp.OtherSignedNotification) 
 		if ci == nil {
 			ci = n.Deps.Certs.CI()
 		}
-		if err := validateEUICCChain(euicc, eum, nil, ci, ci.SubjectKeyId); err != nil {
+		if err := cert.ValidateEUICCChain(euicc, eum, nil, ci, ci.SubjectKeyId); err != nil {
 			return false
 		}
 	}
