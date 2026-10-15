@@ -28,9 +28,11 @@ purpose.
 | `modernc.org/sqlite` | v1.60.1 | BSD-3-Clause | Pure-Go SQLite driver |
 | `github.com/pressly/goose/v3` | v3.28.0 | MIT | Database migrations |
 | `github.com/spf13/viper` | v1.21.0 | MIT | Configuration loading |
+| `github.com/go-viper/mapstructure/v2` | v2.4.0 | MIT | Configuration decoding hooks (viper's decoder) |
 | `github.com/google/uuid` | v1.6.0 | BSD-3-Clause | Transaction IDs, request IDs |
 | `github.com/stretchr/testify` | v1.12.1 | MIT | Test assertions |
-| `github.com/santhosh-tekuri/jsonschema/v6` | v6.0.3 | BSD-3-Clause | Management-API contract tests: the handlers' responses are validated against the schemas embedded in `internal/api/admin/openapi/openapi.json` |
+| `golang.org/x/sync` | v0.23.0 | BSD-3-Clause | `errgroup` for the listener/role lifecycle |
+| `github.com/santhosh-tekuri/jsonschema/v6` | v6.0.3 | Apache-2.0 | Management-API contract tests: the handlers' responses are validated against the schemas embedded in `internal/api/admin/openapi/openapi.json` |
 | `github.com/skip2/go-qrcode` | v0.0.0-20200617195104-da1b6568686e | MIT | Activation-code QR rendering |
 
 The Go standard library (`crypto/*`, `net/http`, `log/slog`, `encoding/*`) covers

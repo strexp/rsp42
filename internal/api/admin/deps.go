@@ -13,12 +13,11 @@ import (
 
 // The management API declares the seams it uses, so the HTTP layer names the
 // behaviour it needs rather than the SQLite repositories and concrete services
-// (docs/refactoring-plan.md 阶段 3). The concrete types satisfy these
-// structurally, so the composition root needs no change, and the assertions
-// below keep that true.
+// (docs/architecture.md, "Dependency direction"). The concrete types satisfy
+// these structurally, so the composition root needs no change, and the
+// assertions below keep that true.
 //
-// The interfaces are grouped per resource aggregate, which is also the shape the
-// handler split (阶段 4) will take.
+// The interfaces are grouped per resource aggregate.
 
 // TenantStore is the tenant registry used by the tenant endpoints.
 type TenantStore interface {

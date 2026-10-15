@@ -48,9 +48,9 @@ make lint         # requires golangci-lint
 ## Test data
 
 The test suite needs the SGP.26 certificates and the TS.48 UPP templates, which
-are generated into `testdata/` (and are not committed). `make testdata` fetches
-them from public upstreams by default; override `SGP26_SRC` / `UPP_SRC` with
-local paths to use material you already have:
+are generated into `testdata/` (committed; `.dockerignore` keeps them out of the
+image). `make testdata` fetches them from public upstreams by default; override
+`SGP26_SRC` / `UPP_SRC` with local paths to use material you already have:
 
 ```sh
 make testdata
@@ -80,8 +80,9 @@ download batches, UPP registry, personalization; see `docs/interfaces.md` and
 `GET /admin/api/v1/openapi.json`). It has no authentication; deploy it on a
 trusted network.
 
-Configuration is a single YAML file; every value can be overridden through
-`RSP42_`-prefixed environment variables (see `config/config.example.yaml`).
+Configuration is a single YAML file; every scalar value can be overridden through
+`RSP42_`-prefixed environment variables (see `config/config.example.yaml`);
+structured values (`certs.identities`, `*.requester_tenants`) stay in YAML.
 
 ## Container
 

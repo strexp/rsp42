@@ -155,7 +155,7 @@ func TestValidateOID(t *testing.T) {
 	require.Error(t, validateOID("2.abc"))
 	require.Error(t, validateOID(""))
 	// These used to pass validation and then panic in asn1.EncodeOID during
-	// BPP generation (see docs/refactoring-plan.md 阶段 1.1).
+	// BPP generation.
 	require.Error(t, validateOID("2"), "single arc must be rejected")
 	require.Error(t, validateOID("9.1.2"), "first arc must be 0, 1 or 2")
 	require.Error(t, validateOID("1.40.1"), "second arc must be <= 39 when the first arc is < 2")

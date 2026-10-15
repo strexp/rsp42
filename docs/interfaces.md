@@ -26,7 +26,10 @@ use the JSON binding only (as the specification mandates).
 | CancelSession | `POST /gsma/rsp2/es9plus/cancelSession` |
 
 `initiateAuthentication` request: `{euiccChallenge, euiccInfo1, smdpAddress}`.
-`authenticateClient` request: `{transactionId, authenticateServerResponse}`.
+`authenticateClient` request: `{transactionId, authenticateServerResponse}`, plus
+the optional `useMatchingIdForAcr` boolean of §6.5.2.8. The member is accepted
+but ignored: ACR is detected from the ACR-shaped MatchingID
+(`ACR-<0|1>-<ICCID>`, §4.9.1) carried in `ctxParams1`, not from the flag.
 `getBoundProfilePackage` request: `{transactionId, prepareDownloadResponse}`.
 
 ## ES2+ (SM-DP+, Operator-facing, mTLS)
@@ -44,8 +47,10 @@ fallback is recorded on the audit row as `detail.warning=unmapped` together with
 `detail.requester`, and counted in `rsp42_es2p_tenant_unmapped_total`, so an
 operator health check can alert on a carrier that was never registered. With an
 empty `requester_tenants` table nothing is flagged: a single-tenant deployment
-has nothing to map. A tenant may only operate on its own ICCIDs: using another
-tenant's ICCID answers `8.2.1/1.2`, and using another tenant's Profile
+has nothing to map. A tenant may only operate on its own ICCIDs: a foreign ICCID
+answers `8.2.1/1.2` on the order functions that address an existing Profile
+(`confirmOrder`, `cancelOrder`, `releaseProfile`), while `downloadOrder` answers
+`8.2.1/3.3` (the ICCID cannot be issued); using another tenant's Profile
 Type/template answers `8.2.5/1.2`.
 
 ### Profile/template selection
@@ -90,7 +95,8 @@ failure is `8.2/4.2` (C3).
 Per Table 24 NOTE, a repeated `downloadOrder` naming an ICCID that already
 exists in `Allocated`/`Linked` with the same tenant, `profileType` and EID
 answers `Executed-Success` with that ICCID and performs no further action, so an
-operator retry after a lost response is safe.
+operator retry after a lost response is safe. The comparison is on the supplied
+values only: an omitted `profileType`/`eid` matches any stored one.
 
 ### ConfirmOrder verifications
 
@@ -251,12 +257,17 @@ branch correctly:
 | The requested ICCID cannot be issued (in use / blocked) | `8.2.1/3.3` |
 | No template compatible with the eUICC's SAIP versions (N12) | `8.2.6/3.8` + readable message |
 
-`8.2.6/3.8` is overloaded by the specification and covers both "this Profile is
-not eligible for this EID/order" (`CodeProfileNotEligible`) and "no SAIP
-template is compatible with this eUICC" (`CodeProfileVersionNotSupported`, N12);
-there is no dedicated subject/reason pair for the latter. Callers must branch on
-the `message` in addition to the code. To keep the two machine-distinguishable
-where the code cannot, the version case always uses a stable message prefix
+`8.2.6/3.8` is Table 43's "MatchingID (AC_Token or EventID) is refused": it is
+used by `CodeProfileNotEligible` when the MatchingID cannot be resolved (empty
+or unknown). It is not the "no eligible Profile" row — Table 43 gives that as
+`8.2.5/4.3` ("No eligible Profile for this eUICC/Device"), used by
+`CodeNoEligibleProfile` when the Profile would carry a PPR the eUICC forbids.
+
+The SAIP-version case (`CodeProfileVersionNotSupported`, N12) has no
+subject/reason row of its own in SGP.22, so reusing `8.2.6/3.8` is a deliberate
+non-spec choice rather than a spec overload. Callers must branch on the
+`message` to tell it from the MatchingID-refused case. To keep the two
+machine-distinguishable, the version case always uses a stable message prefix
 (`no UPP template compatible with the eUICC's SAIP versions …`, or the
 no-version-at-all variant `eUICC advertised no usable SAIP profile version …`)
 and records `euiccProfileVersion`, `supportedVersions` and
@@ -293,7 +304,7 @@ schema (`internal/api/admin/contract_test.go`).
 | Profiles | `GET/POST /profiles`, `GET/PATCH/DELETE /profiles/{iccid}`, `POST /profiles/{iccid}/confirm\|cancel\|release`, `POST /profiles/{iccid}/activation-code` (`?rotate=1`), `GET /profiles/{iccid}/timeline` (orders + notifications + sessions + audit), `POST /profiles/bulk`, `GET /profiles/stats` |
 | Download batches | `GET/POST /batches`, `GET/DELETE /batches/{id}`, `GET /batches/{id}/items`, `POST /batches/{id}/confirm\|cancel` |
 | UPP registry | `GET/POST /upp`, `POST /upp/validate` (`valid` + `errors[]`/`warnings[]`), `POST /upp/render` (accepts `name` or an ad-hoc base64 `data`, N5), `GET/DELETE /upp/{name}`, `GET /upp/{name}/bytes`, `GET /upp/{name}/decoded`, `GET /upp/{name}/schema` (per-template `applicable`/`targets[]`/`requiredIn[]`, N4), `POST /upp/{name}/activate\|deactivate\|clone\|promote`, `GET /upp/{name}/versions`, `POST /upp/{name}/versions/{id}/restore` |
-| Personalization | `GET /personalization`, `GET/PUT/DELETE /personalization/{iccid}` (`?reveal=1` includes K/OPc), `POST /personalization/import`, `POST /personalization/pool/import` (IMSI+K/OPc, no ICCID), `GET /personalization/export` |
+| Personalization | `GET /personalization`, `GET/PUT/DELETE /personalization/{iccid}` (`GET` accepts `?reveal=1` to include K/OPc), `POST /personalization/import`, `POST /personalization/pool/import` (IMSI+K/OPc, no ICCID), `GET /personalization/export` |
 | ICCID pool | `GET /iccid-pool`, `GET /iccid-pool/stats`, `POST /iccid-pool/reserve\|release\|block`, `GET/POST /iccid-ranges`, `DELETE /iccid-ranges/{id}` |
 | Export/import | `GET /profiles/export?format=csv\|json`, `POST /profiles/import` (`application/json` or `text/csv`) |
 | Devices | `GET /eids` (profiles aggregated per eUICC) |
@@ -326,10 +337,17 @@ interface remains the normal registration path.
   appear on the file kinds that allow them, the declared file type may not
   differ from the template's, and `shortEFID`/`fileID` are unique within their
   file-system scope;
-- **ASN.1 value domains** (R1): the `SIZE(...)` and integer ranges of the
-  V2.3.1 definitions, for the profile header (`iccid` is 10 octets,
-  `profileType` 1..100), every `Fcp` field (including `ProprietaryInfo`), the
-  PIN/PUK values, the AKA parameters and the CDMA parameters.
+- **ASN.1 value domains** (R1): only the `SIZE(...)` and fixed entry-count
+  constraints listed here are enforced. ProfileHeader: `iccid` is 10 octets,
+  `profileType` 1..100. `Fcp`: `fileDescriptor` 2..4, `fileID` 2, `dfName`
+  5..16, `lcsi` 1, `securityAttributesReferenced` 1..3, `shortEFID` 0..1, and
+  `ProprietaryInfo.specialFileInformation` 1, `fillPattern`/`repeatPattern`
+  1..200. `PE-PINCodes.pinValue` and `PE-PUKCodes.pukValue` are 8 octets.
+  `AlgoParameter.rotationConstants` 5, `xoringConstants` 80 and
+  `authCounterMax` 3; `PE-AKAParameter.sqnOptions` 1, `sqnDelta` and
+  `sqnAgeLimit` 6, `sqnInit` 32 entries of 6 octets. `PE-CDMAParameter`:
+  `authenticationKey` 8, `ssd` 16, `hrpdAccessAuthenticationData` 2..32,
+  `simpleIPAuthenticationData` 3..483, `mobileIPAuthenticationData` 5..957.
 
 `valid:false` + `errors[]` are hard violations; `warnings[]` are advisories that
 do not block registration (a changed fileID, an additional file that should have
@@ -338,13 +356,21 @@ content is left to the create-command default — §9.1 explicitly allows that).
 
 What is still **not** checked: the *content* of the Annex A default patterns
 (they are not materialised) and the §9.9 access-rule table (the `ARR` column is
-only carried as data). Report to the caller only what the checks above cover.
+only carried as data). In addition, these V2.3.1 value domains are deliberately
+outside the current scope (narrowing the claim rather than expanding the
+validator): `AlgoParameter.algorithmOptions` `SIZE(1)`, the
+`AlgoParameter.algorithmID` enumeration {1,2,3}, the `PINKeyReferenceValue` /
+`PUKKeyReferenceValue` enumerations, and `ProfileHeader.eUICC-Mandatory-AIDs`
+`version` `SIZE(2)`. Report to the caller only what the checks above cover.
 
 ### Tenant scoping and filters
 
-Every list and write accepts `tenant`. On a write the explicit body field wins
-over the query parameter; a non-empty tenant must be registered, otherwise the
-answer is `400 unknown_tenant`. Omit `tenant` to span all owners; pass an empty
+Every list and write accepts `tenant`, with these exceptions: `GET /tenants` and
+`GET /notifications` span all owners regardless, the batch/bulk writes derive the
+owner from the payload, and the `/upp` and `/iccid-ranges` lists accept `tenant`
+but not `page`/`size`. On a write the explicit body field wins over the query
+parameter; a non-empty tenant must be registered, otherwise the answer is
+`400 unknown_tenant`. Omit `tenant` to span all owners; pass an empty
 value to select the **platform default** (`tenant_id IS NULL`), which is where
 platform-owned resources and templates promoted with `/upp/{name}/promote`
 live — it is a real owner, not an "unassigned" bucket. `POST /tenants` is
@@ -393,9 +419,11 @@ paging fields) when `afterId` is given (N1).
 ### Errors
 
 Management API errors are `{"code": "...", "message": "..."}` with the HTTP
-status. Codes are stable and machine-readable (`invalid_request`, `not_found`,
-`conflict`, `not_implemented`, `internal_error`, `unknown_tenant`,
-`idempotency_key_reused`, `idempotency_key_in_flight`).
+status. `code` is either derived from the HTTP status (`invalid_request`,
+`not_found`, `conflict`, `unprocessable_entity`, `internal_error`,
+`not_implemented`, `body_too_large`) or a named exception (`unknown_tenant`,
+`quota_exceeded`, `tenant_in_use`, `saip_version_not_supported`, `invalid_upp`,
+`event_id_in_use`, `idempotency_key_reused`, `idempotency_key_in_flight`).
 
 A syntactically invalid ICCID (not 19/20 digits with a valid Luhn check digit) is
 `400 invalid_request`; a well-formed ICCID that cannot be issued (in use,
@@ -437,6 +465,7 @@ failure rather than a missing series):
 | `rsp42_es12_register_failures_total` | counter | `tenant` | SM-DS event registration/deletion failures |
 | `rsp42_es2p_callback_queue` | gauge | `status` | outbound callback rows by state |
 | `rsp42_iccid_pool` | gauge | `state` | ICCID pool entries by state |
+| `rsp42_smds_events` | gauge | `status` | SM-DS event records by lifecycle status (`active`/`expired`/`deleted`) |
 | `rsp42_session_gc_total`, `rsp42_iccid_reservation_gc_total`, `rsp42_smds_event_gc_total` | counter | — | reclamation counters |
 
 There is no HTTP latency histogram (N9, deferred): measure rsp42 call latency on
@@ -444,5 +473,5 @@ the caller side.
 
 ## Admin CLI
 
-`rsp42 admin migrate|rekey|profile|session|gc|upp|personalization|activation-code|smds|es2p|mock-operator`
+`rsp42 admin migrate|rekey|profile|session|gc|upp|iccid|personalization|activation-code|smds|es2p|mock-operator|version`
 (see `rsp42 admin help`).

@@ -14,7 +14,7 @@ The specification defines no other mandatory SM-DP+/SM-DS functions.
 | GetBoundProfilePackage | ES9+ §5.6.2 | ✅ |
 | AuthenticateClient | ES9+ §5.6.3 | ✅ |
 | HandleNotification | ES9+ §5.6.4 | ✅ |
-| CancelSession | ES9+ §5.6.5 | ✅ |
+| CancelSession | ES9+ §5.6.5 | ◐ (the transactionId is checked and the reason drives the order state; the `euiccCancelSessionSignature` and `smdpOid` verifications of §5.6.5 are the open part — R4 in `docs/esim42-integration-gaps.md`) |
 | DownloadOrder | ES2+ §5.3.1 | ✅ |
 | ConfirmOrder | ES2+ §5.3.2 | ✅ |
 | CancelOrder | ES2+ §5.3.3 | ✅ |
@@ -37,8 +37,8 @@ scope. §5.3.6/§5.3.7 are VOID in v2.7.
 | Profile lifecycle state machine | §3.1.6 Table 6b | ✅ |
 | BPP generation (SCP03t / BSP) incl. PPK | §2.5.4 / §5.5 / Annex G | ✅ |
 | Confirmation code (`hashCc`) | §2.2 | ✅ |
-| ES2+ order-function verifications and status codes | §5.3.1–§5.3.3, Tables 24/27/30 | ✅ (DownloadOrder resend per Table 24 NOTE and the ICCID/Profile-Type codes of Table 24; ConfirmOrder MatchingID uniqueness `8.2.6/3.3`, MatchingID charset (§4.1.1) and the EID rules of Table 27; CancelOrder's mandatory `finalProfileStatusIndicator`, pending-order check, MatchingID/EID association (`8.2.6/3.10`, `8.2.1/3.10`, `8.2.1/3.3`) and the §5.3.3 SM-DS event deletion) |
-| ASN.1 binding (`RemoteProfileProvisioningRequest/Response`, `/gsma/rsp2/asn1`) | §6.6 | ✅ (hand-written; ES9+ and ES11) |
+| ES2+ order-function verifications and status codes | §5.3.1–§5.3.4, Tables 24/27/30/32 | ✅ (DownloadOrder resend per Table 24 NOTE and the ICCID/Profile-Type codes of Table 24; ConfirmOrder MatchingID uniqueness `8.2.6/3.3`, MatchingID charset (§4.1.1) and the EID rules of Table 27; CancelOrder's mandatory `finalProfileStatusIndicator`, pending-order check, MatchingID/EID association (`8.2.6/3.10`, `8.2.1/3.10`, `8.2.1/3.3`) and the §5.3.3 SM-DS event deletion; ReleaseProfile's Confirmed-order check and `8.2.1/3.5`. Not produced: Table 24's `8.2.5/3.8` Profile-Type/ICCID mismatch row — an already-inventoried ICCID answers `8.2.1/3.3`) |
+| ASN.1 binding (`RemoteProfileProvisioningRequest/Response`, `/gsma/rsp2/asn1`) | §6.6 | ✅ (hand-written; ES9+ and ES11. The response nesting deviates — see R3) |
 | Notification handling (install/enable/disable/delete) | §3.5 | ✅ (euiccSignPIR / euiccNotificationSignature verified; unauthenticated notifications are recorded but not acted on) |
 | Certificate chain, role OIDs, EUM nameConstraints/EIN | §4.5.2 | ✅ (expiry checked; CRL out of scope) |
 | Multiple CI identities (SGP.26 variants) | §4.5.2 | ✅ (`certs.identities`; selected by `euiccCiPKIdToBeUsed`) |
@@ -55,8 +55,9 @@ Legend: ✅ implemented, ◐ partial, ✗ not implemented.
 
 ## Notable spec deviations (documented risks)
 
-- **NIST P-256 only**; the Brainpool P256r1 `certs.curve: brainpool` path is not
-  implemented (Go's `crypto/x509` cannot parse Brainpool certificates).
+- **NIST P-256 only**; the Brainpool P256r1 `smdpp.curve`/`smds.curve: brainpool`
+  path is not implemented (Go's `crypto/x509` cannot parse Brainpool
+  certificates).
 - **No online CRL/OCSP**; expiry is validated, revocation is not.
 - **AUTOMATIC TAGS** encoding of a few untagged fields (`SmdpSigned2.ccRequiredFlag`,
   `NotificationMetadata.notificationAddress`) follows the common toolchain
@@ -77,6 +78,8 @@ or the GSMA conformance tooling.
   that fails in the `StoreMetadata`/`ReplaceSessionKeys` phase is the signal to
   revisit the encoder.
 - **R3 — ASN.1 binding response nesting.** On the `application/x-gsma-rsp-asn1`
-  binding the response carries a single `BF39` layer, whereas strict EXPLICIT
-  tagging (as read by `asn1tools` with the GSMA schema) expects two. The JSON
-  binding — the only one used by SM-DP+ callers here — is unaffected.
+  binding every response function carries a single function layer (one `BF39`,
+  `BF3B`, `BF3A`, `BF41` or `BF40`), whereas the extra explicit layer that
+  `AUTOMATIC TAGS` derives for a tagged CHOICE (as read by `asn1tools` with the
+  GSMA schema) expects two. The request direction is unaffected, and so is the
+  JSON binding — the only one used by SM-DP+ callers here.

@@ -59,8 +59,8 @@ docker run -e RSP42_ROLE=smds  -v $PWD/config/config.yaml:/etc/rsp42/config.yaml
 ## Health and shutdown
 
 `/healthz` and `/readyz` on the admin port. SIGINT/SIGTERM trigger a graceful
-shutdown (15s grace). Request bodies are capped (1 MiB control plane, 4 MiB
-ES9+).
+shutdown (15s grace). Request bodies are capped (1 MiB on ES9+/ES11/ES2+/ES12,
+8 MiB on the admin/management API).
 
 ## CORS
 
@@ -131,7 +131,8 @@ rsp42 admin mock-operator            # test-only operator stub
 Online CRL/OCSP is out of scope (expiry is validated, revocation is not). Both
 the JSON binding (§6.5) and the ASN.1 binding (§6.6) are implemented for ES9+ and
 ES11; ES2+/ES12/ES15 use the JSON binding only, as the specification mandates.
-Only NIST P-256 is supported (`certs.curve: brainpool` is not implemented).
+Only NIST P-256 is supported (`smdpp.curve`/`smds.curve: brainpool` is not
+implemented).
 
 Explicit non-goals (decided, not pending — see
 `docs/esim42-integration-gaps.md` §8.4): PostgreSQL/other database backends,

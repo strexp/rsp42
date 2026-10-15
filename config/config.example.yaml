@@ -1,8 +1,9 @@
 # rsp42 configuration (example).
 #
-# Copy to config/config.yaml and adjust. Every value can be overridden with an
-# environment variable prefixed RSP42_, using underscores for nesting, e.g.
-# RSP42_SMDPP_FQDN or RSP42_SMDPP_SERVER_ES9P_PORT.
+# Copy to config/config.yaml and adjust. Every scalar value can be overridden
+# with an environment variable prefixed RSP42_, using underscores for nesting,
+# e.g. RSP42_SMDPP_FQDN or RSP42_SMDPP_SERVER_ES9P_PORT. Structured values
+# (certs.identities, *.requester_tenants) are YAML-only.
 #
 # The SM-DP+ (`smdpp`) and SM-DS (`smds`) are peers with equal standing; neither
 # is the default. Run the one you want:
@@ -214,6 +215,7 @@ notifications:
 kms:
   provider: "file"
   kek_hex: "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f"  # test-only KEK
+  # kek_file: "/path/to/kek.bin"   # alternative to kek_hex: exactly 32 bytes
 
 log:
   level: "info"

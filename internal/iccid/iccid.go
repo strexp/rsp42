@@ -3,7 +3,8 @@
 //
 // It is a leaf package on purpose: validating an ICCID check digit or stripping
 // its padding nibble must not require importing the SGP.22 wire codec, which is
-// what the persistence layer used to do (docs/refactoring-plan.md 阶段 3).
+// what the persistence layer used to do (docs/architecture.md, "Dependency
+// direction").
 package iccid
 
 import "fmt"
