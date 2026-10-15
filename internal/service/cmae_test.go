@@ -541,6 +541,9 @@ func TestResolveUPPTemplateVersionSet(t *testing.T) {
 	var vErr *ErrProfileVersionNotSupported
 	require.ErrorAs(t, err, &vErr)
 	require.Empty(t, vErr.SupportedVersions)
+	// The message prefix is the documented way to tell the N12 version failure
+	// apart from the other 8.2.6/3.8 case (docs/interfaces.md, status codes).
+	require.Contains(t, vErr.Error(), "no usable SAIP profile version")
 
 	// An eUICC advertising 2.2 gets the highest compatible template (2.1).
 	tpl, err := cmae.resolveUPPTemplate(profile, &store.Session{EuiccSupportedVersions: []string{"2.2"}})
@@ -558,6 +561,7 @@ func TestResolveUPPTemplateVersionSet(t *testing.T) {
 	require.ErrorAs(t, err, &vErr)
 	require.Equal(t, []string{"1.0"}, vErr.SupportedVersions)
 	require.Equal(t, "2.1", vErr.LowestTemplateVersion)
+	require.Contains(t, vErr.Error(), "no UPP template compatible with the eUICC's SAIP versions")
 }
 
 // TestResolveUPPTemplatePinnedIncompatible pins N12's strictness: an explicitly
