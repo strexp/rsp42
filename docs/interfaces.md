@@ -191,6 +191,18 @@ branch correctly:
 | The requested ICCID cannot be issued (in use / blocked) | `8.2.1/3.3` |
 | No template compatible with the eUICC's SAIP versions (N12) | `8.2.6/3.8` + readable message |
 
+`8.2.6/3.8` is overloaded by the specification and covers both "this Profile is
+not eligible for this EID/order" (`CodeProfileNotEligible`) and "no SAIP
+template is compatible with this eUICC" (`CodeProfileVersionNotSupported`, N12);
+there is no dedicated subject/reason pair for the latter. Callers must branch on
+the `message` in addition to the code. To keep the two machine-distinguishable
+where the code cannot, the version case always uses a stable message prefix
+(`no UPP template compatible with the eUICC's SAIP versions …`, or the
+no-version-at-all variant `eUICC advertised no usable SAIP profile version …`)
+and records `euiccProfileVersion`, `supportedVersions` and
+`lowestTemplateVersion` in the download timeline/audit; the eligibility case
+does not.
+
 **Template / eUICC version compatibility (N11/N12).** The eUICC advertises its
 SAIP versions in EuiccInfo2 (`profileVersion` plus, since SGP.22 v2.7 §5.7.6,
 `additionalEuiccProfilePackageVersions`). The SM-DP+ persists that set on the
@@ -238,23 +250,71 @@ adds the write endpoints `POST /events` (an omitted `eventId` is generated as
 (soft delete) for the edge cases where ES12 is not usable; the ES12 machine
 interface remains the normal registration path.
 
+### UPP validation scope (R1)
+
+`POST /upp/validate` (and the value checks `POST /upp`, `clone`, `promote`,
+`restore` run before accepting a template) perform, in order:
+
+- **structure and constraints** (N13): the ProfileElement sequence and ordering,
+  singletons, mandatory-services ↔ PE presence, AKA algorithm ↔ service bits,
+  `identification` uniqueness, the `File` `doNotCreate`/`fileDescriptor` rules,
+  and the `gfste[]` whitelist of the 14 V2.3.1 Annex B template OIDs;
+- **the Annex A per-file defaults** (R1): for every file-system-template PE each
+  file is matched to its Annex A row, and §8.3.3's template-modification rules
+  are applied — a cell with no default ("X") must be supplied (`efFileSize` or
+  content), `pinStatusTemplateDO`/`efFileSize`/`shortEFID`/`dfName` may only
+  appear on the file kinds that allow them, the declared file type may not
+  differ from the template's, and `shortEFID`/`fileID` are unique within their
+  file-system scope;
+- **ASN.1 value domains** (R1): the `SIZE(...)` and integer ranges of the
+  V2.3.1 definitions, for the profile header (`iccid` is 10 octets,
+  `profileType` 1..100), every `Fcp` field (including `ProprietaryInfo`), the
+  PIN/PUK values, the AKA parameters and the CDMA parameters.
+
+`valid:false` + `errors[]` are hard violations; `warnings[]` are advisories that
+do not block registration (a changed fileID, an additional file that should have
+been created with `PE-GenericFileManagement`, or a "Content Required" file whose
+content is left to the create-command default — §9.1 explicitly allows that).
+
+What is still **not** checked: the *content* of the Annex A default patterns
+(they are not materialised) and the §9.9 access-rule table (the `ARR` column is
+only carried as data). Report to the caller only what the checks above cover.
+
 ### Tenant scoping and filters
 
 Every list and write accepts `tenant`. On a write the explicit body field wins
-over the query parameter; a non-empty tenant must be registered. Omit `tenant`
-to span all owners; pass an empty value to select the platform default
-(`tenant_id IS NULL`). Profiles additionally accept `state`, `eid`, `iccid`
-(prefix), `externalRef`, `batchId`, `q` (substring), `from`, `to`, `page`,
-`size` and `sort` (`created_at|updated_at|iccid|state|tenant|installed_at`, `-`
-prefix for ascending). `GET /profiles/stats` also accepts
+over the query parameter; a non-empty tenant must be registered, otherwise the
+answer is `400 unknown_tenant`. Omit `tenant` to span all owners; pass an empty
+value to select the **platform default** (`tenant_id IS NULL`), which is where
+platform-owned resources and templates promoted with `/upp/{name}/promote`
+live — it is a real owner, not an "unassigned" bucket. `POST /tenants` is
+create-or-replace and is safe to call repeatedly, so a first deployment can
+synchronise the whole carrier list with `POST` calls.
+
+`GET /profiles` filters `iccid` by **prefix** match (a full match is a prefix of
+itself); use `GET /profiles/{iccid}` for an exact lookup. Profiles additionally
+accept `state`, `eid`, `externalRef`, `batchId`, `q` (substring), `from`, `to`,
+`page`, `size` and `sort` (`created_at|updated_at|iccid|state|tenant|installed_at`,
+`-` prefix for ascending). `GET /profiles/stats` also accepts
 `groupBy=state|day|tenant|profile_type` (N7).
+
+`GET /tenants/{id}` returns `usage`
+(`profiles`, `templates`, `poolEntries`, `batches`, `personalization`) purely
+from rsp42's own tables; it does **not** know about the caller's own records
+(e.g. a `credential_assignments` table), so a caller that gates tenant deletion
+on references has to count those separately and combine both.
 
 ### Quotas
 
 `tenants.template_quota` is enforced when a new tenant template is created
 (HTTP 409 `quota_exceeded`); replacing an existing template is always allowed.
 `tenants.profile_quota` is enforced at allocation time on both the Admin API and
-ES2+ (the ES2+ answer is `8.2.1/3.8`).
+ES2+, where the answer is **`8.2.5/3.7`** (`CodeNoMoreProfileAvailable`), the
+same code as an exhausted ICCID pool — profile quota and pool exhaustion are
+deliberately indistinguishable on ES2+, and `GET /tenants/{id}` (`usage`) plus
+`GET /iccid-pool/stats` are the way to tell them apart before sending an order.
+An ICCID that is merely unusable (in use or blocked) answers `8.2.1/3.3`
+instead.
 
 ### Response envelopes
 

@@ -44,7 +44,7 @@ scope. §5.3.6/§5.3.7 are VOID in v2.7.
 | SAIP personalization (ICCID/IMSI/K/OPc/PIN/PUK/ADM/SPN/PLMN/MSISDN/ACC/SdKey*/MncLen/EF patches) | §5.5.3 / SAIP | ✅ per-ICCID (DB-backed, K/OPc encrypted at rest); GP key set written to `PE-SecurityDomain`, MNC length to `EF.AD` (6FAD); mandatory-services + GFSTE list recomputed |
 | UPP template registry (DB, hot-updatable) | — | ✅ (`upp_templates`; import via `admin upp import`; `profiles.allowed_saip_versions` caps the accepted SAIP baseline) |
 | UPP template selection by eUICC profile version | §5.5.3 | ✅ (registry lookup by the eUICC's supported version set — `profileVersion` plus `additionalEuiccProfilePackageVersions`; order override wins; no compatible template fails cleanly with `8.2.6/3.8`) |
-| SAIP profile package validation (V2.3.1 constraints) | SAIP Annex A/B, §9 | ✅ (`/upp/validate` + `/upp`: structure/order, mandatory services, AKA/service bits, PE identification, File `doNotCreate`/`fileDescriptor`, GFSTE subset of the 14 Annex B template OIDs) |
+| SAIP profile package validation (V2.3.1 constraints) | SAIP Annex A/B, §9 | ✅ (`/upp/validate` + `/upp`: structure/order, mandatory services, AKA/service bits, PE identification, File `doNotCreate`/`fileDescriptor`, GFSTE subset of the 14 Annex B template OIDs, plus the Annex A per-file defaults / §8.3.3 FCP rules / ASN.1 `SIZE` ranges — R1; see `docs/interfaces.md` for the exact boundary) |
 | Activation Code Retrieval (ACR) | §4.9 / §5.3.8 | ✅ response metadata (both ACR types) + caller-side Operator confirmation through `ES2+.HandleAcrRequest` (`acr_url`), refusal `8.2.1/1.2` |
 | Profile Policy Rules (PPR) | §5.3, §5.7.5 | ✅ populated from `profiles.ppr_ids`; the non-standard ES2+ `downloadOrder.pprIds` body member was removed (C1); a PPR the eUICC lists in `EUICCInfo2.forbiddenProfilePolicyRules` is refused with `8.2.5/4.3` instead of being delivered (§5.7.5 SHALL) |
 | `otherCertsInChain` | §6.5.2 | ✅ parsed and chained between EUM and CI |
@@ -61,3 +61,21 @@ Legend: ✅ implemented, ◐ partial, ✗ not implemented.
   `NotificationMetadata.notificationAddress`) follows the common toolchain
   bindings rather than strict X.680 auto-tagging; this is verified by the golden
   vectors in the `internal/rsp` tests.
+
+## Open interoperability observations (not yet closed)
+
+These are recorded rather than resolved: the local simulator
+(`refs/simulator-testing/INTEROP-TEST-REPORT.md`, lpac × YggdraSIM) passes the
+full download, but neither observation has been adjudicated against a real eUICC
+or the GSMA conformance tooling.
+
+- **R2 — `ReplaceSessionKeysRequest` (BF26) tagging.** The request encodes its
+  members with the generic context tag `04` rather than the AUTOMATIC TAGS
+  `80`/`81`/`82` a strict decoder derives; a decoder that enforces the ASN.1
+  module could reject it as `scp03tStructureError(7)`. A real-device download
+  that fails in the `StoreMetadata`/`ReplaceSessionKeys` phase is the signal to
+  revisit the encoder.
+- **R3 — ASN.1 binding response nesting.** On the `application/x-gsma-rsp-asn1`
+  binding the response carries a single `BF39` layer, whereas strict EXPLICIT
+  tagging (as read by `asn1tools` with the GSMA schema) expects two. The JSON
+  binding — the only one used by SM-DP+ callers here — is unaffected.
