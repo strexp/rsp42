@@ -9,18 +9,17 @@ import (
 
 	"rsp42/internal/api/common"
 	"rsp42/internal/rsp/status"
-	"rsp42/internal/service"
 )
 
 // Handler holds the ES9+ handler dependencies.
 type Handler struct {
 	Log    *slog.Logger
-	CMAE   *service.CMAE
-	Notifs *service.NotificationService // optional; wired in Phase 9
+	CMAE   CMAE
+	Notifs Notifier // optional
 }
 
 // New returns a new ES9+ handler.
-func New(log *slog.Logger, cmae *service.CMAE) *Handler {
+func New(log *slog.Logger, cmae CMAE) *Handler {
 	return &Handler{Log: log, CMAE: cmae}
 }
 

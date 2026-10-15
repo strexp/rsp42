@@ -12,17 +12,16 @@ import (
 
 	"rsp42/internal/api/common"
 	"rsp42/internal/rsp/status"
-	"rsp42/internal/service"
 )
 
 // Handler holds the ES11 handler dependencies.
 type Handler struct {
 	Log *slog.Logger
-	DS  *service.DSService
+	DS  DS
 }
 
 // New returns a new ES11 handler.
-func New(log *slog.Logger, ds *service.DSService) *Handler { return &Handler{Log: log, DS: ds} }
+func New(log *slog.Logger, ds DS) *Handler { return &Handler{Log: log, DS: ds} }
 
 // Mount registers the ES11 routes on r.
 func Mount(r chi.Router, h *Handler) {

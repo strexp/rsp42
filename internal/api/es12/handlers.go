@@ -27,17 +27,17 @@ type AuditWriter interface {
 // Handler holds the ES12 handler dependencies.
 type Handler struct {
 	Log    *slog.Logger
-	Events *service.EventService
+	Events EventRegistrar
 	// Tenants optionally maps a caller OID to a tenant when the correlation
 	// header is absent.
-	Tenants *service.TenantResolver
+	Tenants TenantResolver
 	// Audit, when set, records protocol-level ES12 failures (ES12 answers HTTP
 	// 200 with a Failed status, so the shared audit middleware cannot see them).
 	Audit AuditWriter
 }
 
 // New returns a new ES12 handler.
-func New(log *slog.Logger, events *service.EventService) *Handler {
+func New(log *slog.Logger, events EventRegistrar) *Handler {
 	return &Handler{Log: log, Events: events}
 }
 
@@ -45,7 +45,9 @@ func New(log *slog.Logger, events *service.EventService) *Handler {
 // headers win, otherwise the caller OID mapping applies.
 func (h *Handler) eventMeta(r *http.Request, caller string) es12client.EventMeta {
 	meta := es12client.EventMetaFromHeaders(r.Header)
-	if meta.Tenant == "" {
+	// A nil interface is not callable, unlike the typed nil *service.TenantResolver
+	// whose Resolve tolerates a nil receiver; an unwired resolver maps nothing.
+	if meta.Tenant == "" && h.Tenants != nil {
 		if tenant, ok := h.Tenants.Resolve(caller); ok {
 			meta.Tenant = tenant
 		}

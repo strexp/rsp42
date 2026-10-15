@@ -29,7 +29,7 @@ func newServer(t *testing.T) (*es2p.Client, *store.Store) {
 
 // newServerWith builds an ES2+ test server; configure may adjust the handler
 // (e.g. install a tenant mapping or the idempotency repository).
-func newServerWith(t *testing.T, configure func(h *es2plus.Handler, st *store.Store)) (*es2p.Client, *store.Store) {
+func newServerWith(t *testing.T, configure func(h *es2plus.Handler, st *store.Store, inv *service.Inventory)) (*es2p.Client, *store.Store) {
 	t.Helper()
 	st, err := store.Open("file:" + filepath.Join(t.TempDir(), "es2p.db"))
 	require.NoError(t, err)
@@ -43,7 +43,7 @@ func newServerWith(t *testing.T, configure func(h *es2plus.Handler, st *store.St
 		OrderAudit: st.Orders,
 	})
 	if configure != nil {
-		configure(h, st)
+		configure(h, st, inventory)
 	}
 
 	// ES12 server (Root SM-DS) + registrar so ConfirmOrder registers events.

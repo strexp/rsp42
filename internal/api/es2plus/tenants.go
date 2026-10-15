@@ -26,10 +26,10 @@ import (
 func (h *Handler) applyCaller(r *http.Request, hdr common.RequestHeader) string {
 	ctx := r.Context()
 	common.SetActor(ctx, hdr.FunctionRequesterIdentifier)
-	tenant, mapped := h.RequesterTenants.Resolve(hdr.FunctionRequesterIdentifier)
+	tenant, mapped := h.resolveRequester(hdr.FunctionRequesterIdentifier)
 	if !mapped {
 		tenant = ""
-		if h.RequesterTenants.Len() > 0 {
+		if h.requesterCount() > 0 {
 			common.AddDetail(ctx, "warning", "unmapped")
 			common.AddDetail(ctx, "requester", hdr.FunctionRequesterIdentifier)
 			if h.Metrics != nil {
@@ -102,4 +102,22 @@ func (h *Handler) authorizeICCID(tenant, rawICCID string) error {
 		return status.CodeInputRefused.Status("ICCID belongs to another tenant")
 	}
 	return nil
+}
+
+// resolveRequester maps the caller identifier to a tenant. An unwired resolver
+// maps nothing: the typed nil *service.TenantResolver used to tolerate a nil
+// receiver, which an interface value cannot.
+func (h *Handler) resolveRequester(requester string) (tenant string, mapped bool) {
+	if h.RequesterTenants == nil {
+		return "", false
+	}
+	return h.RequesterTenants.Resolve(requester)
+}
+
+// requesterCount reports how many mappings are configured (0 when unwired).
+func (h *Handler) requesterCount() int {
+	if h.RequesterTenants == nil {
+		return 0
+	}
+	return h.RequesterTenants.Len()
 }

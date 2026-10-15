@@ -6,6 +6,7 @@ import (
 	"log/slog"
 
 	"rsp42/internal/api/middleware"
+	"rsp42/internal/client/es12"
 	"rsp42/internal/service"
 	"rsp42/internal/store"
 )
@@ -33,6 +34,31 @@ type MetricCounter interface {
 	Inc(name string, labels map[string]string)
 }
 
+// Orders is the profile lifecycle state machine the order functions drive.
+type Orders interface {
+	Confirm(iccid string, release bool) (*store.Profile, error)
+	Cancel(iccid string, unavailable bool) (*store.Profile, error)
+	Release(iccid string) (*store.Profile, error)
+}
+
+// Inventory allocates an ICCID and creates the profile row behind DownloadOrder.
+type Inventory interface {
+	Allocate(req service.AllocateRequest) (*store.Profile, error)
+}
+
+// TenantResolver maps header.functionRequesterIdentifier to a tenant.
+type TenantResolver interface {
+	Resolve(requester string) (tenant string, mapped bool)
+	Len() int
+}
+
+// Registrar registers and deletes the SM-DS event of an order.
+type Registrar interface {
+	Register(eid, eventID, smdsAddress string, meta es12.EventMeta) error
+	DeleteForEID(eid string, meta es12.EventMeta) error
+	DeleteEvent(eid, eventID string, meta es12.EventMeta) error
+}
+
 // Deps is the complete ES2+ handler dependency set, so the handler cannot be
 // constructed half-wired. The two late-bound hooks stay out of it on purpose:
 //
@@ -43,13 +69,13 @@ type MetricCounter interface {
 type Deps struct {
 	Log       *slog.Logger
 	Profiles  service.ProfileStore
-	Orders    *service.OrderService
-	Inventory *service.Inventory
+	Orders    Orders
+	Inventory Inventory
 	// UPP validates a "<tenant>/<template>" profileType.
 	UPP UPPValidator
 	// RequesterTenants maps header.functionRequesterIdentifier to a tenant
 	// (decision 3). A nil resolver means "everything is the platform default".
-	RequesterTenants *service.TenantResolver
+	RequesterTenants TenantResolver
 	// Idem, when set, enables Idempotency-Key replay on the write functions
 	// whose resend semantics SGP.22 does not define.
 	Idem middleware.IdempotencyStore
@@ -67,8 +93,16 @@ type Handler struct {
 	// ACRHandler, when set, is invoked for handleAcrRequest.
 	ACRHandler func(req AcrRequest) (*AcrResponse, error)
 	// Registrar, when set, registers an SM-DS event on ConfirmOrder.
-	Registrar *service.Registrar
+	Registrar Registrar
 }
 
 // New returns a new ES2+ handler with its dependencies wired.
 func New(d Deps) *Handler { return &Handler{Deps: d} }
+
+// The concrete services must keep satisfying the seams.
+var (
+	_ Orders         = (*service.OrderService)(nil)
+	_ Inventory      = (*service.Inventory)(nil)
+	_ TenantResolver = (*service.TenantResolver)(nil)
+	_ Registrar      = (*service.Registrar)(nil)
+)

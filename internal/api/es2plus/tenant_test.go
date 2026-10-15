@@ -17,7 +17,7 @@ import (
 // plus idempotency enabled and two tenant templates registered.
 func newTenantServer(t *testing.T) (*es2p.Client, *store.Store) {
 	t.Helper()
-	client, st := newServerWith(t, func(h *es2plus.Handler, st *store.Store) {
+	client, st := newServerWith(t, func(h *es2plus.Handler, st *store.Store, inv *service.Inventory) {
 		h.RequesterTenants = service.NewTenantResolver([]service.RequesterTenant{
 			{Requester: "op-a", Tenant: "carrier-a"},
 			{Requester: "op-b", Tenant: "carrier-b"},
@@ -203,10 +203,10 @@ func TestES2PlusAllocationErrorCodes(t *testing.T) {
 	ctx := context.Background()
 
 	// Quota exhausted (limit 0) -> 8.2.5/3.7 No more Profile available.
-	client, _ := newServerWith(t, func(h *es2plus.Handler, st *store.Store) {
+	client, _ := newServerWith(t, func(h *es2plus.Handler, st *store.Store, inv *service.Inventory) {
 		zero := 0
-		h.Inventory.ProfileQuota = func(tenant string) (*int, error) { return &zero, nil }
-		h.Inventory.CountProfiles = func(tenant string) (int, error) { return 0, nil }
+		inv.ProfileQuota = func(tenant string) (*int, error) { return &zero, nil }
+		inv.CountProfiles = func(tenant string) (int, error) { return 0, nil }
 	})
 	_, err := client.DownloadOrderWith(ctx, "", "", "operational", es2p.CallOptions{})
 	var se *es2p.StatusError
@@ -226,7 +226,7 @@ func TestES2PlusAllocationErrorCodes(t *testing.T) {
 // TestES2PlusUnparsedProfileTypeAudited pins C2: an opaque profileType is
 // recorded instead of silently falling back to the version-selected template.
 func TestES2PlusUnparsedProfileTypeAudited(t *testing.T) {
-	client, st := newServerWith(t, func(h *es2plus.Handler, st *store.Store) {
+	client, st := newServerWith(t, func(h *es2plus.Handler, st *store.Store, inv *service.Inventory) {
 		h.AuditRepo = st.Audit
 	})
 	dl, err := client.DownloadOrderWith(context.Background(), "", "", "operational", es2p.CallOptions{})
