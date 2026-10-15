@@ -37,6 +37,7 @@ scope. §5.3.6/§5.3.7 are VOID in v2.7.
 | Profile lifecycle state machine | §3.1.6 Table 6b | ✅ |
 | BPP generation (SCP03t / BSP) incl. PPK | §2.5.4 / §5.5 / Annex G | ✅ |
 | Confirmation code (`hashCc`) | §2.2 | ✅ |
+| ES2+ order-function verifications and status codes | §5.3.1–§5.3.3, Tables 24/27/30 | ✅ (DownloadOrder resend per Table 24 NOTE and the ICCID/Profile-Type codes of Table 24; ConfirmOrder MatchingID uniqueness `8.2.6/3.3`, MatchingID charset (§4.1.1) and the EID rules of Table 27; CancelOrder's mandatory `finalProfileStatusIndicator`, pending-order check, MatchingID/EID association (`8.2.6/3.10`, `8.2.1/3.10`, `8.2.1/3.3`) and the §5.3.3 SM-DS event deletion) |
 | ASN.1 binding (`RemoteProfileProvisioningRequest/Response`, `/gsma/rsp2/asn1`) | §6.6 | ✅ (hand-written; ES9+ and ES11) |
 | Notification handling (install/enable/disable/delete) | §3.5 | ✅ (euiccSignPIR / euiccNotificationSignature verified; unauthenticated notifications are recorded but not acted on) |
 | Certificate chain, role OIDs, EUM nameConstraints/EIN | §4.5.2 | ✅ (expiry checked; CRL out of scope) |

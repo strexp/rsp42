@@ -39,28 +39,46 @@ handleDownloadProgressInfo,handleAcrRequest}`. Requests carry
 
 The caller's `header.functionRequesterIdentifier` is mapped to a tenant by
 `smdpp.es2p.requester_tenants` (SGP.22 §6.5.1.3 imposes no format on the field).
-An unmapped requester falls back to the platform-default tenant (`""`) and the
-request is audited with the incremented `unmapped` warning. A tenant may only
-operate on its own ICCIDs: using another tenant's ICCID answers `8.2.1/1.2`, and
-using another tenant's Profile Type/template answers `8.2.5/1.2`.
+An unmapped requester falls back to the platform-default tenant (`""`); the
+fallback is recorded on the audit row as `detail.warning=unmapped` together with
+`detail.requester`, and counted in `rsp42_es2p_tenant_unmapped_total`, so an
+operator health check can alert on a carrier that was never registered. With an
+empty `requester_tenants` table nothing is flagged: a single-tenant deployment
+has nothing to map. A tenant may only operate on its own ICCIDs: using another
+tenant's ICCID answers `8.2.1/1.2`, and using another tenant's Profile
+Type/template answers `8.2.5/1.2`.
 
 ### Profile/template selection
 
 `downloadOrder.profileType` is "content free information defined by the
-Operator" (§6.5.2.1). rsp42 interprets `"<tenant>/<template>"` as a
-tenant-local template selector; any other value stays opaque and template
-resolution falls back to the eUICC's advertised SAIP version, then the tenant
-default, then `profiles.default_upp`. An opaque value is not silent: it
-increments `rsp42_es2p_profile_type_unparsed_total` and is audited with
-`warning=profileType-unparsed` (C2). A caller may never select another tenant's
-template. At download time the resolution order is: template pinned on the
-order, session template (eUICC version), tenant default, global default; a
-pinned template is authoritative and there is no "any template" fallback.
+Operator" (§6.5.2.1). rsp42 interprets `"<tenant>/<template>"` as a template
+selector; any other value stays opaque and template resolution falls back to the
+eUICC's advertised SAIP version, then the tenant default, then
+`profiles.default_upp`. An opaque value is not silent: it increments
+`rsp42_es2p_profile_type_unparsed_total` and is audited with
+`warning=profileType-unparsed` (C2).
+
+The tenant part must be the caller's own tenant, except that an **empty tenant
+part** (`"/<template>"`) selects a template owned by the platform-default tenant
+— i.e. a global template, including one promoted with `POST /upp/{name}/promote`.
+That form is the only way to name such a template, because no non-empty prefix
+denotes the platform-default owner; the name is still resolved with the caller's
+scope, so a tenant only reaches its own template or a global one. A selector with
+no template name (`"/"`) is malformed (`8.2.5/3.9`), and another tenant's template
+is an authorisation failure (`8.2.5/1.2`). At download time the resolution order
+is: template pinned on the order, session template (eUICC version), tenant
+default, global default; a pinned template is authoritative and there is no "any
+template" fallback.
 
 The `downloadOrder` body is the closed Table 22 set: `eid`, `iccid`,
 `profileType`. There is no private body extension (the former `pprIds` member
 was removed, C1); Profile Policy Rules travel through `profiles.ppr_ids` on the
 management API.
+
+The `downloadOrder` response carries **only `iccid`** (Table 23: the only
+additional output data). `smdpAddress` is not a DownloadOrder output — it is an
+optional output of `confirmOrder` (Table 26), used when a specific order must be
+downloaded from a different SM-DP+ address.
 
 A failed allocation is reported with a specific code: no Profile of the
 requested type is available (pool/quota exhausted) is `8.2.5/3.7`, an unusable
@@ -73,6 +91,43 @@ Per Table 24 NOTE, a repeated `downloadOrder` naming an ICCID that already
 exists in `Allocated`/`Linked` with the same tenant, `profileType` and EID
 answers `Executed-Success` with that ICCID and performs no further action, so an
 operator retry after a lost response is safe.
+
+### ConfirmOrder verifications
+
+- A supplied `matchingId` must consist only of upper case alphanumeric
+  characters and `-` (§4.1.1); anything else answers `8.1/1.2`. An empty value
+  means "generate one".
+- A `matchingId` that another order already uses answers **`8.2.6/3.3`** (Table
+  27, Matching ID — Already in Use (Uniqueness)). The unique index decides, so
+  concurrent confirms cannot both win, and the store error itself is never
+  returned to the caller.
+- An `smdsAddress` makes the EID mandatory — the SM-DS event is keyed by it — so
+  an order with no EID answers `8.1.1/2.2` (Table 27).
+- A `confirmOrder.eid` that disagrees with the order answers `8.1.1/3.10` (Table
+  27; see also the idempotency note below).
+
+### CancelOrder verifications
+
+`finalProfileStatusIndicator` is **mandatory** (Table 28) and has exactly two
+values, `Available` (return the ICCID to inventory) and `Unavailable` (keep it
+out of inventory). An absent element answers `8.1.1/2.2`; an unrecognised value
+answers `8.1/1.2` (malformed request — this is not an authorisation failure).
+
+A `cancelOrder` is a cancellation of a *pending* order, so the SM-DP+ verifies
+(§5.3.3) and, per Table 30, answers:
+
+| Condition | Code |
+|---|---|
+| ICCID unknown | `8.2.1/3.9` |
+| ICCID not allowed for the caller | `8.2.1/1.2` |
+| Profile already downloaded (`Downloaded`/`Installed`) | `8.2.1/3.3` |
+| supplied `eid` is not the associated one | `8.2.1/3.10` |
+| supplied `matchingId` is not the associated one | `8.2.6/3.10` |
+
+On success the order is cancelled and, per §5.3.3, the SM-DS event registration
+of the order is deleted. A deletion failure does not fail the cancel (the order
+is already cancelled); it is logged and counted in
+`rsp42_es12_register_failures_total`.
 
 ### Idempotency
 
@@ -177,7 +232,7 @@ Failures use `header.functionExecutionStatus.status = "Failed"` with
 `8.10.1/3.9` unknown transaction, `8.2.7/6.4` confirmation code invalid,
 `8.9.5/3.3` EventID in use, `8.9.5/3.9` event not found.
 
-ES2+ distinguishes four frequently confused conditions so the operator can
+ES2+ distinguishes the frequently confused conditions so the operator can
 branch correctly:
 
 | Condition | Code |
@@ -185,8 +240,13 @@ branch correctly:
 | ICCID unknown to the SM-DP+ | `8.2.1/3.9` |
 | Profile Type / template unknown | `8.2.5/3.9` |
 | Profile Type / template (or ICCID) not allowed for the caller | `8.2.5/1.2` / `8.2.1/1.2` |
-| Mandatory request element missing (e.g. `iccid`) | `8.1.1/2.2` |
+| Mandatory request element missing (e.g. `iccid`, `finalProfileStatusIndicator`) | `8.1.1/2.2` |
+| Malformed request value (bad ICCID, bad `finalProfileStatusIndicator`, bad `matchingId` charset) | `8.1/1.2` |
 | `confirmOrder.eid` disagrees with the download order | `8.1.1/3.10` |
+| `confirmOrder` `matchingId` already used by another order | `8.2.6/3.3` |
+| `cancelOrder.matchingId` is not the associated one | `8.2.6/3.10` |
+| `cancelOrder.eid` is not the associated one | `8.2.1/3.10` |
+| `cancelOrder` on an already downloaded Profile | `8.2.1/3.3` |
 | No Profile of the requested type is available (quota/pool exhausted) | `8.2.5/3.7` |
 | The requested ICCID cannot be issued (in use / blocked) | `8.2.1/3.3` |
 | No template compatible with the eUICC's SAIP versions (N12) | `8.2.6/3.8` + readable message |
@@ -350,11 +410,37 @@ present, else the ES2+ `functionRequesterIdentifier` / ES12 caller OID, else the
 fixed `esim42-backend` for the management API. Mutations are recorded with
 `interface=admin`.
 
+`function` is the invoked function name, not the URL path: the RSP interfaces
+name the function in the last path segment (`downloadOrder`,
+`authenticateClient`, `registerEvent`, …), so `GET /audit?function=downloadOrder`
+matches and `GET /audit/stats?groupBy=function` groups by function. The ASN.1
+binding carries every function on the single `/gsma/rsp2/asn1` path, so its
+handler names the function it decoded; management-API rows keep their path.
+`detail` carries machine-readable extras: `requestId`, the C2
+`warning=profileType-unparsed`, and the tenant-attribution
+`warning=unmapped` + `requester` (see Tenant attribution).
+
 ### Metrics
 
-`GET /metrics` (Prometheus text format) on the admin listener exposes download
-success/failure counters by tenant, confirmation-code failures, callback queue
-depth, ICCID pool gauges, and session/event GC counters.
+`GET /metrics` (Prometheus text format) on the admin listener exposes the
+following vocabulary (declared per emitting package, so a typo is a loud
+failure rather than a missing series):
+
+| Metric | Type | Labels | Meaning |
+|---|---|---|---|
+| `rsp42_downloads_total` | counter | `tenant`, `point`, `status` | one per outbound ES2+ progress notification, i.e. per download/install outcome point (1, 2, 3, 4, 17) |
+| `rsp42_acr_requests_total` | counter | `tenant`, `outcome` | ES2+ HandleAcrRequest confirmations (`allowed`/`refused`/`error`) |
+| `rsp42_euicc_v3_capable_total` | counter | `tenant` | eUICCs advertising a SAIP version at or above the V3 baseline (N11) |
+| `rsp42_profile_version_not_supported_total` | counter | `tenant` | downloads refused because no template matched the eUICC's versions (N12) |
+| `rsp42_es2p_profile_type_unparsed_total` | counter | `tenant` | `profileType` that did not resolve to a template (C2) |
+| `rsp42_es2p_tenant_unmapped_total` | counter | — | ES2+ calls whose requester was not mapped to a tenant |
+| `rsp42_es12_register_failures_total` | counter | `tenant` | SM-DS event registration/deletion failures |
+| `rsp42_es2p_callback_queue` | gauge | `status` | outbound callback rows by state |
+| `rsp42_iccid_pool` | gauge | `state` | ICCID pool entries by state |
+| `rsp42_session_gc_total`, `rsp42_iccid_reservation_gc_total`, `rsp42_smds_event_gc_total` | counter | — | reclamation counters |
+
+There is no HTTP latency histogram (N9, deferred): measure rsp42 call latency on
+the caller side.
 
 ## Admin CLI
 

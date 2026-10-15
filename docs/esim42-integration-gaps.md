@@ -21,14 +21,14 @@
 4. **部署前提（已与 esim42 确认）：管理 API 保持无鉴权。** esim42 后端与 rsp42 管理 API **同机同网、内网直连**；esim42 前端只经 esim42 后端访问，绝不直连 rsp42。因此管理 API 不引入 Bearer/mTLS/scope，**安全边界由 esim42 承担**（esim42 必须保证该 API 不被反向代理、网关或前端暴露）。原初稿的 G1“管理 API 鉴权”据此**排除**，正式改动清单从 G2 起。
 5. **SM-DS 启用（决策 6）**：esim42 走 ES12 事件注册/删除并以 `/events` 做透视，支撑模块 B 的“无激活码推送”。rsp42 需同时部署 `smds` 角色（`RSP42_ROLE=smds`），并补齐事件的时间/租户过滤与注册失败可观测（G20）。
 6. **明确不做（决策 7–11，见 §8.4）**：**PostgreSQL/其他数据库后端**、**多副本部署**、**每运营商客户端证书**、**rsp42 侧限流/429**、**管理 API 监听面收敛与密钥导出护栏（N6/N10）**。这些不是“以后再说”的备选项——相关配置与文档已按“仅支持当前形态”收敛。
-7. **第三轮口径**：SAIP 基线仍为 **V2.3.1（包内编码 `(2,3)`）**；版本上限（N16）与运行期干净失败（N12）已落地（§1bis）。本轮复核的剩余缺口 **R1–R9（§0.5）** 中，**R1（逐文件默认表 + 值域校验）已落地**，**R2 待真机/一致性工具裁决**，**R9 暂不做**（用户决定），**R8 为部署约束**，R3–R5 非阻塞。SAIP V3.x 的 PE/模板/feature 覆盖与 SGP.22 Annex F 降级构造（N14）仍在范围外，rsp42 不为其预留代码位或配置开关（见 §0.4）。
+7. **第三轮口径 + 第四轮标准修订**：SAIP 基线仍为 **V2.3.1（包内编码 `(2,3)`）**；版本上限（N16）与运行期干净失败（N12）已落地（§1bis）。第三轮复核的剩余缺口 **R1–R9（§0.5）** 中，**R1（逐文件默认表 + 值域校验）已落地**，**R2 待真机/一致性工具裁决**，**R9 暂不做**（用户决定），**R8 为部署约束**，R3–R5 非阻塞。第四轮（§12）按 SGP.22 标准修订了 ES2+ 订单函数的行为（F1–F7），**esim42 契约与标准冲突处一律以标准为准**，需要 esim42 同步修正的 4 处见 §12.2。SAIP V3.x 的 PE/模板/feature 覆盖与 SGP.22 Annex F 降级构造（N14）仍在范围外，rsp42 不为其预留代码位或配置开关（见 §0.4）。
 
-### 0.2 本轮结论（第三轮复核）
+### 0.2 本轮结论（第三轮复核 + 标准一致性修订）
 
 | 侧 | 结论 |
 |---|---|
-| rsp42 | 两轮改造**全部落地或已收敛**。第三轮复核后**唯一遗漏的 R1（值域校验）已落地**，§0.6 的文档修正**已全部完成**；仍需 rsp42 动作的只剩 **R2**（待真机/一致性工具裁决）与 **R9**（暂不做，属用户决定）。 |
-| esim42 | 转为**契约消费**：以 `internal/api/admin/openapi/openapi.json`（`info.version 0.2.0`）快照 + `openapi-typescript` 生成类型；ES2+ 类型手写并冻结在其 `02` §2.1。esim42 侧的实施不变量与对账任务见其 `02` §7.4/§8，不属于本项目工作。 |
+| rsp42 | 两轮改造**全部落地或已收敛**。第三轮复核后**遗漏的 R1（值域校验）已落地**，§0.6 的文档修正**已全部完成**；本轮进一步按 **SGP.22 标准**修订了 ES2+ 订单函数（§12），并与 esim42 契约发生冲突时一律以标准为准。仍需 rsp42 动作的只剩 **R2**（待真机/一致性工具裁决）与 **R9**（暂不做，属用户决定）。 |
+| esim42 | 转为**契约消费**：以 `internal/api/admin/openapi/openapi.json`（`info.version 0.2.0`）快照 + `openapi-typescript` 生成类型；ES2+ 类型手写并冻结在其 `02` §2.1。esim42 侧的实施不变量与对账任务见其 `02` §7.4/§8。**本轮 rsp42 侧的标准修订要求 esim42 同步修正 4 处契约**，见 **§12.2**（cancelOrder 必填字段、matchingId 字符集、downloadOrder 响应字段、指标名）。 |
 | 共同 | 本轮新增的**最强第三方证据**：`refs/simulator-testing/INTEROP-TEST-REPORT.md`（lpac × YggdraSIM）跑通 ES2+ 下单 → SM-DS 发现 → ES9+ → eUICC 安装 → 通知 → `Installed`；BPP 由 pySim 独立解码 + BSP 验签解密通过，个性化值逐项命中。它不替代 esim42 自己的联调，但显著降低 rsp42 侧未知风险。 |
 
 ### 0.3 第二轮必改项（N 清单：除 N6/N10/N9/N14 外全部落地）
@@ -454,6 +454,43 @@
 | 2 | `POST /tenants` 是否可重复调用（首次部署全量同步） | 是 **create-or-replace**，可重复调用 | 同上 |
 | 3 | platform default tenant（`tenant=""` / `tenant_id IS NULL`）的语义 | 是**真实的属主**（平台自营资源与 `promote` 后的全局模板所在），不是“未归属”桶 | 同上 |
 | 4 | `usage.personalization` 与 esim42 `credential_assignments` 不一一对应 | `usage` **只统计 rsp42 自己的表**；删除租户前须把 `usage` 与本侧凭据分配表**并行**计入 | `docs/interfaces.md`「Tenant scoping and filters」 |
+
+---
+
+## 12. 标准一致性修订（第四轮：以 SGP.22 为准）
+
+> 来源：以 refs 下的 SGP.22 v2.7、SAIP V2.3.1 与 pySim/lpac/YggdraSIM 做的一次全面交叉测试（见 §12.3 的发现）。
+> **原则**：esim42 的契约与标准冲突时，**一律以标准为准**——rsp42 按标准实现，esim42 按 §12.2 修正其契约。
+> 下表全部**已落地**并有定向测试。
+
+### 12.1 rsp42 侧的修订
+
+| # | 问题（修订前） | 标准依据 | 修订后行为 |
+|---|---|---|---|
+| F1 | 文档称未映射 requester「在审计记 `unmapped`」，实际只有日志；esim42 计划据此做健康检查，却无数据源 | —（可观测性承诺） | 未映射回落平台默认时：审计行带 `detail.warning=unmapped` + `detail.requester`，并计数 `rsp42_es2p_tenant_unmapped_total`。`requester_tenants` 为空时不告警（单租户部署无可映射项） |
+| F2 | `/audit` 的 `function` 对 ES2+ 记录**完整路径**（`/gsma/rsp2/es2plus/downloadOrder`），`?function=downloadOrder` 匹配不到 | —（契约一致性） | `function` 归一化为函数名（`downloadOrder`）；ASN.1 binding 的单一 `/gsma/rsp2/asn1` 路径由 handler 按解码出的函数名显式设置；管理 API 保持路径 |
+| F3 | esim42 文档引用的 `rsp42_downloads_total` 在生产代码中**从不写入**（只在 metrics 单测里出现）；真实计数器是 `rsp42_progress_notifications_total{tenant,point,status}` | —（契约一致性） | 计数器改名为 **`rsp42_downloads_total{tenant,point,status}`**（每产生一条进度通知计一次；重试不重复计数），esim42 的看板名因此可直接命中 |
+| F4 | `cancelOrder` 要求标准强制字段 `finalProfileStatusIndicator`，但**缺失与非法都返回 `8.2.1/1.2`**；且不校验“订单是否已下载”、不校验 matchingId/eid 归属、**不删除已登记的 ES12 事件** | Table 28（字段 M）、Table 30（各失败码）、§5.3.3（三项校验 + 事件删除 SHALL） | 缺失 → `8.1.1/2.2`；非法 → `8.1/1.2`；已下载 → `8.2.1/3.3`；matchingId 不符 → `8.2.6/3.10`；eid 不符 → `8.2.1/3.10`；成功后删除该订单的 SM-DS 事件（删除失败不回滚取消，记日志并计入 `rsp42_es12_register_failures_total`） |
+| F5 | `profileType` 选择器**无法表达平台默认租户**：`"/<template>"` 被判 `malformed`，因此无法按名选择全局（`promote` 后）模板 | §6.5.2.1（`profileType` 由 Operator 自由定义） | 允许**空前缀** `"/<template>"` 选择平台默认租户（全局）模板；名称仍按调用方作用域解析（自有或全局）。`"/"` 仍为 `8.2.5/3.9`，他人租户前缀仍为 `8.2.5/1.2` |
+| F6 | 复用已存在的 `matchingId` 时把**原始 SQLite 错误**（`UNIQUE constraint failed: profiles.matching_id (2067)`）当 `8.2/4.2` 返回，泄漏存储层细节 | Table 27：`8.2.6/3.3` Matching ID — Already in Use (Uniqueness)；§4.1.1（matchingId 字符集） | 唯一索引冲突 → **`8.2.6/3.3`** 且只返回可读 message（不泄漏存储层错误）；`matchingId` 字符集（大写字母/数字/`-`）非法 → `8.1/1.2`；此外按 Table 27，带 `smdsAddress` 时缺 EID → `8.1.1/2.2` |
+| F7 | esim42 文档把 `smdpAddress` 列为 `downloadOrder` 的成功响应字段 | Table 23（DownloadOrder 输出**只有 `iccid`**）；`smdpAddress` 是 Table 26 的 ConfirmOrder 可选输出 | rsp42 **不改**（只返回 `iccid`）；已写入 `docs/interfaces.md`，esim42 需修正文档 |
+
+### 12.2 esim42 必须同步修正的契约（对外回执）
+
+1. **`cancelOrder` 必须带 `finalProfileStatusIndicator`**（`Available`/`Unavailable`）——标准 Table 28 为 **M**。esim42 `02` §2.1 目前写作 `{iccid, eid?}`，按此调用会得到 `8.1.1/2.2`。管理 API `POST /profiles/{iccid}/cancel` 不受影响。
+2. **`matchingId` 字符集**：只允许大写字母、数字与 `-`（§4.1.1），且**全局唯一**（`profiles.matching_id` 唯一，不按租户）。esim42 生成的可追溯 ID 需满足（ULID 满足）；与既有订单撞号会得到 `8.2.6/3.3`。
+3. **`downloadOrder` 响应只有 `iccid`**；不要把 `smdpAddress` 当必填（它属于 `confirmOrder` 的可选输出）。`profileType` 选择全局模板要用 `"/<template>"` 形式。
+4. **指标名以 `rsp42_downloads_total{tenant,point,status}` 为准**（不再有 `rsp42_progress_notifications_total`）；完整指标词表见 `docs/interfaces.md`「Metrics」。
+5. **`/audit` 的 `function` 是函数名**（不是路径），`groupBy=function` 亦按函数名聚合；未映射租户的行带 `detail.warning=unmapped`。
+
+### 12.3 本轮交叉测试的发现来源（证据）
+
+| 证据 | 结论 |
+|---|---|
+| 18 个 TS.48 向量 → `POST /upp/validate` | 18/18 `valid:true`、0 errors；合成违例（版本/无 end/坏 SFI/改文件类型）全部按预期拒绝 |
+| Annex A 表 vs pySim 转写（573 条）+ V2.3.1 PDF 复核 | 61 处差异**全部**是 pySim(V3.3.1) 缺陷或 V2→V3 变更；rsp42 表在 V2.3.1 基线上逐条正确 |
+| lpac × YggdraSIM 端到端 + pySim BPP 校验 | `Released → Downloaded → Installed`；BPP MAC/解密通过；**R2**（BF26 用 `04` 而非 `80/81/82`）与 **R3**（ASN.1 binding 响应单层 `BF39`）复现 |
+| SGP.22 v2.7 原文（Table 23/26/27/28/29/30、§4.1.1、§5.3.3） | 上述 F4/F6/F7 的标准依据 |
 
 ---
 
