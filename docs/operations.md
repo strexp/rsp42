@@ -156,6 +156,12 @@ the UPP template is selected from
 the eUICC's advertised profile version unless the order (or the tenant default)
 pins one.
 
+`smdpp.es12.smds_address` cannot carry a port: the outbound ES12 client is built
+as `https://<smds_address>:9444`, so the SM-DS ES12 listener must be on the
+standard port 9444 (a deployment on a non-standard ES12 port needs a forwarder).
+The SM-DS that receives the registration also needs an admin listener whose
+`/admin/api/v1/events` can be checked to confirm it.
+
 ## Observability
 
 `GET /metrics` on the admin listener exposes Prometheus text metrics:
