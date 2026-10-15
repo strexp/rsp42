@@ -6,6 +6,7 @@ import (
 
 	"rsp42/internal/cert"
 	"rsp42/internal/crypto"
+	"rsp42/internal/iccid"
 	"rsp42/internal/rsp"
 	"rsp42/internal/store"
 )
@@ -29,12 +30,12 @@ func (n *NotificationService) handleOtherSigned(o *rsp.OtherSignedNotification) 
 	if o == nil || o.Notification == nil {
 		return nil
 	}
-	iccid := ""
+	decodedICCID := ""
 	var profile *store.Profile
 	if len(o.Notification.ICCID) > 0 {
-		iccid = iccidDecimal(o.Notification.ICCID)
-		if iccid != "" && n.Deps.Profiles != nil {
-			profile, _ = n.Deps.Profiles.GetByICCID(iccid)
+		decodedICCID = iccid.DecodeBCD(o.Notification.ICCID)
+		if decodedICCID != "" && n.Deps.Profiles != nil {
+			profile, _ = n.Deps.Profiles.GetByICCID(decodedICCID)
 		}
 	}
 
@@ -51,7 +52,7 @@ func (n *NotificationService) handleOtherSigned(o *rsp.OtherSignedNotification) 
 		EID:         eidOf(profile),
 		SeqNumber:   o.Notification.SeqNumber,
 		Operation:   operationName(o.Notification.Operation),
-		ICCID:       iccid,
+		ICCID:       decodedICCID,
 		SignatureOK: ok,
 		Processed:   ok,
 	})
@@ -90,9 +91,9 @@ func (n *NotificationService) markRedownloadable(profile *store.Profile) error {
 	return nil
 }
 
-// iccidDecimal decodes an Iccid as carried in a NotificationMetadata (EF.ICCID
-// nibble-swapped BCD) to its decimal representation.
-
+// verifyOtherSigned validates the eUICC certificate chain carried in an
+// OtherSignedNotification and its euiccNotificationSignature. When no cert
+// provider is configured only the signature is checked.
 func (n *NotificationService) verifyOtherSigned(o *rsp.OtherSignedNotification) bool {
 	if o == nil || o.Notification == nil || len(o.TbsRaw) == 0 ||
 		len(o.EuiccSignature) == 0 || len(o.EuiccCertificate) == 0 {

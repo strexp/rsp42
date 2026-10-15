@@ -56,3 +56,16 @@ func TestCanonical(t *testing.T) {
 		require.Error(t, err, "input %q", bad)
 	}
 }
+
+func TestDecodeBCD(t *testing.T) {
+	// Nibble-swapped BCD: the low nibble of each byte is the leading digit.
+	require.Equal(t, "89012345678901234567",
+		DecodeBCD([]byte{0x98, 0x10, 0x32, 0x54, 0x76, 0x98, 0x10, 0x32, 0x54, 0x76}))
+	// A 19-digit ICCID pads the last nibble with 'F', which is dropped.
+	require.Equal(t, "8901234567890123456",
+		DecodeBCD([]byte{0x98, 0x10, 0x32, 0x54, 0x76, 0x98, 0x10, 0x32, 0x54, 0xF6}))
+	// A padded trailing byte decodes to "890F", whose trailing padding is dropped.
+	require.Equal(t, "890", DecodeBCD([]byte{0x98, 0xf0}))
+	require.Equal(t, "", DecodeBCD(nil))
+	require.Equal(t, "", DecodeBCD([]byte{0xFF}))
+}

@@ -7,7 +7,10 @@
 // direction").
 package iccid
 
-import "fmt"
+import (
+	"fmt"
+	"strings"
+)
 
 // Normalize strips the trailing 'F' padding nibbles of a BCD-padded ICCID
 // (SGP.22 §5.7.2 / 3GPP TS 23.003). It does not validate. This matches the
@@ -73,4 +76,25 @@ func LuhnValid(s string) bool {
 		return false
 	}
 	return s[len(s)-1] == '0'+digit
+}
+
+// DecodeBCD decodes a nibble-swapped BCD byte string (the low nibble of each
+// byte is the leading digit) to its decimal representation, dropping the
+// trailing 'F' padding. This is how an ICCID is carried in the wire structures
+// (SGP.22 §5.7.2 / 3GPP TS 23.003), e.g. NotificationMetadata's EF.ICCID.
+func DecodeBCD(b []byte) string {
+	var sb strings.Builder
+	for _, by := range b {
+		sb.WriteByte(hexDigit(by & 0x0f))
+		sb.WriteByte(hexDigit(by >> 4))
+	}
+	return Normalize(sb.String())
+}
+
+// hexDigit renders a 0-15 nibble as its uppercase hex character.
+func hexDigit(n byte) byte {
+	if n < 10 {
+		return '0' + n
+	}
+	return 'A' + (n - 10)
 }
