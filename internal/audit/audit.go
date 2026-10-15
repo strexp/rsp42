@@ -39,7 +39,15 @@ type Logger struct {
 }
 
 // New builds a Logger. sink is "db", "file" or "both".
+//
+// Any other value is an error: it used to produce a logger that wrote nowhere,
+// which silently removed the audit trail the configuration asked for.
 func New(repo AuditSink, sink, filePath string) (*Logger, error) {
+	switch sink {
+	case "db", "file", "both":
+	default:
+		return nil, fmt.Errorf("audit: sink %q is not supported (want db|file|both)", sink)
+	}
 	l := &Logger{repo: repo}
 	if sink == "file" || sink == "both" {
 		f, err := os.OpenFile(filePath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o600)

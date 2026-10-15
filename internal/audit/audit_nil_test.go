@@ -31,3 +31,13 @@ func TestFileSinkNeedsNoStore(t *testing.T) {
 	require.NoError(t, err)
 	require.NoError(t, l.Close())
 }
+
+// TestUnknownSinkRejected pins that a sink the logger cannot honour fails
+// instead of returning a logger that writes nowhere.
+func TestUnknownSinkRejected(t *testing.T) {
+	for _, sink := range []string{"", "DB", "database", "stdout"} {
+		l, err := New(nil, sink, "")
+		require.ErrorContains(t, err, "is not supported", "sink %q", sink)
+		require.Nil(t, l)
+	}
+}

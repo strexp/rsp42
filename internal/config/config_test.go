@@ -258,3 +258,44 @@ func TestValidateACRConfig(t *testing.T) {
 		})
 	}
 }
+
+// TestValidateAuditConfig pins that a sink the logger cannot honour is a
+// startup error rather than a silently disabled audit trail.
+func TestValidateAuditConfig(t *testing.T) {
+	chdirRepo(t)
+	load := func() *Config {
+		t.Helper()
+		cfg, err := Load(exampleConfig, RoleDP)
+		require.NoError(t, err)
+		return cfg
+	}
+
+	cfg := load()
+	require.True(t, cfg.Audit.Enabled)
+	require.Equal(t, "db", cfg.Audit.Sink)
+	require.NoError(t, cfg.Validate(RoleDP))
+
+	cfg = load()
+	cfg.Audit.Sink = "both"
+	require.NoError(t, cfg.Validate(RoleDP))
+
+	cfg = load()
+	cfg.Audit.Sink = "file"
+	cfg.Audit.File = ""
+	require.ErrorContains(t, cfg.Validate(RoleDP), "audit.file is required")
+
+	// The realistic typo: the sink name is case-sensitive.
+	cfg = load()
+	cfg.Audit.Sink = "DB"
+	require.ErrorContains(t, cfg.Validate(RoleDP), `audit.sink "DB" invalid`)
+
+	cfg = load()
+	cfg.Audit.Sink = ""
+	require.ErrorContains(t, cfg.Validate(RoleDP), `audit.sink "" invalid`)
+
+	// A disabled audit builds no logger, so its settings are not validated.
+	cfg = load()
+	cfg.Audit.Enabled = false
+	cfg.Audit.Sink = "nonsense"
+	require.NoError(t, cfg.Validate(RoleDP))
+}

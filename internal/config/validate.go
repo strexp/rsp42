@@ -44,6 +44,13 @@ func (c *Config) validateCommon() error {
 	if err := c.KMS.Validate(); err != nil {
 		return err
 	}
+	// A sink the logger does not recognise used to build a no-op logger, so the
+	// audit trail went away without a word. Fail at startup instead.
+	if c.Audit.Enabled {
+		if err := c.Audit.Validate(); err != nil {
+			return err
+		}
+	}
 	if err := validateCORS(c.SMDpp.Server.CORS); err != nil {
 		return fmt.Errorf("smdpp.server.cors: %w", err)
 	}

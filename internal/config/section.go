@@ -68,3 +68,17 @@ func (p ProfilesConfig) Validate() error {
 	}
 	return nil
 }
+
+// Validate checks the audit sink selection. It is only meaningful when audit is
+// enabled: a disabled audit builds no logger, so the settings are unused.
+func (a AuditConfig) Validate() error {
+	switch a.Sink {
+	case "db", "file", "both":
+	default:
+		return fmt.Errorf("audit.sink %q invalid (want db|file|both)", a.Sink)
+	}
+	if a.Sink != "db" && a.File == "" {
+		return fmt.Errorf("audit.file is required for audit.sink %q", a.Sink)
+	}
+	return nil
+}
