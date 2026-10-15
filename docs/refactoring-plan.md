@@ -1,6 +1,6 @@
 # 重构计划（SOLID 与目录内聚性，第二轮）
 
-> 状态：**执行中**。进度见文末「执行记录」。
+> 状态：**阶段 0–4（结构重构）与阶段 5（行为修复）均已执行完毕**。进度见文末「执行记录」。
 > 最后更新：2026-10-15
 
 > 语言约定：与 `TODO.md` 一致，工作/计划类文档使用中文；代码、注释与权威文档
@@ -240,27 +240,47 @@
 5. `internal/service` 不再 import `net/http`；`internal/cert` 不再 import `internal/config`。
 6. `docs/architecture.md` 的包依赖声明与实际 `go list` 一致。
 
-## 6. 本轮不执行（行为变更，需单独评审）
+## 6. 行为变更事项
 
-以下问题在分析中已确认，但修复会改变可观察行为，故本轮只登记：
+§6 在阶段 0–4 期间是「登记不执行」清单。阶段 5 逐项复核后，**5 项已执行**、
+**5 项经核对已在此之前修好**、**2 项前提不成立**，剩余 4 项仍待决策。
 
-| 位置 | 问题 | 为何不在本轮 |
+### 6.1 已执行（阶段 5，见 §9）
+
+| 位置 | 问题 | 提交 |
 |---|---|---|
-| `store/pool.go:121` | 分配策略在 SQL 中，且 `Reserve` 是「选号+更新」单事务 | 拆开需要工作单元，否则引入并发双重分配（`pool_test.go` 的 200 并发测试会失守） |
-| `store/upp.go:126` | 版本排序在 SQL，`saipver.Max` 在 repo 内 | 同上，改动即改选择语义 |
-| `store/tx.go:20` | 无跨聚合工作单元，service 手写补偿（`inventory.go:198,238`） | 事务边界即行为 |
-| `store/upp.go:41`、`pool.go:320`、`personalization.go:85` | 多步写无事务 / look-then-update 竞态 | 收进事务会改变失败时的可观察状态 |
-| `store/callback.go:219` | `Requeue` 读后无条件写，并发重复 | 改为条件更新即行为变更 |
-| `cli/admin_db.go:136` | `rekey` 漏 `personalization` 的 `K`/`OPc`、非事务、静默跳过坏行 | 修复会改变 KEK 轮换的可观察结果 |
-| `api/es12/handlers.go:71` | 未校验 §6.5.1.3 强制 header | 会开始拒绝此前接受的请求 |
-| `internal/audit/audit.go:42` | `audit.sink` 取值未校验，非法值静默关闭审计 | 会开始在启动期失败 |
-| `internal/config/env.go` + `setDefaults` | 不在 defaults/YAML 的键，`RSP42_*` 环境变量静默失效 | 会改变配置生效结果 |
-| `store/sqlite.go:49` | `SetMaxOpenConns(1)` 串行化读；WAL/busy_timeout 仅在配置默认值 | 并发/持久化行为 |
-| `saip/validate.go`+`filevalidate.go`+`constraints.go` | 同一条 Annex-A 规则分散三文件，`shortEFID` 校验两次 | 合并会改变校验顺序与报错集合 |
-| `saip/personalization/csv.go:33` | 领域包在请求路径上 `os.Open` | 需先定义新的 ingestion 边界 |
-| `store/migrations/00008:47` | `iccid_pool.imsi` 死列 | schema 变更 |
-| `api/es2plus/handlers.go:~500` | ACR 不可用时 501 纯文本，非 SGP.22 信封 | wire 行为 |
-| `api/adminhttp/adminhttp.go:89` | `ReadJSON` 用 `json.Decoder`，`common.ReadJSON` 用 `json.Unmarshal`：尾随内容前者接受、后者拒绝 | 统一即改变请求体接受面 |
+| `internal/cli/admin/admin_db.go` + 新增 `internal/store/rekey.go` | `rekey` 只轮换 sessions 的 4 个加密列，漏掉 `personalization.k/opc`；循环无事务、静默跳过坏行，中断后留下单一密钥打不开的混合库 | `e85de85` |
+| `internal/config/section.go` + `internal/audit/audit.go` | `audit.sink` 取值未校验：拼错/为空时中间件装的是"写哪儿都不写"的 logger，审计静默消失 | `459812e` |
+| `internal/store/callback.go` | `Requeue` 读后无条件写：并发重试同一死信可都读到 `failed` 并各自重置计数 | `bf16f0d` |
+| `internal/store/sqlite.go` | `Open` 只补 `_txlock=immediate`；手写 DSN 缺 WAL/busy_timeout，多进程（服务 + admin CLI）下立即 `SQLITE_BUSY` | `1cce989` |
+| `internal/store/migrations/00012` | `iccid_pool.imsi` 死列（00008 加、无人读写） | `ab21f8e` |
+
+### 6.2 复核后确认：已在此前修好，不再是待办
+
+| 原条目 | 现状 |
+|---|---|
+| 不在 defaults/YAML 的键，`RSP42_*` 静默失效 | [env.go](internal/config/env.go) 的 `bindEnvs` 按 struct tag 反射全部键并逐个 `BindEnv`；viper 的 `AllKeys()` 合并 `v.env`，`Unmarshal` 因此能看到这些键 |
+| `UPPRepo.Upsert` 事务外 UPDATE-then-INSERT | [upp.go](internal/store/upp.go) 现为单条 `INSERT ... ON CONFLICT DO UPDATE`；`UpsertArchived` 另有 `withTx` |
+| `PoolRepo.DeleteRange` 两条 DELETE 无事务 | 已用 `withTx` 包住 |
+| `PersonalizationRepo.Upsert` look-then-update 竞态 | 已用 `withTx`（配合 DSN 的 `_txlock=immediate`） |
+| ACR 不可用时 501 纯文本 | 已改用 `common.WriteHTTPError`（JSON 体），[acr.go](internal/api/es2plus/acr.go) 注释说明这是有意选择（§6.2 只为 HTTP 200 定义 RSP 响应） |
+
+### 6.3 复核后确认：前提不成立
+
+| 原条目 | 更正 |
+|---|---|
+| 个性化 CSV 在"请求路径"上 `os.Open` | 唯一调用方是 `rsp42 admin personalization import`（CLI）；admin HTTP 导入走请求体。剩下的只是分层问题 |
+| `shortEFID` 被校验两次 | 两处规则不同：[filevalidate.go](internal/saip/filevalidate.go) 的 `checkShortEFID` 有意同时校验 `SIZE(0..1)` 与取值域；与 `constraints.go` 的 `checkSize` 只是部分重叠、报错文案不同 |
+| `SetMaxOpenConns(1)` 串行化读 | 属既定部署形态（单进程、单副本）；且默认 DSN 与 `config.example.yaml` 都带 WAL、busy_timeout（`store.Open` 现已在缺省时补齐，见 6.1） |
+
+### 6.4 仍待决策
+
+| 位置 | 问题 | 需要的决定 |
+|---|---|---|
+| `internal/api/es12/handlers.go` | 未校验 §6.5.1.3 的强制 header，ES2+ 校验 | 严格拒绝（合规）还是接受 + 审计告警（兼容） |
+| `internal/api/adminhttp/adminhttp.go` vs `internal/api/common/envelope.go` | admin 用 `json.Decoder`（容忍尾随内容），ES 用 `json.Unmarshal`（拒绝） | 统一为严格还是宽松 |
+| `store/pool.go`、`store/upp.go` | 分配策略与版本排序写在 SQL 里 | 是否先引入工作单元（`store/tx.go` 目前只覆盖单库事务）；拆分需保住 `pool_test.go` 的 200 并发不变量 |
+| `saip/validate.go`+`filevalidate.go`+`constraints.go` | Annex-A 规则分散三文件 | 是否值得承担报错集合变化的风险 |
 
 ## 7. 执行记录
 
@@ -350,4 +370,24 @@
   `testutil` 仅限测试。
 - **文档**：`docs/architecture.md` 与实际 `go list` 依赖一致；`docs/refactoring-plan.md` 登记了
   全部偏差与未执行项。
-- **未做（行为变更）**：见 §6 与 3.19。这些是后续独立评审的输入，本轮**未改一行行为**。
+- **行为修复**：阶段 5 已执行 §6.1 的 5 项，见 §9；C 与 F 仍需先定策略（§6.4）。
+
+## 9. 阶段 5：行为修复（A/B/D/E/G）
+
+阶段 0–4 结束后，对 §6 的候选逐项复核（结论见 §6.2/§6.3），按「真实缺陷 × 触发概率 ×
+修复成本」排序，执行了 5 项，每项一个提交：
+
+| # | 项 | 提交 | 验证 |
+|---|---|---|---|
+| A | `rekey` 覆盖全部加密列（新增 `store.Rekey`），单表一个事务、已轮换值跳过、第三密钥则回滚 | `e85de85` | 4 条 store 测试：完整轮换（6 个值）、重入为 no-op、外部密钥回滚、空列计数；`docs/operations.md` 同步 |
+| B | `audit.sink` 分段校验 + `audit.New` 拒绝未知 sink | `459812e` | config 测试（合法 sink、缺 file、大小写笔误、空值、disabled 不校验）+ audit 拒绝测试 |
+| D | `Requeue` 改为单语句条件更新 + `RowsAffected` | `bf16f0d` | 既有三态测试 + 新增 8 并发断言；临时还原旧实现后 30 次运行失败 29 次 |
+| E | `store.Open` 在 DSN 缺省时补 `_txlock`/WAL/`busy_timeout` | `1cce989` | DSN 构造表驱动测试 + 打开后实测 `PRAGMA journal_mode`/`PRAGMA busy_timeout` |
+| G | 迁移 `00012` 删除死列 `iccid_pool.imsi` | `ab21f8e` | `PRAGMA table_info` 断言列已删、在用列仍在 |
+
+**未执行**：C（ES12 强制 header）与 F（两个 `ReadJSON` 语义统一）——两者都会改变请求
+接受面，需先定策略，见 §6.4。
+
+**验证口径**：每项提交前后 `go build ./... && go vet ./... && go test ./... -count=1` 全绿，
+`gofmt -l cmd internal` 为空，`golangci-lint run`（仓库配置）0 问题，`internal/archcheck`
+四条不变量通过 —— `store` 通过自带的 `Sealer` 接口使用 KMS，未新增跨层依赖。
