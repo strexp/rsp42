@@ -46,13 +46,74 @@ internal/activationcode       activation codes + QR
 internal/testutil             test-only helpers (not linked into the binary)
 ```
 
-Package dependencies flow `cmd → api/service → {rsp, saip, crypto, cert, kms,
-store, config, logging}`; the low-level packages never depend on `api`. The leaf
-packages (`iccid`, `saipver`, `asn1`, `kms`, `logging`, `metrics`, `version`)
-depend on nothing inside rsp42, which is what lets `store` and `config` stay
-independent of the protocol codecs. `bertlv` is imported by exactly one file
-(`internal/asn1/construct.go`), and the management API declares the store seams it
-uses instead of naming the SQLite repositories.
+### Dependency direction
+
+```
+cmd/rsp42 → cli → api ─┐
+                       ├→ service ─┐
+                       │           ├→ {rsp, saip, crypto, cert, kms, store,
+                       │           │    config, logging, metrics, activationcode}
+                       └───────────┘
+leaf (no rsp42 imports): asn1, iccid, saipver, kms, logging, metrics, version
+```
+
+Rules the tree is expected to keep:
+
+- **Nothing below imports anything above.** `asn1`, `iccid`, `saipver`, `kms`,
+  `logging`, `metrics` and `version` are leaves; in particular no interface
+  package imports `service` or `api`.
+- **`store` and `config` never import `rsp`.** A comparable pair or a Luhn check
+  digit is not a wire concern: the SAIP version type lives in `saipver` and the
+  ICCID helpers in `iccid`. This is what keeps the persistence layer independent
+  of the protocol codecs.
+- **The HTTP layer depends on consumer-defined store interfaces, not on the
+  SQLite repositories.** `api/admin` (`deps.go`), `api/dsadmin`, `api/es2plus`,
+  `api/middleware` (`IdempotencyStore`), `audit` (`AuditSink`), `client/es2p`
+  (`QueueStore`) and `service` (`ProfileStore`, `SessionStore`, `EventStore`,
+  `RegistrationStore`, `NotificationStore`, `UPPStore`, `PersonalizationStore`,
+  `AuditSink`) each declare the seam they use, with a compile-time assertion that
+  the repository satisfies it. `service` additionally runs its own tests entirely
+  on in-memory fakes (`service/dip_test.go`).
+- **Repositories are only wired in the composition root** (`cmd` → `cli`). The
+  management API also validates its dependency set at startup
+  (`admin.Handler.Validate`, `dsadmin.Config.Validate`) instead of answering 501
+  or panicking at request time.
+- **`bertlv` is imported by exactly one file** (`internal/asn1/construct.go`):
+  `asn1.Tag` is a plain byte slice and `asn1.Builder` is rsp42's own opaque type,
+  so replacing the BER-TLV library is a change confined to that package.
+- **Outbound HTTP clients live outside the server handler packages**: `client/es2p`
+  (ES2+ callbacks and the operator client) and `service/smdsc.go` (ES12/ES15).
+  A handler package only serves its interface.
+- **The filesystem is touched in exactly three places**: startup
+  (`cli/listener.go`, certificates, KMS keys), the UPP directory importer
+  (`internal/uppio`) and the audit file sink. A request path never reads a
+  template or a credential from disk.
+- **`internal/testutil` is test-only.** Only `_test.go` files import it, so it is
+  not linked into the binary (its `mockoperator` subpackage is the ES2+ mock the
+  dev-only `admin mock-operator` command runs).
+
+### Directory responsibilities
+
+| Directory | Belongs there | Does not belong there |
+|---|---|---|
+| `internal/asn1` | BER-TLV reader (`TLV`), editable tree (`Node`), builder and tag helpers | Protocol messages, SAIP knowledge, I/O |
+| `internal/rsp` | Hand-written SGP.22 messages and codecs, one file per family (`download`, `notification`, `cancel`, `signed`, `euicc_info`, `response_decode`), signing helpers, named status codes | HTTP, storage, SAIP personalization |
+| `internal/saip` | ProfileElement model and registry, header codec/policy (`header.go`, `header_services.go`, `gfste.go`), template table, V2.3.1 constraints | Storage, HTTP, version policy (that is `saipver` + `service`) |
+| `internal/saip/personalization` | Data model, engine, per-field appliers, field codecs | Storage, HTTP |
+| `internal/crypto`, `internal/cert`, `internal/kms` | Primitives (`bsp`, `bpp`, `ecdsa`, `kdf`), certificate loading/validation/selection, key provider | Business logic |
+| `internal/store` | One repository per aggregate, migrations, `errors.go`, `sqlutil.go` | Domain rules (allocation policy, version ordering), protocol types |
+| `internal/service` | Orchestration and policy: CMAE, orders, sessions, inventory, personalization, SM-DS, notifications; consumer-defined ports in `interfaces.go` | SQL, filesystem I/O (importing is `internal/uppio`), HTTP |
+| `internal/api/common`, `adminhttp`, `asn1bind` | Shared HTTP conventions: SGP.22 envelopes, the management-API error model and paging, the §6.6 ASN.1 binding plumbing | Resource-specific handler logic |
+| `internal/api/es9plus`, `es11`, `es12`, `es2plus` | One HTTP interface each: decode, authorize, call `service`, envelope | Outbound clients, cross-interface shared logic |
+| `internal/api/admin`, `internal/api/admin/openapi` | The SM-DP+ management surface and its OpenAPI document | The SM-DS surface, client code |
+| `internal/api/dsadmin` | The SM-DS management surface (event records) | SM-DP+ resources |
+| `internal/client/es2p` | ES2+ outbound clients (callbacks, callback queue, operator client) | Server handlers |
+| `internal/cli` | Composition roots (`smdpp_graph.go`, `smds.go`), listeners/TLS, lifecycle, command tables, one file per admin command | Business logic, data access |
+| `internal/uppio` | The only UPP directory ingestion path | Runtime resolution (that is `store` + `service`) |
+| `internal/testutil` | Test-only helpers and the mock operator | Anything linked into the binary |
+
+`cmd/rsp42` is a three-line entry point; everything else is reached from
+`internal/cli`.
 
 ## Design notes
 
@@ -60,14 +121,20 @@ uses instead of naming the SQLite repositories.
   Authentication handshake through `service/cmaeCore` (`cmae_core.go`). Each role
   injects its own signer/identity and maps the core's typed errors to its
   interface-specific status codes (ES9+ `8.x` vs ES11 `8.9.x`).
-- **Consumer-side interfaces (dependency inversion)**: `service` defines the
-  small interfaces it needs (`ProfileStore`, `SessionStore`, `EventStore`,
-  `RegistrationStore`, `NotificationStore`, `certProvider`); the concrete SQLite
-  repositories and `cert.Manager` satisfy them. `api/es2plus` depends on
-  `service.ProfileStore`/`OrderAuditor`, not on `store`.
-- **Small, cohesive files**: RSP messages are split by family (`session`/
-  `download`/`notification`/`cancel`), store repositories one per aggregate,
-  and the CLI is split into `server`/`smdpp`/`smds`/`admin*`.
+- **Consumer-side interfaces (dependency inversion)**: every layer that touches
+  persistence declares the seam it uses (see *Dependency direction* above); the
+  concrete SQLite repositories and `cert.Manager` satisfy them, so a handler or a
+  service can be exercised without a database.
+- **Small, cohesive files**: a file holds one job. RSP messages are split by
+  family, store repositories one per aggregate (`errors.go` and `sqlutil.go`
+  beside them), SAIP header codec/policy/GFSTE are separate files, the SM-DP+
+  object graph is its own file (`cli/smdpp_graph.go`), and each admin CLI command
+  has its own file. A directory never mixes roles from the table above.
+- **One source of truth per contract**: the management-API contract is
+  `internal/api/admin/openapi/openapi.json`, and the test suite validates real
+  responses against the schema the document declares for each operation; the
+  metric vocabulary is declared by the packages that emit it
+  (`service.DescribeMetrics`, `es2plus.DescribeMetrics`).
 - **Explicit**: no global mutable state; sensitive session columns have a
   dedicated field/column; status codes are named `rsp.Code` values.
 - **Fixed deployment shape (deliberate)**: SQLite only, one process per database
