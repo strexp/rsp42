@@ -10,6 +10,9 @@ TODO.md
 *.test
 *.out
 
+# workspace-local Go build cache (GOCACHE=$(pwd)/.gocache)
+/.gocache/
+
 # local configuration instance (copy config.example.yaml)
 config/config.yaml
 
