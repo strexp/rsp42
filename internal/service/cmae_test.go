@@ -6,10 +6,12 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"errors"
+	"fmt"
 	"log/slog"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
-	"rsp42/internal/uppio"
 	"strings"
 	"testing"
 	"time"
@@ -26,6 +28,7 @@ import (
 	"rsp42/internal/saip/personalization"
 	"rsp42/internal/store"
 	"rsp42/internal/testutil"
+	"rsp42/internal/uppio"
 )
 
 const (
@@ -356,6 +359,80 @@ func TestNotificationInstalled(t *testing.T) {
 	require.Equal(t, 4, gotPoint)
 }
 
+// TestInstallEventDeletionIsGated covers smdpp.es12.delete_on_install: a
+// successful installation deletes the SM-DS event by default, and keeps it when
+// the option asks for that (the deployment then relies on the ACR-0 cleanup).
+func TestInstallEventDeletionIsGated(t *testing.T) {
+	for _, keep := range []bool{false, true} {
+		t.Run(fmt.Sprintf("keep=%v", keep), func(t *testing.T) {
+			_, st := setupCMAE(t)
+			orders := NewOrderService(st.Profiles)
+			notifs := NewNotificationService(NotificationDeps{
+				Log: slog.Default(), Notifs: st.Notifs, Profiles: st.Profiles, Orders: orders,
+			})
+
+			inv := NewInventory(st.Profiles, "8900012", "00101")
+			profile, err := inv.Allocate(AllocateRequest{EID: testEID, ProfileType: "operational"})
+			require.NoError(t, err)
+			profile.MatchingID = "MATCH-GATED"
+			require.NoError(t, st.Profiles.Update(profile))
+			_, err = orders.Confirm(profile.ICCID, true)
+			require.NoError(t, err)
+			_, err = orders.MarkDownloaded(profile.ICCID)
+			require.NoError(t, err)
+
+			// A registration for this EID, and an SM-DS that accepts its deletion.
+			require.NoError(t, st.Regs.Insert(testEID, "MATCH-GATED", "testrootsmds.example.com", false, ""))
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				_, _ = w.Write([]byte(`{"header":{"functionExecutionStatus":{"status":"Executed-Success"}}}`))
+			}))
+			defer srv.Close()
+			notifs.Deps.Registrar = &Registrar{
+				Repo: st.Regs, Client: NewSMDSCClient(srv.URL, "2.999.10", nil),
+				SMDPAddress: "testsmdpplus1.example.com",
+			}
+			notifs.Deps.KeepEventOnInstall = keep
+
+			provider, err := kms.NewFileProviderFromKEK(testKEK)
+			require.NoError(t, err)
+			euiccKey, err := provider.ECDSAKey(testRoot + "/eUICC/SK_EUICC_NIST.pem")
+			require.NoError(t, err)
+			ss := NewSessionService(st.Sessions, provider, time.Hour)
+			txn := mustHexLower(t, "00112233445566778899AABBCCDDEEFF")
+			require.NoError(t, ss.Put(&store.Session{
+				TransactionID: strings.ToUpper(hex.EncodeToString(txn)),
+				State:         "downloaded", ProfileID: profile.ID,
+				EuiccCert: readFile(t, testRoot+"/eUICC/CERT_EUICC_NIST.der"),
+			}))
+			notifs.Deps.Sessions = ss
+
+			meta := tlv([]byte{0xbf, 0x2f}, testutil.Concat(
+				tlv([]byte{0x80}, []byte{0x01}),
+				tlv([]byte{0x81}, []byte{0x00, 0x80}),
+				tlv([]byte{0x0c}, []byte("x")),
+			))
+			success := tlv([]byte{0xa2}, tlv([]byte{0xa0}, testutil.Concat(
+				tlv([]byte{0x4f}, testutil.MustHex(t, "a0000005591010ffffffff8900001000")),
+				tlv([]byte{0x04}, nil),
+			)))
+			pird := tlv([]byte{0xbf, 0x27}, testutil.Concat(tlv(tCtx0p, txn), meta, success))
+			sig, err := crypto.SignRaw(euiccKey, pird)
+			require.NoError(t, err)
+			pir := tlv([]byte{0xbf, 0x37}, testutil.Concat(pird, tlv(tSig, sig)))
+
+			require.NoError(t, notifs.HandlePendingNotification(context.Background(), pir))
+
+			regs, err := st.Regs.ListActiveByEID(testEID)
+			require.NoError(t, err)
+			if keep {
+				require.Len(t, regs, 1, "delete_on_install: false must keep the event")
+			} else {
+				require.Empty(t, regs, "the event is deleted on install by default")
+			}
+		})
+	}
+}
+
 // testCertificateManager builds the SGP.26 Variant O (NIST) certificate manager
 // used by the notification tests.
 func testCertificateManager(t *testing.T) *cert.Manager {
@@ -658,11 +735,22 @@ func TestACRRetrieval(t *testing.T) {
 	require.True(t, res.ACROnly)
 	require.Contains(t, hex.EncodeToString(res.ProfileMetadata), "8201ff") // BOOLEAN true
 
-	// Type 0: redownload activation code.
+	// Type 0: redownload activation code. The rotation must tell the caller which
+	// MatchingID was replaced, so the registration held under it (keyed by the
+	// MatchingID, §3.6) can be dropped.
+	var rotatedFrom string
+	cmae.MatchingIDChanged = func(_ *store.Profile, previous string) { rotatedFrom = previous }
 	res, err = cmae.handleACR(context.Background(), "TXN2", &clientAuth{Session: &store.Session{TransactionID: "TXN2"}, EID: testEID, MatchingID: "ACR-0-" + profile.ICCID})
 	require.NoError(t, err)
 	require.True(t, res.ACROnly)
 	require.Contains(t, hex.EncodeToString(res.ProfileMetadata), "81") // UTF8String alternative
+	require.Equal(t, "MATCH-ACR", rotatedFrom, "the ACR-0 rotation must report the previous MatchingID")
+
+	// The availability check does not rotate, so it must not report a change.
+	rotatedFrom = ""
+	_, err = cmae.handleACR(context.Background(), "TXN4", &clientAuth{Session: &store.Session{TransactionID: "TXN4"}, EID: testEID, MatchingID: "ACR-1-" + profile.ICCID})
+	require.NoError(t, err)
+	require.Empty(t, rotatedFrom, "ACR-1 must not rotate the MatchingID")
 
 	// Unknown ICCID -> 8.2.1/1.2.
 	_, err = cmae.handleACR(context.Background(), "TXN3", &clientAuth{Session: &store.Session{TransactionID: "TXN3"}, EID: testEID, MatchingID: "ACR-1-9999999999999999999"})

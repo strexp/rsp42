@@ -50,9 +50,16 @@ func (c *CMAE) handleACR(ctx context.Context, transactionID string, ca *clientAu
 		// could never be used. Use the same "MATCH-" shape confirmOrder
 		// auto-generates.
 		token := "MATCH-" + randomToken()
+		previous := profile.MatchingID
 		profile.MatchingID = token
 		if err := c.Deps.Profiles.Update(profile); err != nil {
 			return nil, err
+		}
+		// The SM-DS registration is keyed by the MatchingID (§3.6), so the one
+		// held under the previous value is stale now. The new code is delivered
+		// directly, so no new event is registered; the hook only cleans up.
+		if previous != "" && previous != token && c.MatchingIDChanged != nil {
+			c.MatchingIDChanged(profile, previous)
 		}
 		ac := &activationcode.Code{FQDN: c.Cfg.FQDN, MatchingID: token}
 		ssd = rsp.ACRRedownload(ac.String())

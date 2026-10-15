@@ -88,15 +88,30 @@ func cmdSMDpp(prog string, args []string) int {
 			log.Error("es12 client tls", "err", err)
 			return 1
 		}
-		reg := &service.Registrar{
+		registrar := &service.Registrar{
 			Repo:        st.Regs,
 			Client:      service.NewSMDSCClient("https://"+cfg.SMDpp.ES12.SMDSAddress+":9444", cfg.SMDpp.OID, hc),
 			SMDPAddress: cfg.SMDpp.FQDN,
 			Forwarding:  cfg.SMDpp.ES12.ForwardingIndicator,
 			Log:         log,
+			Metrics:     reg,
+			Audit:       st.Audit,
 		}
-		es2pHandler.Registrar = reg
-		notifs.Deps.Registrar = reg
+		es2pHandler.Registrar = registrar
+		notifs.Deps.Registrar = registrar
+		// The event is deleted once the Profile is installed unless the operator
+		// asks to keep it discoverable (smdpp.es12.delete_on_install: false).
+		notifs.Deps.KeepEventOnInstall = !cfg.SMDpp.ES12.DeleteOnInstall
+		// The ACR-0 redownload rotates a Profile's MatchingID (§3.1.7); the
+		// registration held under the previous one is stale, and the CMAE is the
+		// only place that knows the rotation happened.
+		cmae.MatchingIDChanged = func(profile *store.Profile, previousMatchingID string) {
+			meta := service.EventMeta{Tenant: profile.TenantID, ICCID: profile.ICCID, MatchingID: previousMatchingID}
+			if err := registrar.DeleteEvent(profile.EID, previousMatchingID, meta); err != nil {
+				log.Warn("ES12 delete stale event after an ACR-0 MatchingID rotation",
+					"eid", profile.EID, "eventId", previousMatchingID, "err", err)
+			}
+		}
 	}
 	es9pHandler := es9plus.New(log, cmae)
 	es9pHandler.Notifs = notifs

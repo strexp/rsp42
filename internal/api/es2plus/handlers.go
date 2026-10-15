@@ -280,14 +280,12 @@ func (h *Handler) confirmOrder(w http.ResponseWriter, r *http.Request) {
 		if err := h.Registrar.DeleteEvent(p.EID, previousMatchingID, meta); err != nil {
 			h.Log.Warn("ES12 delete stale event after a MatchingID change",
 				"eid", p.EID, "eventId", previousMatchingID, "tenant", tenant, "err", err)
-			h.registerFailure(tenant, p.EID, p.ICCID, err)
 		}
 	}
 	if req.SMDSAddress != "" && h.Registrar != nil && p.EID != "" {
 		meta := service.EventMeta{Tenant: tenant, ICCID: p.ICCID, MatchingID: matchingID}
 		if err := h.Registrar.Register(p.EID, matchingID, req.SMDSAddress, meta); err != nil {
 			h.Log.Warn("ES12 register event", "eid", p.EID, "tenant", tenant, "err", err)
-			h.registerFailure(tenant, p.EID, p.ICCID, err)
 		}
 	}
 	writeSuccess(w, map[string]any{"matchingId": matchingID, "smdpAddress": ""})
@@ -357,7 +355,6 @@ func (h *Handler) cancelOrder(w http.ResponseWriter, r *http.Request) {
 		meta := service.EventMeta{Tenant: tenant, ICCID: norm, MatchingID: p.MatchingID}
 		if err := h.Registrar.DeleteForEID(p.EID, meta); err != nil {
 			h.Log.Warn("ES12 delete event after cancelOrder", "eid", p.EID, "tenant", tenant, "err", err)
-			h.registerFailure(tenant, p.EID, norm, err)
 		}
 	}
 	_ = h.record(tenant, "cancelOrder", req.ICCID, req.EID, req.MatchingID, req)
@@ -546,23 +543,6 @@ func (h *Handler) authorizeICCID(tenant, rawICCID string) error {
 		return rsp.CodeInputRefused.Status("ICCID belongs to another tenant")
 	}
 	return nil
-}
-
-// registerFailure makes an ES12 registration failure observable: esim42 needs
-// to know that an event was not registered (G20), so it is counted and audited
-// rather than only logged.
-func (h *Handler) registerFailure(tenant, eid, iccid string, err error) {
-	if h.Metrics != nil {
-		h.Metrics.Inc("rsp42_es12_register_failures_total", map[string]string{"tenant": tenant})
-	}
-	if h.AuditRepo == nil {
-		return
-	}
-	detail, _ := json.Marshal(map[string]string{"eid": eid, "iccid": iccid, "error": err.Error()})
-	_ = h.AuditRepo.Insert(&store.AuditEntry{
-		TenantID: tenant, Interface: "es12", Function: "registerEvent", Subject: eid,
-		Outcome: "Failed", DetailJSON: string(detail),
-	})
 }
 
 // Helpers -------------------------------------------------------------------

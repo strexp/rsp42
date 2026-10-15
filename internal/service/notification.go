@@ -88,6 +88,11 @@ type NotificationDeps struct {
 	Sessions  *SessionService
 	Certs     *cert.Manager
 	Registrar *Registrar
+	// KeepEventOnInstall keeps the SM-DS event after a successful installation
+	// instead of deleting it (smdpp.es12.delete_on_install: false). Deleting it
+	// is the normal case (SGP.22 §3.6: an installed Profile no longer needs to
+	// be discoverable), so the zero value deletes.
+	KeepEventOnInstall bool
 	// AllowRedownloadAfterDelete returns a Profile to Released when a verified
 	// Delete Notification arrives, so an Activation Code retrieved with ACR-0
 	// becomes usable again (SGP.22 §3.1.7). Off by default.
@@ -166,7 +171,7 @@ func (n *NotificationService) handleInstallation(ctx context.Context, pir *rsp.P
 			if _, err := n.Deps.Orders.MarkInstalled(profile.ICCID); err != nil && n.Deps.Log != nil {
 				n.Deps.Log.Warn("mark installed", "iccid", profile.ICCID, "err", err)
 			}
-			if n.Deps.Registrar != nil && profile.EID != "" {
+			if n.Deps.Registrar != nil && profile.EID != "" && !n.Deps.KeepEventOnInstall {
 				if err := n.Deps.Registrar.DeleteForEID(profile.EID, progressMeta(profile)); err != nil && n.Deps.Log != nil {
 					n.Deps.Log.Warn("ES12 delete event on install", "eid", profile.EID, "err", err)
 				}

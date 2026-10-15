@@ -1,19 +1,30 @@
 package service
 
 import (
+	"encoding/json"
 	"log/slog"
 
+	"rsp42/internal/metrics"
 	"rsp42/internal/store"
 )
 
 // Registrar registers and deletes SM-DS events on behalf of the SM-DP+
 // (SGP.22 §3.6.1 / §3.6.3) and records them for later deletion.
+//
+// Every caller that fails to register or delete an event is reported the same
+// way, through Metrics and Audit when they are set: the counters and the audit
+// row would otherwise have to be repeated by each caller (ConfirmOrder,
+// CancelOrder, the ACR-0 MatchingID rotation and the install-time deletion).
 type Registrar struct {
 	Repo        RegistrationStore
 	Client      *SMDSCClient
 	SMDPAddress string
 	Forwarding  bool
 	Log         *slog.Logger
+	// Metrics and Audit, when set, make a failure observable:
+	// rsp42_es12_register_failures_total and an interface=es12 audit row.
+	Metrics *metrics.Registry
+	Audit   AuditSink
 }
 
 // Register generates an event for the EID and registers it at the SM-DS.
@@ -35,6 +46,7 @@ func (r *Registrar) Register(eid, eventID, smdsAddress string, meta EventMeta) e
 		}
 	}
 	if err := r.Client.Register(eid, r.SMDPAddress, eventID, r.Forwarding, meta); err != nil {
+		r.recordFailure("registerEvent", meta.Tenant, eid, meta.ICCID, err)
 		return err
 	}
 	return r.Repo.Insert(eid, eventID, smdsAddress, r.Forwarding, meta.Tenant)
@@ -74,9 +86,28 @@ func (r *Registrar) deleteMatching(eid string, meta EventMeta, keep func(*store.
 		// A not-found answer means the SM-DS already dropped the event; the
 		// local row is still marked so it stops being retried.
 		if err := r.Client.Delete(eid, g.EventID, meta); err != nil && !r.Client.IsNotFound(err) {
+			r.recordFailure("deleteEvent", meta.Tenant, eid, meta.ICCID, err)
 			return err
 		}
 		_ = r.Repo.MarkDeleted(g.ID)
 	}
 	return nil
+}
+
+// recordFailure counts and audits one failed registration or deletion. The
+// audit row is written with interface=es12 even though it may have been caused
+// by an ES2+ call (ConfirmOrder/CancelOrder), because the failing interaction is
+// the ES12 one.
+func (r *Registrar) recordFailure(function, tenant, eid, iccid string, err error) {
+	if r.Metrics != nil {
+		r.Metrics.Inc("rsp42_es12_register_failures_total", map[string]string{"tenant": tenant})
+	}
+	if r.Audit == nil {
+		return
+	}
+	detail, _ := json.Marshal(map[string]string{"eid": eid, "iccid": iccid, "error": err.Error()})
+	_ = r.Audit.Insert(&store.AuditEntry{
+		TenantID: tenant, Interface: "es12", Function: function, Subject: eid,
+		Outcome: "Failed", DetailJSON: string(detail),
+	})
 }

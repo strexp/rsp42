@@ -73,6 +73,13 @@ type CMAE struct {
 	// types (redownload and availability check) and its refusal fails the
 	// retrieval.
 	ACRCheck func(ctx context.Context, profile *store.Profile) error
+	// MatchingIDChanged, when set, is called after a Profile's MatchingID has
+	// been rotated, with its previous value: the ACR-0 redownload mints a fresh
+	// Activation Code (SGP.22 §3.1.7), which leaves the SM-DS registration held
+	// under the old MatchingID stale. Cleanup must not fail the retrieval — the
+	// new code is already being handed out — so the hook reports a failure
+	// itself (log, metric, audit).
+	MatchingIDChanged func(profile *store.Profile, previousMatchingID string)
 
 	core *cmaeCore
 }

@@ -196,6 +196,36 @@ func TestConfirmOrderMatchingIDChangeDropsStaleEvent(t *testing.T) {
 	require.Equal(t, []string{"M-NEW-2"}, active())
 }
 
+// TestES12RegistrationFailureIsRecorded pins that the Registrar itself makes a
+// failed registration observable, so every caller (ConfirmOrder, CancelOrder,
+// the ACR-0 rotation, the install-time deletion) is covered by one code path
+// rather than each repeating the metric and the audit row.
+func TestES12RegistrationFailureIsRecorded(t *testing.T) {
+	st := newCallbackStore(t)
+	reg := newES2PMetricsRegistry()
+	r := &service.Registrar{
+		Repo: st.Regs,
+		// Nothing listens here: the registration must fail.
+		Client:      service.NewSMDSCClient("http://127.0.0.1:1", "2.999.10", nil),
+		SMDPAddress: "testsmdpplus1.example.com",
+		Metrics:     reg,
+		Audit:       st.Audit,
+	}
+	err := r.Register(testEID, "M-FAIL", "testrootsmds.example.com",
+		service.EventMeta{Tenant: "carrier-a", ICCID: "8900012345678901234"})
+	require.Error(t, err)
+
+	require.Contains(t, reg.Render(), `rsp42_es12_register_failures_total{tenant="carrier-a"} 1`)
+
+	rows, err := st.Audit.List(10)
+	require.NoError(t, err)
+	require.Len(t, rows, 1)
+	require.Equal(t, "es12", rows[0].Interface)
+	require.Equal(t, "registerEvent", rows[0].Function)
+	require.Equal(t, "Failed", rows[0].Outcome)
+	require.Equal(t, testEID, rows[0].Subject)
+}
+
 // TestUnmappedRequesterSignals covers F1: the platform-default fallback of an
 // unmapped functionRequesterIdentifier is counted and lands on the audit row, so
 // an operator health check has a signal (docs/interfaces.md).
