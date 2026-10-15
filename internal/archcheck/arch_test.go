@@ -65,6 +65,13 @@ var deniedEdges = []struct {
 	{"internal/crypto", "internal/api", "crypto is below api"},
 	{"internal/iccid", "internal/rsp", "iccid is a leaf below the codec"},
 	{"internal/iccid", "internal/store", "iccid is a leaf below persistence"},
+
+	// cert is a primitive below the configuration layer; the config -> Options
+	// mapping belongs to the composition root.
+	{"internal/cert", "internal/config", "cert is below config"},
+	{"internal/cert", "internal/service", "cert is below service"},
+	{"internal/cert", "internal/api", "cert is below api"},
+	{"internal/cert", "internal/store", "cert is below store"},
 }
 
 // bertlvImporters are the only files allowed to import the BER-TLV library.
