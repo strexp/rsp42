@@ -76,7 +76,10 @@ func NewCallbackQueue(repo QueueStore, client *CallbackClient, opts QueueOptions
 // A failed immediate attempt leaves a pending row that RunOnce will retry.
 func (q *CallbackQueue) Deliver(ctx context.Context, info service.ProgressInfo) error {
 	if q.Metrics != nil {
-		q.Metrics.Inc("rsp42_progress_notifications_total", map[string]string{
+		// Counted once per notification (not once per delivery attempt: retries
+		// go through attempt(), which does not increment). The name matches what
+		// esim42's dashboards read; see internal/service/metrics.go.
+		q.Metrics.Inc("rsp42_downloads_total", map[string]string{
 			"tenant": info.TenantID,
 			"point":  fmt.Sprintf("%d", info.NotificationPointID),
 			"status": info.NotificationPointStatus.Status,

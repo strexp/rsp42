@@ -126,4 +126,20 @@ var (
 	// CodeProfileNotFound is kept for ES9+ internal use where the spec's
 	// "Profile not found" wording applies.
 	CodeProfileNotFound = Code{"8.2.5", "3.9"}
+
+	// MatchingID / ICCID association codes of the ES2+ order functions. The
+	// MatchingID subject code is 8.2.6 (SGP.22 §5.2.6.1), and the specific
+	// reasons come from Table 27 (ConfirmOrder) and Table 30 (CancelOrder).
+	//
+	// CodeMatchingIDInUse is ConfirmOrder's 8.2.6/3.3 "Already in Use
+	// (Uniqueness)": the operator supplied a MatchingID that another order
+	// already uses (§5.3.2; the MatchingID SHALL be unique in the context of the
+	// Operator and the SM-DP+).
+	CodeMatchingIDInUse = Code{"8.2.6", "3.3"}
+	// CodeMatchingIDInvalidAssoc is CancelOrder's 8.2.6/3.10: the supplied
+	// MatchingID is not the one associated with the ICCID.
+	CodeMatchingIDInvalidAssoc = Code{"8.2.6", "3.10"}
+	// CodeICCIDInvalidAssoc is CancelOrder's 8.2.1/3.10: a different EID is
+	// associated with the ICCID than the one supplied.
+	CodeICCIDInvalidAssoc = Code{"8.2.1", "3.10"}
 )

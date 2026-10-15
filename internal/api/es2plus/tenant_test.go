@@ -141,12 +141,19 @@ func TestES2PlusDistinguishableFailureCodes(t *testing.T) {
 	require.ErrorAs(t, err, &se)
 	require.True(t, se.IsCode("8.2.1", "3.9"), "got %v", err)
 
-	// CancelOrder rejects an unknown finalProfileStatusIndicator with 8.2.1/1.2.
+	// CancelOrder keeps the mandatory-field failure distinct from the malformed
+	// value: finalProfileStatusIndicator is M (Table 28), so an absent element is
+	// 8.1.1/2.2 Mandatory Element Missing, while an unrecognised value is a
+	// malformed request (8.1/1.2), not an authorisation failure.
 	dl, err := client.DownloadOrderWith(ctx, "", "", "operational", es2p.CallOptions{Requester: "op-a"})
 	require.NoError(t, err)
+	err = client.CancelOrderWith(ctx, dl.ICCID, "", "", "", es2p.CallOptions{Requester: "op-a"})
+	require.ErrorAs(t, err, &se)
+	require.True(t, se.IsCode("8.1.1", "2.2"), "missing finalProfileStatusIndicator: got %v", err)
+
 	err = client.CancelOrderWith(ctx, dl.ICCID, "", "", "bogus", es2p.CallOptions{Requester: "op-a"})
 	require.ErrorAs(t, err, &se)
-	require.True(t, se.IsCode("8.2.1", "1.2"), "got %v", err)
+	require.True(t, se.IsCode("8.1", "1.2"), "invalid finalProfileStatusIndicator: got %v", err)
 }
 
 func TestES2PlusIdempotencyKeyReplay(t *testing.T) {

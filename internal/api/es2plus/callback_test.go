@@ -64,6 +64,42 @@ func TestCallbackQueueRetriesThenSucceeds(t *testing.T) {
 	require.Equal(t, int32(2), atomic.LoadInt32(&calls))
 }
 
+// TestCallbackQueueDownloadMetric pins F3: the counter esim42's dashboards read
+// is rsp42_downloads_total{tenant,point,status}, and it counts one per
+// notification — the retry sweep must not inflate it.
+func TestCallbackQueueDownloadMetric(t *testing.T) {
+	st := newCallbackStore(t)
+	var calls int32
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		if atomic.AddInt32(&calls, 1) == 1 {
+			w.WriteHeader(http.StatusInternalServerError)
+			return
+		}
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	defer srv.Close()
+
+	reg := newES2PMetricsRegistry()
+	cb := es2p.NewCallbackClient(srv.URL, "2.999.10", nil)
+	q := es2p.NewCallbackQueue(st.Callbacks, cb, es2p.QueueOptions{
+		Log: slog.Default(), Metrics: reg,
+		Backoff: func(int) time.Duration { return 0 },
+	})
+
+	err := q.Deliver(context.Background(), service.ProgressInfo{
+		TenantID: "carrier-a", EID: "89049032123451234512345678901235", ICCID: "8900012345678901234",
+		NotificationPointID: 4, NotificationPointStatus: service.PointStatus{Status: "Executed-Success"},
+	})
+	require.Error(t, err, "the first attempt fails and is retried later")
+
+	_, err = q.RunOnce(context.Background())
+	require.NoError(t, err)
+
+	out := reg.Render()
+	require.Contains(t, out, `rsp42_downloads_total{point="4",status="Executed-Success",tenant="carrier-a"} 1`)
+	require.NotContains(t, out, "rsp42_progress_notifications_total", "the counter was renamed")
+}
+
 func TestCallbackQueueDeadLetter(t *testing.T) {
 	st := newCallbackStore(t)
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {

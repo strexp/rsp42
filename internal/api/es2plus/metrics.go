@@ -11,4 +11,6 @@ func DescribeMetrics(reg *metrics.Registry) {
 		"SM-DS event registration failures by tenant.")
 	reg.Describe("rsp42_es2p_profile_type_unparsed_total", metrics.Counter,
 		"downloadOrder requests whose profileType did not resolve to a tenant template, by tenant.")
+	reg.Describe("rsp42_es2p_tenant_unmapped_total", metrics.Counter,
+		"ES2+ calls whose functionRequesterIdentifier was not mapped to a tenant (they fall back to the platform default tenant).")
 }

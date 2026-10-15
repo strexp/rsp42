@@ -7,8 +7,12 @@ import "rsp42/internal/metrics"
 // refuses to record an undeclared name (see metrics.Registry.Add), which makes a
 // typo a loud failure instead of a silently missing series.
 func DescribeMetrics(reg *metrics.Registry) {
-	reg.Describe("rsp42_progress_notifications_total", metrics.Counter,
-		"ES2+ download-progress notifications by tenant, notification point and status.")
+	// Incremented once per outbound ES2+ HandleDownloadProgressInfo, i.e. once
+	// per download/install outcome point, labelled by tenant, notification point
+	// and status. The name is the one esim42's dashboards reference for
+	// "downloads by tenant, point and status" (docs/interfaces.md).
+	reg.Describe("rsp42_downloads_total", metrics.Counter,
+		"Download/install progress notifications by tenant, notification point and status.")
 	reg.Describe("rsp42_acr_requests_total", metrics.Counter,
 		"ES2+ HandleAcrRequest confirmations by tenant and outcome (allowed|refused|error).")
 	reg.Describe("rsp42_euicc_v3_capable_total", metrics.Counter,

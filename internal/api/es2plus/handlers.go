@@ -225,6 +225,20 @@ func (h *Handler) confirmOrder(w http.ResponseWriter, r *http.Request) {
 	if req.EID != "" {
 		p.EID = req.EID
 	}
+	// Table 27: the EID is mandatory in the context of this order when an SM-DS
+	// address is provided (the event registration is keyed by the EID). A
+	// Profile that is already bound carries its EID, so this only rejects an
+	// anonymous order that asks for an SM-DS event.
+	if req.SMDSAddress != "" && p.EID == "" {
+		writeFailure(w, rsp.CodeMandatoryElementMissing, "eid is required when smdsAddress is provided")
+		return
+	}
+	// §4.1.1: a MatchingID consists only of upper case alphanumeric characters
+	// and '-'. An empty value means "generate one"; anything else is malformed.
+	if req.MatchingID != "" && !validMatchingID(req.MatchingID) {
+		writeFailure(w, rsp.CodeInvalidRequest, "matchingId must be upper case alphanumeric or '-'")
+		return
+	}
 	matchingID := req.MatchingID
 	if matchingID == "" {
 		matchingID = "MATCH-" + strings.ReplaceAll(uuid.NewString(), "-", "")[:16]
@@ -239,7 +253,15 @@ func (h *Handler) confirmOrder(w http.ResponseWriter, r *http.Request) {
 		p.CCRequired = true
 	}
 	if err := h.Profiles.Update(p); err != nil {
-		writeFailure(w, rsp.CodeProfileUpdateFailed, err.Error())
+		// Table 27: a MatchingID that another order already uses is 8.2.6/3.3.
+		// The unique index is the authority (a pre-check would race), and the
+		// store error itself must not reach the caller.
+		if store.IsUniqueViolation(err) {
+			writeFailure(w, rsp.CodeMatchingIDInUse, "matchingId is already in use")
+			return
+		}
+		h.Log.Warn("confirmOrder profile update", "iccid", p.ICCID, "err", err)
+		writeFailure(w, rsp.CodeProfileUpdateFailed, "the Profile could not be updated")
 		return
 	}
 	if _, err := h.Orders.Confirm(p.ICCID, req.ReleaseFlag); err != nil {
@@ -257,6 +279,11 @@ func (h *Handler) confirmOrder(w http.ResponseWriter, r *http.Request) {
 	writeSuccess(w, map[string]any{"matchingId": matchingID, "smdpAddress": ""})
 }
 
+// cancelOrder implements ES2+.CancelOrder (§5.3.3). The function SHALL verify
+// that the Profile is still a pending order (allocated, not yet downloaded) and
+// that any supplied MatchingID/EID matches the order, and SHALL then delete the
+// SM-DS event registration of a cancelled order. Table 30 defines the codes for
+// each verification failure.
 func (h *Handler) cancelOrder(w http.ResponseWriter, r *http.Request) {
 	var req cancelOrderReq
 	hdr, ok := decode(w, r, &req)
@@ -264,9 +291,15 @@ func (h *Handler) cancelOrder(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	tenant := h.applyCaller(r, hdr)
+	// finalProfileStatusIndicator is mandatory (Table 28): an absent element and
+	// an unrecognised value are different failures.
+	if strings.TrimSpace(req.FinalProfileStatusIndicator) == "" {
+		writeFailure(w, rsp.CodeMandatoryElementMissing, "finalProfileStatusIndicator is required")
+		return
+	}
 	final, err := parseFinalStatus(req.FinalProfileStatusIndicator)
 	if err != nil {
-		writeFailure(w, rsp.CodeInputRefused, err.Error())
+		writeFailure(w, rsp.CodeInvalidRequest, err.Error())
 		return
 	}
 	if req.ICCID == "" {
@@ -277,12 +310,58 @@ func (h *Handler) cancelOrder(w http.ResponseWriter, r *http.Request) {
 		common.WriteStatusFailure(w, err)
 		return
 	}
-	if _, err := h.Orders.Cancel(iccid.Normalize(req.ICCID), final == finalUnavailable); err != nil {
+	norm := iccid.Normalize(req.ICCID)
+	p, err := h.Profiles.GetByICCID(norm)
+	if err != nil {
+		writeFailure(w, rsp.CodeICCIDUnknown, "unknown ICCID")
+		return
+	}
+	// Table 30: a Profile that is already downloaded is 8.2.1/3.3 (Already in
+	// Use); CancelOrder only cancels a pending order.
+	if p.State == store.StateDownloaded || p.State == store.StateInstalled {
+		writeFailure(w, rsp.CodeICCIDInUse, "the Profile is already downloaded")
+		return
+	}
+	// Table 30: a supplied MatchingID/EID that is not the one associated with
+	// the ICCID is an Invalid Association.
+	if req.MatchingID != "" && p.MatchingID != "" && req.MatchingID != p.MatchingID {
+		writeFailure(w, rsp.CodeMatchingIDInvalidAssoc, "a different MatchingID is associated with this ICCID")
+		return
+	}
+	if req.EID != "" && p.EID != "" && req.EID != p.EID {
+		writeFailure(w, rsp.CodeICCIDInvalidAssoc, "a different EID is associated with this ICCID")
+		return
+	}
+	if _, err := h.Orders.Cancel(norm, final == finalUnavailable); err != nil {
 		writeError(w, err)
 		return
 	}
+	// §5.3.3: if the order had been linked to an event registration, the SM-DP+
+	// SHALL delete it. A failure here must not fail the cancel (the order is
+	// already cancelled); it is logged, and the ES12 failure metric covers it.
+	if p.EID != "" && h.Registrar != nil {
+		meta := service.EventMeta{Tenant: tenant, ICCID: norm, MatchingID: p.MatchingID}
+		if err := h.Registrar.DeleteForEID(p.EID, meta); err != nil {
+			h.Log.Warn("ES12 delete event after cancelOrder", "eid", p.EID, "tenant", tenant, "err", err)
+			h.registerFailure(tenant, p.EID, norm, err)
+		}
+	}
 	_ = h.record(tenant, "cancelOrder", req.ICCID, req.EID, req.MatchingID, req)
 	writeSuccess(w, nil)
+}
+
+// validMatchingID enforces the MatchingID character set of SGP.22 §4.1.1: upper
+// case alphanumeric characters (0-9, A-Z) and '-'. An empty value is allowed and
+// means "let the SM-DP+ generate one".
+func validMatchingID(s string) bool {
+	for i := 0; i < len(s); i++ {
+		switch c := s[i]; {
+		case c >= '0' && c <= '9', c >= 'A' && c <= 'Z', c == '-':
+		default:
+			return false
+		}
+	}
+	return true
 }
 
 // finalProfileStatusIndicator values (SGP.22 Table 29).
@@ -292,9 +371,9 @@ const (
 )
 
 // parseFinalStatus maps the ES2+ finalProfileStatusIndicator to its canonical
-// form. Table 29 defines exactly two values; a missing or unknown value is
-// refused (CancelOrder is specified to return Failed with a relevant status
-// code, e.g. 8.2.1/1.2).
+// form. Table 29 defines exactly two values (Available, Unavailable); anything
+// else is a malformed request. The caller checks absence separately, because a
+// missing mandatory element is 8.1.1/2.2 while an unknown value is not.
 func parseFinalStatus(s string) (string, error) {
 	switch strings.ToLower(strings.TrimSpace(s)) {
 	case "available":
@@ -366,17 +445,33 @@ func (h *Handler) handleAcrRequest(w http.ResponseWriter, r *http.Request) {
 
 // applyCaller records the caller identity in the audit scope and resolves the
 // tenant from functionRequesterIdentifier.
+//
+// An unmapped requester falls back to the platform-default tenant (""), and the
+// fallback is recorded on the audit row (`warning=unmapped`, plus the requester
+// and the resolved tenant) and counted in
+// rsp42_es2p_tenant_unmapped_total, so an operator health check can alert on a
+// carrier that was never registered (docs/esim42-integration-gaps.md §2.3). With
+// an empty requester_tenants table nothing is flagged: a single-tenant
+// deployment has nothing to map.
 func (h *Handler) applyCaller(r *http.Request, hdr common.RequestHeader) string {
-	common.SetActor(r.Context(), hdr.FunctionRequesterIdentifier)
+	ctx := r.Context()
+	common.SetActor(ctx, hdr.FunctionRequesterIdentifier)
 	tenant, mapped := h.RequesterTenants.Resolve(hdr.FunctionRequesterIdentifier)
 	if !mapped {
 		tenant = ""
-		if h.RequesterTenants.Len() > 0 && h.Log != nil {
-			h.Log.Warn("unmapped ES2+ functionRequesterIdentifier; using the platform default tenant",
-				"requester", hdr.FunctionRequesterIdentifier)
+		if h.RequesterTenants.Len() > 0 {
+			common.AddDetail(ctx, "warning", "unmapped")
+			common.AddDetail(ctx, "requester", hdr.FunctionRequesterIdentifier)
+			if h.Metrics != nil {
+				h.Metrics.Inc("rsp42_es2p_tenant_unmapped_total", nil)
+			}
+			if h.Log != nil {
+				h.Log.Warn("unmapped ES2+ functionRequesterIdentifier; using the platform default tenant",
+					"requester", hdr.FunctionRequesterIdentifier)
+			}
 		}
 	}
-	common.SetTenant(r.Context(), tenant)
+	common.SetTenant(ctx, tenant)
 	return tenant
 }
 
@@ -386,16 +481,23 @@ func (h *Handler) applyCaller(r *http.Request, hdr common.RequestHeader) string 
 // Operator). The second return value reports whether the value carried the
 // selector; anything else stays opaque and lets the SM-DP+ fall back to the
 // eUICC version and the tenant default, but the caller records it (C2).
+//
+// An empty tenant part ("/<template>") names a template owned by the
+// platform-default tenant, i.e. a global template (including one promoted with
+// POST /upp/{name}/promote). That is the only way to select such a template: a
+// caller mapped to a carrier has no prefix that denotes the platform-default
+// owner. The name is still resolved with the caller's scope, so a tenant only
+// ever reaches its own template or a global one.
 func (h *Handler) resolveProfileType(tenant, profileType string) (string, bool, error) {
 	i := strings.IndexByte(profileType, '/')
 	if i < 0 {
 		return "", false, nil
 	}
 	want, name := profileType[:i], profileType[i+1:]
-	if want == "" || name == "" {
+	if name == "" {
 		return "", false, rsp.CodeProfileTypeUnknown.Status("malformed profileType " + profileType)
 	}
-	if want != tenant {
+	if want != "" && want != tenant {
 		return "", false, rsp.CodeProfileTypeNotAllowed.Status("profileType belongs to another tenant")
 	}
 	if h.UPP != nil {

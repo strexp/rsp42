@@ -39,6 +39,25 @@ const (
 	FuncAuthenticateClientEs11
 )
 
+// String names the function as the equivalent ES9+/ES11 path does, so audit rows
+// and logs read the same whether the caller used the JSON binding or the ASN.1
+// binding. ES11 reuses AuthenticateClient, so both map to one name.
+func (f ASN1Function) String() string {
+	switch f {
+	case FuncInitiateAuthentication:
+		return "initiateAuthentication"
+	case FuncAuthenticateClient, FuncAuthenticateClientEs11:
+		return "authenticateClient"
+	case FuncGetBoundProfilePackage:
+		return "getBoundProfilePackage"
+	case FuncCancelSession:
+		return "cancelSession"
+	case FuncHandleNotification:
+		return "handleNotification"
+	}
+	return "unknown"
+}
+
 func functionForTag(tag string) (ASN1Function, bool) {
 	switch tag {
 	case "bf39":
