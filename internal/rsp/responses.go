@@ -17,10 +17,10 @@ func (r *PrepareDownloadRequest) Encode() []byte {
 	content := append([]byte{}, r.SmdpSigned2Raw...)
 	content = append(content, r.SmdpSignature2Raw...)
 	if len(r.HashCc) > 0 {
-		content = append(content, tlvBytes([]byte{0x04}, r.HashCc)...)
+		content = append(content, asn1.RawTagged([]byte{0x04}, r.HashCc)...)
 	}
 	content = append(content, r.SmdpCertificateDER...)
-	return tlvBytes(asn1.Ctx(33, true), content)
+	return asn1.RawTagged(asn1.Ctx(33, true), content)
 }
 
 // ES9+ responses -----------------------------------------------------------
@@ -32,12 +32,12 @@ func (r *PrepareDownloadRequest) Encode() []byte {
 //	            smdpCertificate } }
 func AuthenticateClientResponseEs9Ok(transactionID, profileMetaData, smdpSigned2, smdpSignature2, smdpCertificate []byte) []byte {
 	var fields []byte
-	fields = append(fields, tlvBytes(asn1.Ctx(0, false), transactionID)...)
+	fields = append(fields, asn1.RawTagged(asn1.Ctx(0, false), transactionID)...)
 	fields = append(fields, profileMetaData...)
 	fields = append(fields, smdpSigned2...)
 	fields = append(fields, smdpSignature2...)
 	fields = append(fields, smdpCertificate...)
-	return tlvBytes(asn1.Ctx(tagAuthenticateClient, true), tlvBytes(asn1.Ctx(0, true), fields))
+	return asn1.RawTagged(asn1.Ctx(tagAuthenticateClient, true), asn1.RawTagged(asn1.Ctx(0, true), fields))
 }
 
 // AuthenticateClientResponseEs9OkAcr builds the ACR OK branch
@@ -45,41 +45,41 @@ func AuthenticateClientResponseEs9Ok(transactionID, profileMetaData, smdpSigned2
 // profile metadata (SGP.22 §3.1.7.2).
 func AuthenticateClientResponseEs9OkAcr(transactionID, profileMetaData []byte) []byte {
 	var fields []byte
-	fields = append(fields, tlvBytes(asn1.Ctx(0, false), transactionID)...)
+	fields = append(fields, asn1.RawTagged(asn1.Ctx(0, false), transactionID)...)
 	fields = append(fields, profileMetaData...)
-	return tlvBytes(asn1.Ctx(tagAuthenticateClient, true), tlvBytes(asn1.Ctx(5, true), fields))
+	return asn1.RawTagged(asn1.Ctx(tagAuthenticateClient, true), asn1.RawTagged(asn1.Ctx(5, true), fields))
 }
 
 // AuthenticateClientResponseEs9Error builds the error branch
 // (`authenticateClientError [1] INTEGER`).
 func AuthenticateClientResponseEs9Error(code int64) []byte {
-	return tlvBytes(asn1.Ctx(tagAuthenticateClient, true), tlvBytes(asn1.Ctx(1, false), asn1.IntBytes(code)))
+	return asn1.RawTagged(asn1.Ctx(tagAuthenticateClient, true), asn1.RawTagged(asn1.Ctx(1, false), asn1.IntBytes(code)))
 }
 
 // GetBoundProfilePackageResponseOk builds a BF3A GetBoundProfilePackageResponse
 // OK branch wrapping a BoundProfilePackage.
 func GetBoundProfilePackageResponseOk(transactionID, boundProfilePackage []byte) []byte {
 	var fields []byte
-	fields = append(fields, tlvBytes(asn1.Ctx(0, false), transactionID)...)
+	fields = append(fields, asn1.RawTagged(asn1.Ctx(0, false), transactionID)...)
 	fields = append(fields, boundProfilePackage...)
-	return tlvBytes(asn1.Ctx(tagGetBoundProfile, true), tlvBytes(asn1.Ctx(0, true), fields))
+	return asn1.RawTagged(asn1.Ctx(tagGetBoundProfile, true), asn1.RawTagged(asn1.Ctx(0, true), fields))
 }
 
 // GetBoundProfilePackageResponseError builds the error branch
 // (`getBoundProfilePackageError INTEGER`).
 func GetBoundProfilePackageResponseError(code int64) []byte {
-	return tlvBytes(asn1.Ctx(tagGetBoundProfile, true), tlvBytes(asn1.Ctx(1, false), asn1.IntBytes(code)))
+	return asn1.RawTagged(asn1.Ctx(tagGetBoundProfile, true), asn1.RawTagged(asn1.Ctx(1, false), asn1.IntBytes(code)))
 }
 
 // CancelSessionResponseEs9Ok builds the BF41 CancelSessionResponseEs9 OK branch.
 func CancelSessionResponseEs9Ok() []byte {
-	return tlvBytes(asn1.Ctx(tagCancelSessionEs9, true), tlvBytes(asn1.Ctx(0, true), nil))
+	return asn1.RawTagged(asn1.Ctx(tagCancelSessionEs9, true), asn1.RawTagged(asn1.Ctx(0, true), nil))
 }
 
 // CancelSessionResponseEs9Error builds the error branch
 // (`cancelSessionError INTEGER`).
 func CancelSessionResponseEs9Error(code int64) []byte {
-	return tlvBytes(asn1.Ctx(tagCancelSessionEs9, true), tlvBytes(asn1.Ctx(1, false), asn1.IntBytes(code)))
+	return asn1.RawTagged(asn1.Ctx(tagCancelSessionEs9, true), asn1.RawTagged(asn1.Ctx(1, false), asn1.IntBytes(code)))
 }
 
 // AuthenticateClientResponseEs11Ok builds a BF40 AuthenticateClientResponseEs11
@@ -88,18 +88,18 @@ func AuthenticateClientResponseEs11Ok(transactionID []byte, eventEntries [][2]st
 	var entries []byte
 	for _, e := range eventEntries {
 		var item []byte
-		item = append(item, tlvBytes([]byte{0x80}, []byte(e[0]))...)
-		item = append(item, tlvBytes([]byte{0x81}, []byte(e[1]))...)
-		entries = append(entries, tlvBytes([]byte{0x30}, item)...)
+		item = append(item, asn1.RawTagged([]byte{0x80}, []byte(e[0]))...)
+		item = append(item, asn1.RawTagged([]byte{0x81}, []byte(e[1]))...)
+		entries = append(entries, asn1.RawTagged([]byte{0x30}, item)...)
 	}
 	var fields []byte
-	fields = append(fields, tlvBytes([]byte{0x80}, transactionID)...)
-	fields = append(fields, tlvBytes(asn1.Ctx(1, true), entries)...)
-	return tlvBytes(asn1.Ctx(tagAuthenticateEs11, true), tlvBytes(asn1.Ctx(0, true), fields))
+	fields = append(fields, asn1.RawTagged([]byte{0x80}, transactionID)...)
+	fields = append(fields, asn1.RawTagged(asn1.Ctx(1, true), entries)...)
+	return asn1.RawTagged(asn1.Ctx(tagAuthenticateEs11, true), asn1.RawTagged(asn1.Ctx(0, true), fields))
 }
 
 // AuthenticateClientResponseEs11Error builds the BF40 error branch
 // (`authenticateClientError INTEGER`).
 func AuthenticateClientResponseEs11Error(code int64) []byte {
-	return tlvBytes(asn1.Ctx(tagAuthenticateEs11, true), tlvBytes(asn1.Ctx(1, false), asn1.IntBytes(code)))
+	return asn1.RawTagged(asn1.Ctx(tagAuthenticateEs11, true), asn1.RawTagged(asn1.Ctx(1, false), asn1.IntBytes(code)))
 }

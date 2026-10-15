@@ -11,11 +11,11 @@ import (
 
 func TestASN1BindingInitiateRequest(t *testing.T) {
 	challenge := seqBytes(16, 0x11)
-	info := tlvBytes([]byte{0xbf, 0x20}, []byte{0x82, 0x02, 0x02, 0x00})
-	req := tlvBytes(asn1.Ctx(tagInitiateAuth, true),
+	info := asn1.RawTagged([]byte{0xbf, 0x20}, []byte{0x82, 0x02, 0x02, 0x00})
+	req := asn1.RawTagged(asn1.Ctx(tagInitiateAuth, true),
 		append(append(
-			tlvBytes(asn1.Ctx(1, false), challenge),
-			tlvBytes(asn1.Ctx(3, false), []byte("smdp.example.com"))...),
+			asn1.RawTagged(asn1.Ctx(1, false), challenge),
+			asn1.RawTagged(asn1.Ctx(3, false), []byte("smdp.example.com"))...),
 			info...))
 	envelope := EncodeRemoteProfileProvisioningResponse(req)
 
@@ -33,9 +33,9 @@ func TestASN1BindingInitiateRequest(t *testing.T) {
 func TestASN1BindingInitiateResponse(t *testing.T) {
 	txn := seqBytes(16, 0x01)
 	serverSigned1 := (&ServerSigned1{TransactionID: txn, ServerAddress: "x"}).Encode()
-	sig := tlvBytes(asn1.App(55, false), seqBytes(64, 0x22))
+	sig := asn1.RawTagged(asn1.App(55, false), seqBytes(64, 0x22))
 	ski := append([]byte{0x04, 0x14}, seqBytes(20, 0x33)...)
-	cert := tlvBytes([]byte{0x30}, nil)
+	cert := asn1.RawTagged([]byte{0x30}, nil)
 
 	ok := InitiateAuthenticationResponseOk(txn, serverSigned1, sig, ski, cert)
 	fn, inner, err := DecodeRemoteProfileProvisioningRequest(EncodeRemoteProfileProvisioningResponse(ok))
@@ -73,20 +73,20 @@ func TestDecodeASN1BindingRequestsUnwrapExplicitFields(t *testing.T) {
 	txn := seqBytes(16, 0x09)
 
 	// AuthenticateClientRequest: authenticateServerResponse [56] wraps a CHOICE.
-	asr := tlvBytes([]byte{0xbf, 0x38}, tlvBytes(asn1.Ctx(0, true), nil))
-	authReq := tlvBytes([]byte{0xbf, 0x3b}, append(
-		tlvBytes(asn1.Ctx(0, false), txn),
-		tlvBytes([]byte{0xbf, 0x38}, asr)...))
+	asr := asn1.RawTagged([]byte{0xbf, 0x38}, asn1.RawTagged(asn1.Ctx(0, true), nil))
+	authReq := asn1.RawTagged([]byte{0xbf, 0x3b}, append(
+		asn1.RawTagged(asn1.Ctx(0, false), txn),
+		asn1.RawTagged([]byte{0xbf, 0x38}, asr)...))
 	gotAuth, err := DecodeAuthenticateClientRequest(authReq)
 	require.NoError(t, err)
 	require.Equal(t, txn, gotAuth.TransactionID)
 	require.Equal(t, asr, gotAuth.AuthenticateResponse)
 
 	// GetBoundProfilePackageRequest: prepareDownloadResponse [33] wraps a CHOICE.
-	pdr := tlvBytes([]byte{0xbf, 0x21}, tlvBytes(asn1.Ctx(0, true), nil))
-	bppReq := tlvBytes([]byte{0xbf, 0x3a}, append(
-		tlvBytes(asn1.Ctx(0, false), txn),
-		tlvBytes([]byte{0xbf, 0x21}, pdr)...))
+	pdr := asn1.RawTagged([]byte{0xbf, 0x21}, asn1.RawTagged(asn1.Ctx(0, true), nil))
+	bppReq := asn1.RawTagged([]byte{0xbf, 0x3a}, append(
+		asn1.RawTagged(asn1.Ctx(0, false), txn),
+		asn1.RawTagged([]byte{0xbf, 0x21}, pdr)...))
 	gotBPP, err := DecodeGetBoundProfilePackageRequest(bppReq)
 	require.NoError(t, err)
 	require.Equal(t, txn, gotBPP.TransactionID)
@@ -94,8 +94,8 @@ func TestDecodeASN1BindingRequestsUnwrapExplicitFields(t *testing.T) {
 }
 
 func TestUnwrapExplicit(t *testing.T) {
-	inner := tlvBytes([]byte{0xbf, 0x38}, []byte{0x01, 0x02})
-	double := tlvBytes([]byte{0xbf, 0x38}, inner)
+	inner := asn1.RawTagged([]byte{0xbf, 0x38}, []byte{0x01, 0x02})
+	double := asn1.RawTagged([]byte{0xbf, 0x38}, inner)
 	field, _, err := asn1.ReadTLV(double)
 	require.NoError(t, err)
 	require.Equal(t, inner, unwrapExplicit(field, []byte{0xbf, 0x38}))

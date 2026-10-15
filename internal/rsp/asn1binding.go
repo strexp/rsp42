@@ -100,7 +100,7 @@ func DecodeRemoteProfileProvisioningRequest(raw []byte) (ASN1Function, []byte, e
 // EncodeRemoteProfileProvisioningResponse wraps a function response TLV in the
 // A2 envelope.
 func EncodeRemoteProfileProvisioningResponse(inner []byte) []byte {
-	return tlvBytes(asn1.Ctx(tagEnvelope, true), inner)
+	return asn1.RawTagged(asn1.Ctx(tagEnvelope, true), inner)
 }
 
 // InitiateAuthentication ----------------------------------------------------
@@ -141,17 +141,17 @@ func DecodeInitiateAuthenticationRequest(raw []byte) (*InitiateAuthenticationReq
 //	            euiccCiPKIdToBeUsed, serverCertificate } }
 func InitiateAuthenticationResponseOk(transactionID, serverSigned1, serverSignature1, euiccCiPKIDToBeUsed, serverCertificate []byte) []byte {
 	var ok []byte
-	ok = append(ok, tlvBytes(asn1.Ctx(0, false), transactionID)...)
+	ok = append(ok, asn1.RawTagged(asn1.Ctx(0, false), transactionID)...)
 	ok = append(ok, serverSigned1...)
 	ok = append(ok, serverSignature1...)
 	ok = append(ok, euiccCiPKIDToBeUsed...)
 	ok = append(ok, serverCertificate...)
-	return tlvBytes(asn1.Ctx(tagInitiateAuth, true), tlvBytes(asn1.Ctx(0, true), ok))
+	return asn1.RawTagged(asn1.Ctx(tagInitiateAuth, true), asn1.RawTagged(asn1.Ctx(0, true), ok))
 }
 
 // InitiateAuthenticationResponseError builds the BF39 error branch.
 func InitiateAuthenticationResponseError(code int64) []byte {
-	return tlvBytes(asn1.Ctx(tagInitiateAuth, true), tlvBytes(asn1.Ctx(1, false), asn1.IntBytes(code)))
+	return asn1.RawTagged(asn1.Ctx(tagInitiateAuth, true), asn1.RawTagged(asn1.Ctx(1, false), asn1.IntBytes(code)))
 }
 
 // PendingNotificationFromHandleNotification extracts the PendingNotification

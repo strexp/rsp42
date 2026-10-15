@@ -69,7 +69,7 @@ func (r *InitialiseSecureChannelRequest) SignedBytes(euiccOtpk []byte) []byte {
 		asn1.Marshal(asn1.Prim(asn1.App(73, false), r.SmdpOtpk)),
 	)
 	if len(euiccOtpk) > 0 {
-		out = append(out, tlvBytes(asn1.App(73, false), euiccOtpk)...)
+		out = append(out, asn1.RawTagged(asn1.App(73, false), euiccOtpk)...)
 	}
 	return out
 }
@@ -167,38 +167,38 @@ type StoreMetadataRequest struct {
 // Encode returns the BF25 encoding of the request.
 func (r *StoreMetadataRequest) Encode() []byte {
 	var content []byte
-	content = append(content, tlvBytes(asn1.App(26, false), r.ICCID)...)
-	content = append(content, tlvBytes(asn1.Ctx(17, false), []byte(r.ServiceProviderName))...)
-	content = append(content, tlvBytes(asn1.Ctx(18, false), []byte(r.ProfileName))...)
+	content = append(content, asn1.RawTagged(asn1.App(26, false), r.ICCID)...)
+	content = append(content, asn1.RawTagged(asn1.Ctx(17, false), []byte(r.ServiceProviderName))...)
+	content = append(content, asn1.RawTagged(asn1.Ctx(18, false), []byte(r.ProfileName))...)
 	if r.IconType != nil {
-		content = append(content, tlvBytes(asn1.Ctx(19, false), asn1.IntBytes(*r.IconType))...)
+		content = append(content, asn1.RawTagged(asn1.Ctx(19, false), asn1.IntBytes(*r.IconType))...)
 	}
 	if len(r.Icon) > 0 {
-		content = append(content, tlvBytes(asn1.Ctx(20, false), r.Icon)...)
+		content = append(content, asn1.RawTagged(asn1.Ctx(20, false), r.Icon)...)
 	}
 	if r.ProfileClass != nil {
-		content = append(content, tlvBytes(asn1.Ctx(21, false), asn1.IntBytes(*r.ProfileClass))...)
+		content = append(content, asn1.RawTagged(asn1.Ctx(21, false), asn1.IntBytes(*r.ProfileClass))...)
 	}
 	if len(r.Notifications) > 0 {
 		var entries []byte
 		for _, n := range r.Notifications {
 			var item []byte
-			item = append(item, tlvBytes(asn1.Ctx(0, false), []byte{0x00, n.Operation})...)
-			item = append(item, tlvBytes(asn1.Ctx(1, false), []byte(n.Address))...)
-			entries = append(entries, tlvBytes([]byte{0x30}, item)...)
+			item = append(item, asn1.RawTagged(asn1.Ctx(0, false), []byte{0x00, n.Operation})...)
+			item = append(item, asn1.RawTagged(asn1.Ctx(1, false), []byte(n.Address))...)
+			entries = append(entries, asn1.RawTagged([]byte{0x30}, item)...)
 		}
-		content = append(content, tlvBytes(asn1.Ctx(22, true), entries)...)
+		content = append(content, asn1.RawTagged(asn1.Ctx(22, true), entries)...)
 	}
 	if len(r.ProfileOwner) > 0 {
-		content = append(content, tlvBytes(asn1.Ctx(23, false), r.ProfileOwner)...)
+		content = append(content, asn1.RawTagged(asn1.Ctx(23, false), r.ProfileOwner)...)
 	}
 	if len(r.PPRIds) > 0 {
-		content = append(content, tlvBytes(asn1.Ctx(25, false), append([]byte{0x00}, r.PPRIds...))...)
+		content = append(content, asn1.RawTagged(asn1.Ctx(25, false), append([]byte{0x00}, r.PPRIds...))...)
 	}
 	if len(r.ServiceSpecificData) > 0 {
 		content = append(content, r.ServiceSpecificData...)
 	}
-	return tlvBytes(asn1.Ctx(37, true), content)
+	return asn1.RawTagged(asn1.Ctx(37, true), content)
 }
 
 // ActivationCodeRetrievalInfo builders (SGP.22 §4.9.2). Each returns the
@@ -211,16 +211,16 @@ func (r *StoreMetadataRequest) Encode() []byte {
 var acrOID = asn1.MustEncodeOID("2.23.146.1.3.1.1")
 
 func acrVendorExtension(inner []byte) []byte {
-	entry := tlvBytes([]byte{0x30}, concat(
-		tlvBytes(asn1.Ctx(0, false), acrOID),
-		tlvBytes(asn1.Ctx(1, true), inner),
+	entry := asn1.RawTagged([]byte{0x30}, concat(
+		asn1.RawTagged(asn1.Ctx(0, false), acrOID),
+		asn1.RawTagged(asn1.Ctx(1, true), inner),
 	))
-	return tlvBytes(asn1.Ctx(35, true), entry)
+	return asn1.RawTagged(asn1.Ctx(35, true), entry)
 }
 
 // ACRRedownload builds the activationCodeForProfileRedownload variant.
 func ACRRedownload(activationCode string) []byte {
-	return acrVendorExtension(tlvBytes([]byte{0x81}, []byte(activationCode)))
+	return acrVendorExtension(asn1.RawTagged([]byte{0x81}, []byte(activationCode)))
 }
 
 // ACRAvailable builds the activationCodeRetrievalAvailable variant.

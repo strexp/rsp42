@@ -130,14 +130,31 @@ func BitString(unused uint8, bits []byte) *Builder {
 // Marshal encodes a Builder and returns the bytes. It panics when the value
 // cannot be encoded, which includes two limits inherited from bertlv: a content
 // length above 65535 bytes, and a constructed tag carrying a raw value. Callers
-// that need large content or a constructed element with pre-encoded content must
-// write the tag/length themselves (see rsp.tlvBytes, which does exactly that).
+// that need large content or a constructed element with pre-encoded content use
+// RawTagged instead.
 func Marshal(t *Builder) []byte {
 	b, err := t.MarshalBinary()
 	if err != nil {
 		panic(err)
 	}
 	return b
+}
+
+// RawTagged emits tag + definite-length + content, without interpreting either
+// byte slice.
+//
+// It is the one place the two bertlv limits are worked around, so the rest of
+// the tree never has to: Marshal cannot express a content length above 65535
+// bytes (a real UPP/BPP can exceed it) and cannot build a constructed tag whose
+// content is already encoded (the [n] segment groups and the BF36 envelope).
+// asn1_test.go pins both limitations so this helper is not "simplified" back
+// onto Marshal.
+func RawTagged(tag, content []byte) []byte {
+	out := make([]byte, 0, len(tag)+len(content)+4)
+	out = append(out, tag...)
+	out = append(out, EncodeLength(len(content))...)
+	out = append(out, content...)
+	return out
 }
 
 func encodeInt(v int64) []byte {

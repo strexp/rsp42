@@ -76,5 +76,5 @@ func SignatureValue(b []byte) []byte {
 
 // WrapSignature builds the 5F37 signature TLV from raw signature bytes.
 func WrapSignature(sig []byte) []byte {
-	return tlvBytes(asn1.App(55, false), sig)
+	return asn1.RawTagged(asn1.App(55, false), sig)
 }

@@ -28,32 +28,16 @@ func (b *BoundProfilePackage) Assemble() []byte {
 		content = append(content, segmentGroupBytes(2, 7, b.SecondSequenceOf87)...)
 	}
 	content = append(content, segmentGroupBytes(3, 6, b.SequenceOf86)...)
-	return tlvBytes(asn1.Ctx(54, true), content)
+	return asn1.RawTagged(asn1.Ctx(54, true), content)
 }
 
 // segmentGroupBytes builds an [n] SEQUENCE OF [segTag] OCTET STRING group.
 func segmentGroupBytes(groupTag, segTag uint64, segments [][]byte) []byte {
 	var content []byte
 	for _, s := range segments {
-		content = append(content, tlvBytes(asn1.Ctx(segTag, false), s)...)
+		content = append(content, asn1.RawTagged(asn1.Ctx(segTag, false), s)...)
 	}
-	return tlvBytes(asn1.Ctx(groupTag, true), content)
-}
-
-// tlvBytes emits a tag + definite-length + content.
-//
-// It exists because the bertlv builder cannot express two shapes this package
-// needs: a constructed tag whose content is already encoded (the BF36 envelope,
-// the [n] segment groups) and a content length above 65535 bytes (a real UPP can
-// exceed it). asn1.Marshal, which delegates to bertlv, panics on both —
-// TestTLVBytesSupportsConstructedContent and TestTLVBytesSupportsLargeLengths
-// pin that, so this helper must not be "simplified" onto asn1.Marshal.
-func tlvBytes(tag, content []byte) []byte {
-	out := make([]byte, 0, len(tag)+len(content)+4)
-	out = append(out, tag...)
-	out = append(out, asn1.EncodeLength(len(content))...)
-	out = append(out, content...)
-	return out
+	return asn1.RawTagged(asn1.Ctx(groupTag, true), content)
 }
 
 // DecodeBoundProfilePackage parses a BF36 BoundProfilePackage.

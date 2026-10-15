@@ -172,7 +172,7 @@ func TestEncodeResponses(t *testing.T) {
 	// AuthenticateClientResponseEs9 OK.
 	profileMeta := (&StoreMetadataRequest{ICCID: testutil.MustHex(t, "98001032547698103214"), ServiceProviderName: "SPN", ProfileName: "Name"}).Encode()
 	smdpSigned2 := (&SmdpSigned2{TransactionID: txn, CCRequiredFlag: false}).Encode()
-	sig2 := tlvBytes(asn1.App(55, false), repeat(0, 64))
+	sig2 := asn1.RawTagged(asn1.App(55, false), repeat(0, 64))
 	certDER := mustRead(t, "../../testdata/sgp26/EUM/CERT_EUM_NIST.der")
 	got := AuthenticateClientResponseEs9Ok(txn, profileMeta, smdpSigned2, sig2, certDER)
 	hexEq(t, g["AuthenticateClientResponseEs9_Ok"], got)
