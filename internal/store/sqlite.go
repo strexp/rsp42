@@ -40,7 +40,7 @@ type Store struct {
 // read-then-update in several places (pool reservation, idempotency claim), and
 // a deferred transaction that upgrades its lock can fail with SQLITE_BUSY.
 func Open(dsn string) (*Store, error) {
-	dsn = withImmediateTxLock(dsn)
+	dsn = applyDSNDefaults(dsn)
 	ensureDSNDir(dsn)
 	db, err := sql.Open("sqlite", dsn)
 	if err != nil {
@@ -84,16 +84,48 @@ func Open(dsn string) (*Store, error) {
 // Close closes the underlying database.
 func (s *Store) Close() error { return s.DB.Close() }
 
-// withImmediateTxLock adds `_txlock=immediate` to a DSN unless it is already
-// present or the DSN is a private in-memory database.
-func withImmediateTxLock(dsn string) string {
-	if strings.Contains(dsn, "_txlock=") || strings.HasPrefix(dsn, ":memory:") {
+// applyDSNDefaults adds the connection settings rsp42 relies on when the
+// configured DSN does not carry them:
+//
+//   - `_txlock=immediate`, because the write path is read-then-update in several
+//     places (pool reservation, idempotency claim) and a deferred transaction
+//     that upgrades its lock can fail with SQLITE_BUSY;
+//   - `journal_mode(WAL)` and `busy_timeout(5000)`, because the server and the
+//     `rsp42 admin` commands open the same database file from separate
+//     processes, so a DSN without them answers SQLITE_BUSY immediately instead
+//     of waiting. The shipped defaults and config.example.yaml already set both;
+//     this covers a hand-written DSN.
+//
+// A private in-memory database gets none of them: WAL does not apply to
+// `:memory:`, and no second process can contend for it.
+func applyDSNDefaults(dsn string) string {
+	if isMemoryDSN(dsn) {
 		return dsn
 	}
-	if strings.Contains(dsn, "?") {
-		return dsn + "&_txlock=immediate"
+	add := make([]string, 0, 3)
+	if !strings.Contains(dsn, "_txlock=") {
+		add = append(add, "_txlock=immediate")
 	}
-	return dsn + "?_txlock=immediate"
+	if !strings.Contains(dsn, "journal_mode") {
+		add = append(add, "_pragma=journal_mode(WAL)")
+	}
+	if !strings.Contains(dsn, "busy_timeout") {
+		add = append(add, "_pragma=busy_timeout(5000)")
+	}
+	if len(add) == 0 {
+		return dsn
+	}
+	sep := "?"
+	if strings.Contains(dsn, "?") {
+		sep = "&"
+	}
+	return dsn + sep + strings.Join(add, "&")
+}
+
+// isMemoryDSN reports whether the DSN names an in-memory database, in either the
+// `:memory:` or the `file::memory:` form.
+func isMemoryDSN(dsn string) bool {
+	return strings.HasPrefix(dsn, ":memory:") || strings.Contains(dsn, ":memory:")
 }
 
 // ensureDSNDir creates the parent directory of a file-backed DSN so that SQLite
