@@ -219,6 +219,13 @@ func (s *Sequence) ValidateV231() *Validation {
 			warnf("PE-%s (%s) is outside the SAIP V2.3.1 baseline but is marked mandated", strings.ToUpper(d.nonBaseline), d.nonBaseline)
 		}
 	}
+
+	// --- Annex A per-file defaults and FCP value domains (R1) --------------
+	s.validateTemplateFiles(v)
+
+	// --- ASN.1 value domains (SIZE / INTEGER ranges) of the profile --------
+	s.validateValueRanges(v)
+
 	return v
 }
 

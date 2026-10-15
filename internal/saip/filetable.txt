@@ -1,0 +1,321 @@
+# --- §9.2 MF ---------------------------------------------------------------
+mf|3F00||MF|MF|||14||||pinStatusTemplateDO|
+mf|2F05||EF PL|TR||2|1|05|FF...FF|N||
+mf|2FE2||EF ICCID|TR||10|11|||Y||
+mf|2F00||EF DIR|LF|-|-|10|1E||Y|Record size, File size|
+mf|2F06||EF ARR|LF|-|-|10|||Y|Record size, File size|
+mf|2F08||EF UMPC|TR||5|10|08|eUICC Platform dependant|N||
+# --- §9.3 DF CD ------------------------------------------------------------
+cd|7F11||DF CD|DF|||14||||pinStatusTemplateDO|
+cd|6F01||EF LAUNCHPAD|TR||-|2|||Y|File size|
+cd|6F40|6F7F|EF ICON|TR||-|2|||Y|File size|
+# --- §9.4 DF TELECOM -------------------------------------------------------
+telecom|7F10||DF TELECOM|DF|||14||||pinStatusTemplateDO|
+telecom|6F06||EF ARR|LF|-|-|10|||Y|Record size, File size|
+telecom|6F53||EF RMA|LF|-|-|3|||Y|Record size, File size|
+telecom|6F54||EF SUME|TR||22|3|||Y||
+telecom|6FE0||EF ICE_DN|LF|50|24|9||FF...FF|N||
+telecom|6FE1||EF ICE_FF|LF|-|-|9||FF...FF|N|Record size, File size|
+telecom|6FE5||EF PSISMSC|LF|-|-|5|||Y|Record size, File size|12 and 91
+telecom|5F50||DF GRAPHICS|DF|||14||||pinStatusTemplateDO|
+telecom|4F20||EF IMG|LF|-|-|2||00 FF...FF|N|Record size, File size|
+telecom|4F40|4F7F|EF IIDF|TR||-|2||FF...FF|N|File size|
+telecom|4F21||EF ICE_GRAPHICS|BT||-|9||FF...FF|N|File size|
+telecom|4F01||EF LAUNCH_SCWS|TR||-|10|||Y|File size|
+telecom|4F80|4FBF|EF ICON|TR||-|10|||Y|File size|
+telecom|5F3A||DF PHONEBOOK|DF|||14||||pinStatusTemplateDO|
+telecom|4F30||EF PBR|LF|-|-|2|||Y|Record size, File size|
+telecom|4F38|4F3F|EF EXT1|LF|-|13|5||00 FF ... FF|N|File size, SFI|
+telecom|4F40|4F47|EF AAS|LF|-|-|5||FF...FF|N|Record size, File size|
+telecom|4F48|4F4F|EF GAS|LF|-|-|5||FF...FF|N|Record size, File size|
+telecom|4F22||EF PSC|TR||4|5||00 00 00 00|N|SFI|
+telecom|4F23||EF CC|TR||2|5||00 00|N|SFI|
+telecom|4F24||EF PUID|TR||2|5||00 00|N|SFI|
+telecom|4F50|4F57|EF IAP|LF|-|-|5||FF...FF|N|Record size, File size, SFI|
+telecom|4F58|4F5F|EF ADN|LF|-|-|5||FF...FF|N|Record size, File size, SFI|
+telecom|4F60|4F67|EF PBC|LF|-|2|5||00...00|N|File size, SFI|
+telecom|4F68|4F6F|EF ANR|LF|-|-|5||FF...FF|N|Record size, File size, SFI|
+telecom|4F70|4F77|EF PURI|LF|-|-|5|||Y|Record size, File size, SFI|
+telecom|4F78|4F7F|EF EMAIL|LF|-|-|5||FF...FF|N|Record size, File size, SFI|
+telecom|4F80|4F87|EF SNE|LF|-|-|5||FF...FF|N|Record size, File size, SFI|
+telecom|4F88|4F8F|EF UID|LF|-|2|5||00 00|N|File size, SFI|
+telecom|4F90|4F97|EF GRP|LF|-|-|5||00...00|N|Record size, File size, SFI|
+telecom|4F98|4F9F|EF CCP1|LF|-|-|5||FF...FF|N|Record size, File size, SFI|
+telecom|5F3B||DF MULTIMEDIA|DF|||14||||pinStatusTemplateDO|67
+telecom|4F47||EF MML|BT||-|5||FF...FF|N|File size|67
+telecom|4F48||EF MMDF|BT||-|5||FF...FF|N|File size|67
+telecom|5F3C||DF MMSS|DF|||14||||pinStatusTemplateDO|
+telecom|4F20||EF MLPL|TR||-|2|01||Y|File size|
+telecom|4F21||EF MSPL|TR||-|2|02||Y|File size|
+telecom|4F22||EF MMSSMODE|TR||1|2|03||Y||
+# --- §9.5.3 DF PHONEBOOK (USIM level; same table as under DF TELECOM) ------
+phonebook|5F3A||DF PHONEBOOK|DF|||14||||pinStatusTemplateDO|
+phonebook|4F30||EF PBR|LF|-|-|2|||Y|Record size, File size|
+phonebook|4F38|4F3F|EF EXT1|LF|-|13|5||00 FF ... FF|N|File size, SFI|
+phonebook|4F40|4F47|EF AAS|LF|-|-|5||FF...FF|N|Record size, File size|
+phonebook|4F48|4F4F|EF GAS|LF|-|-|5||FF...FF|N|Record size, File size|
+phonebook|4F22||EF PSC|TR||4|5||00 00 00 00|N|SFI|
+phonebook|4F23||EF CC|TR||2|5||00 00|N|SFI|
+phonebook|4F24||EF PUID|TR||2|5||00 00|N|SFI|
+phonebook|4F50|4F57|EF IAP|LF|-|-|5||FF...FF|N|Record size, File size, SFI|
+phonebook|4F58|4F5F|EF ADN|LF|-|-|5||FF...FF|N|Record size, File size, SFI|
+phonebook|4F60|4F67|EF PBC|LF|-|2|5||00...00|N|File size, SFI|
+phonebook|4F68|4F6F|EF ANR|LF|-|-|5||FF...FF|N|Record size, File size, SFI|
+phonebook|4F70|4F77|EF PURI|LF|-|-|5|||Y|Record size, File size, SFI|
+phonebook|4F78|4F7F|EF EMAIL|LF|-|-|5||FF...FF|N|Record size, File size, SFI|
+phonebook|4F80|4F87|EF SNE|LF|-|-|5||FF...FF|N|Record size, File size, SFI|
+phonebook|4F88|4F8F|EF UID|LF|-|2|5||00 00|N|File size, SFI|
+phonebook|4F90|4F97|EF GRP|LF|-|-|5||00...00|N|Record size, File size, SFI|
+phonebook|4F98|4F9F|EF CCP1|LF|-|-|5||FF...FF|N|Record size, File size, SFI|
+# --- §9.5.4 DF GSM-ACCESS --------------------------------------------------
+gsm-access|5F3B||DF GSM-ACCESS|DF|||14||||pinStatusTemplateDO|27
+gsm-access|4F20||EF Kc|TR||9|5|01|FF FF FF FF FF FF FF FF 07|N||27
+gsm-access|4F52||EF KcGPRS|TR||9|5|02|FF FF FF FF FF FF FF FF 07|N||27
+gsm-access|4F63||EF CPBCCH|TR||10|5||FF..FF|N||39
+gsm-access|4F64||EF InvScan|TR||1|2||00|N||40
+# --- §9.5.11 DF 5GS --------------------------------------------------------
+df-5gs|5FC0||DF 5GS|DF|||14||||pinStatusTemplateDO|122 to 127, 129 and 130
+df-5gs|4F01||EF 5GS3GPPLOCI|TR||20|5|01|FFFFFFFFFFFFFFFFFFFFFFFFF00000001|N||
+df-5gs|4F02||EF 5GSN3GPPLOCI|TR||20|5|02|FFFFFFFFFFFFFFFFFFFFFFFFF00000001|N||
+df-5gs|4F03||EF 5GS3GPPNSC|LF|1|57|5|03|FF..FF|N||
+df-5gs|4F04||EF 5GSN3GPPNSC|LF|1|57|5|04|FF..FF|N||
+df-5gs|4F05||EF 5GAUTHKEYS|TR||110|5|05|FF..FF|N||
+df-5gs|4F06||EF UAC_AIC|TR||4|2|06||Y||
+df-5gs|4F07||EF SUCI_Calc_Info|TR||-|2|07|FF..FF|N|File size|
+df-5gs|4F08||EF OPL5G|LF|-|10|10|08|FF..FF|N|File size|
+df-5gs|4F09||EF NSI|TR||-|2|09||Y|File size|
+df-5gs|4F0A||EF Routing_Indicator|TR||4|2|0A|F0FFFFFF|N||
+# --- §9.5.12 DF SAIP -------------------------------------------------------
+df-saip|5FD0||DF SAIP|DF|||14||||pinStatusTemplateDO|124 and 125
+df-saip|4F01||EF SUCI_Calc_Info_USIM|TR||-|3||FF..FF|N|File size|125
+# --- §9.5.1 mandatory USIM EFs --------------------------------------------
+usim|0000||ADF USIM|ADF|||14||||AID, Temporary FID, pinStatusTemplateDO|
+usim|6F07||EF IMSI|TR||9|2|07||Y||
+usim|6F06||EF ARR|LF|-|-|10|17||Y|Record size, File size|
+usim|6F08||EF Keys|TR||33|5|08|07FF...FF|N||
+usim|6F09||EF KeysPS|TR||33|5|09|07FF...FF|N||
+usim|6F31||EF HPPLMN|TR||1|2|12|0A|N||
+usim|6F38||EF UST|TR||14|2|04||Y||
+usim|6F3B||EF FDN|LF|20|26|8||FF...FF|N||2 or 89
+usim|6F3C||EF SMS|LF|10|176|5||00 FF...FF|N||10
+usim|6F42||EF SMSP|LF|1|38|5||FF...FF|N||12
+usim|6F43||EF SMSS|TR||2|5||FF FF|N||10
+usim|6F46||EF SPN|TR||17|10|||Y||19
+usim|6F56||EF EST|TR||1|8|05||Y||2,6,34 or 35
+usim|6F5B||EF START-HFN|TR||6|5|0F|F00000 F00000|N||
+usim|6F5C||EF THRESHOLD|TR||3|2|10|FF FF FF|N||
+usim|6F73||EF PSLOCI|TR||14|5|0C|FF FF FF FF FF FF FF FF FF FF 00 00 FF 01|N||
+usim|6F78||EF ACC|TR||2|2|06||Y||
+usim|6F7B||EF FPLMN|TR||12|5|0D|FF...FF|N||
+usim|6F7E||EF LOCI|TR||11|5|0B|FFFFFFFFFFFFFF0000 FF 01|N||
+usim|6FAD||EF AD|TR||4|10|03|00 00 00 02|N||
+usim|6FB7||EF ECC|LF|1|4|10|01||Y||
+usim|6FC4||EF NETPAR|TR||128|5||FF...FF|N||
+usim|6FE3||EF EPSLOCI|TR||18|5|1E|FFFFFFFFFFFFFFFFFFFFFF FFFFFF0000 01|N||85
+usim|6FE4||EF EPSNSC|LF|1|80|5|18|FF...FF|N||85
+# --- §9.5.2 optional USIM EFs ---------------------------------------------
+opt-usim|6F05||EF LI|TR||6|1|02|FF...FF|N||
+opt-usim|6F37||EF ACMmax|TR||3|5||000000|N||13
+opt-usim|6F39||EF ACM|CY|1|3|7||000000|N||13
+opt-usim|6F3E||EF GID1|TR||8|2|||Y||17
+opt-usim|6F3F||EF GID2|TR||8|2|||Y||18
+opt-usim|6F40||EF MSISDN|LF|1|24|2||FF...FF|N||21
+opt-usim|6F41||EF PUCT|TR||5|5||FFFFFF0000|N||13
+opt-usim|6F45||EF CBMI|TR||10|5||FF...FF|N||15
+opt-usim|6F48||EF CBMID|TR||10|2|0E|FF...FF|N||19
+opt-usim|6F49||EF SDN|LF|10|24|2||FF...FF|N||4 or 89
+opt-usim|6F4B||EF EXT2|LF|10|13|8||00 FF...FF|N||3
+opt-usim|6F4C||EF EXT3|LF|10|13|2||00 FF...FF|N||5
+opt-usim|6F50||EF CBMIR|TR||20|5||FF...FF|N||16
+opt-usim|6F60||EF PLMNwAcT|TR||40|5|0A|Repeat FFFFFF0000|N||20
+opt-usim|6F61||EF OPLMNwAcT|TR||40|2|11|Repeat FFFFFF0000|N||42
+opt-usim|6F62||EF HPLMNwAcT|TR||5|2|13|Repeat FFFFFF0000|N||43
+opt-usim|6F2C||EF DCK|TR||16|5||FF...FF|N||36
+opt-usim|6F32||EF CNL|TR||30|2||FF...FF|N||37
+opt-usim|6F47||EF SMSR|LF|10|30|5||00 FF...FF|N||11
+opt-usim|6F4D||EF BDN|LF|10|25|8||FF...FF|N||6
+opt-usim|6F4E||EF EXT5|LF|10|13|5||00 FF...FF|N||44
+opt-usim|6F4F||EF CCP2|LF|5|15|5|16|FF...FF|N||14
+opt-usim|6F55||EF EXT4|LF|10|13|8||00 FF...FF|N||7
+opt-usim|6F57||EF ACL|TR||101|8||00 FF...FF|N||35
+opt-usim|6F58||EF CMI|LF|10|11|2||FF...FF|N||6
+opt-usim|6F80||EF ICI|CY|20|38|5|14|FF...FF 000000 00 01FFFF|N||9
+opt-usim|6F81||EF OCI|CY|20|37|5|15|FF...FF 000000 01FFFF|N||8
+opt-usim|6F82||EF ICT|CY|1|3|7||000000|N||9
+opt-usim|6F83||EF OCT|CY|1|3|7||000000|N||8
+opt-usim|6FB1||EF VGCS|TR||20|2|||Y||57
+opt-usim|6FB2||EF VGCSS|TR||7|5|||Y||57
+opt-usim|6FB3||EF VBS|TR||20|2|||Y||58
+opt-usim|6FB4||EF VBSS|TR||7|2|||Y||58
+opt-usim|6FB5||EF eMLPP|TR||2|2|||Y||24
+opt-usim|6FB6||EF AaeM|TR||1|5||00|N||25
+opt-usim|6FC3||EF HiddenKey|TR||4|5||FF...FF|N||
+opt-usim|6FC5||EF PNN|LF|10|16|10|19||Y||45
+opt-usim|6FC6||EF OPL|LF|5|18|10|1A||Y||46
+opt-usim|6FC7||EF MBDN|LF|3|24|5|||Y||47
+opt-usim|6FC8||EF EXT6|LF|10|13|5||00 FF...FF|N||47
+opt-usim|6FC9||EF MBI|LF|10|5|5|||Y||47
+opt-usim|6FCA||EF MWIS|LF|10|6|5||00 00 00 00 00|N||48
+opt-usim|6FCB||EF CFIS|LF|10|16|5||01 00 FF...FF|N||49
+opt-usim|6FCC||EF EXT7|LF|10|13|5||00 FF...FF|N||49
+opt-usim|6FCD||EF SPDI|TR||17|2|1B||Y||51
+opt-usim|6FCE||EF MMSN|LF|10|6|5||00 00 00 FF...FF|N||52
+opt-usim|6FCF||EF EXT8|LF|10|13|5||00 FF...FF|N||53
+opt-usim|6FD0||EF MMSICP|TR||100|2||FF...FF|N||52
+opt-usim|6FD1||EF MMSUP|LF|-|-|5||FF...FF|N|Record size, File size|52
+opt-usim|6FD2||EF MMSUCP|TR||100|5||FF...FF|N||52 or 55
+opt-usim|6FD3||EF NIA|LF|5|11|2||FF...FF|N||56
+opt-usim|6FD4||EF VGCSCA|TR||-|2||00...00|N|File size|64
+opt-usim|6FD5||EF VBSCA|TR||-|2||00...00|N|File size|65
+opt-usim|6FD6||EF GBABP|TR||-|5||FF...FF|N|File size|68
+opt-usim|6FD7||EF MSK|LF|-|-|2||FF...FF|N|Record size, File size|69
+opt-usim|6FD8||EF MUK|LF|-|-|2||FF...FF|N|Record size, File size|69
+opt-usim|6FD9||EF EHPLMN|TR||15|2|1D|FF...FF|N||71
+opt-usim|6FDA||EF GBANL|LF|-|-|2||FF...FF|N|Record size, File size|68
+opt-usim|6FDB||EF EHPLMNPI|TR||1|2||00|N||71 or 73
+opt-usim|6FDC||EF LRPLMNSI|TR||1|2||00|N||74
+opt-usim|6FDD||EF NAFKCA|LF|-|-|2||FF...FF|N|Record size, File size|68 or 76
+opt-usim|6FDE||EF SPNI|TR||-|10||00 FF...FF|N|File size|78
+opt-usim|6FDF||EF PNNI|LF|-|-|10||00 FF...FF|N|Record size, File size|79
+opt-usim|6FE2||EF NCP-IP|LF|-|-|2|||Y|Record size, File size|80
+opt-usim|6FE6||EF UFC|TR||30|10||80 1E 60 C0 1E 90 00 80 04 00 00 00 00 00 00 00 00 00 00 00 F0 00 00 00 00 40 00 00 00 00 00 00 00 00 00 00 80|N||
+opt-usim|6FE8||EF NASCONFIG|TR||18|2|||Y||
+opt-usim|6FE7||EF UICCIARI|LF|-|-|2|||Y|Record size, File size|95
+opt-usim|6FEC||EF PWS|TR||-|10|||Y|File size|97
+opt-usim|6FED||EF FDNURI|LF|-|-|8||FF...FF|N|Record size, File size|2 or 99
+opt-usim|6FEE||EF BDNURI|LF|-|-|8||FF...FF|N|Record size, File size|6 or 99
+opt-usim|6FEF||EF SDNURI|LF|-|-|2||FF...FF|N|Record size, File size|4 or 99
+opt-usim|6FF0||EF IWL|LF|-|-|3|||Y|Record size, File size|102
+opt-usim|6FF1||EF IPS|CY|-|4|10||FF...FF|N|File size|102
+opt-usim|6FF2||EF IPD|LF|-|-|3||FF...FF|N|Record size, File size|102
+# --- §9.6.1 mandatory ISIM EFs --------------------------------------------
+isim|0000||ADF ISIM|ADF|||14||||AID, Temporary FID, pinStatusTemplateDO|
+isim|6F02||EF IMPI|TR||-|2|02||Y|File size|
+isim|6F04||EF IMPU|LF|1|-|2|04||Y|Record size|
+isim|6F03||EF Domain|TR||-|2|05||Y|File size|
+isim|6F07||EF IST|TR||14|2|07||Y||
+isim|6FAD||EF AD|TR||3|10|03|000000|N||
+isim|6F06||EF ARR|LF|-|-|10|06||Y|Record size, File size|
+# --- §9.6.2 optional ISIM EFs ---------------------------------------------
+opt-isim|6F09||EF P-CSCF|LF|1|-|2|||Y|Record size|1 or 5
+opt-isim|6F3C||EF SMS|LF|10|176|5||00 FF...FF|N||6 or 8
+opt-isim|6F42||EF SMSP|LF|1|38|5||FF...FF|N||8
+opt-isim|6F43||EF SMSS|TR||2|5||FFFF|N||6 or 8
+opt-isim|6F47||EF SMSR|LF|10|30|5||FF...FF|N||7 or 8
+opt-isim|6FD5||EF GBABP|TR||-|5||FF...FF|N|File size|2
+opt-isim|6FD7||EF GBANL|LF|-|-|2||FF...FF|N|Record size, File size|2
+opt-isim|6FDD||EF NAFKCA|LF|-|-|2||FF...FF|N|Record size, File size|2 or 4
+opt-isim|6FE7||EF UICCIARI|LF|-|-|2|||Y|Record size, File size|10
+# --- §9.7.1 mandatory CSIM EFs --------------------------------------------
+csim|0000||ADF CSIM|ADF|||14||||AID, Temporary FID, pinStatusTemplateDO|
+csim|6F06||EF ARR|LF|-|-|10|17||Y|Record size, File size|
+csim|6F21||EF CALL_COUNT|CY|10|2|7||00 00|N||
+csim|6F22||EF IMSI_M|TR||10|6|04|00...00|N||
+csim|6F23||EF IMSI_T|TR||10|6|05|00...00|N||
+csim|6F24||EF TMSI|TR||16|13|06|00 00 00 00 00 00 00 00 00 FF FF FF FF 00 00 00|N||
+csim|6F25||EF AH|TR||2|5||00 00|N||
+csim|6F26||EF AOP|TR||1|5|||Y||
+csim|6F27||EF ALOC|TR||7|5|||Y||
+csim|6F28||EF CDMAHOME|LF|-|5|5|0C|00...00|N|File size|
+csim|6F29||EF ZNREGI|LF|-|8|5||00...00|N|File size|
+csim|6F2A||EF SNREGI|TR||7|5|0D||Y||
+csim|6F2B||EF DISTREGI|TR||8|5||00...00|N||
+csim|6F2C||EF ACCOLC|TR||1|2|03||Y||
+csim|6F2D||EF TERM|TR||1|5|||Y||
+csim|6F2F||EF ACP|TR||7|5|||Y||
+csim|6F30||EF PRL|TR||-|2|07||Y|File size|
+csim|6F31||EF RUIMID|TR||5|4|||Y||
+csim|6F32||EF CSIM_ST|TR||6|2|02||Y||
+csim|6F33||EF SPC|TR||3|3||00...00|N||
+csim|6F34||EF OTAPASPC|TR||1|5||00|N||
+csim|6F35||EF NAMLOCK|TR||1|5|||Y||
+csim|6F36||EF OTA|TR||17|2|||Y||
+csim|6F37||EF SP|TR||1|2|||Y||
+csim|6F38||EF ESN_MEID_ME|TR||8|10||00...00|N||
+csim|6F3A||EF LI|TR||6|1|0A|FF...FF|N||
+csim|6F42||EF USGIND|TR||1|2|||Y||
+csim|6F43||EF AD|TR||3|10|01|00...00|N||
+csim|6F45||EF MAX_PRL|TR||4|2|||Y||
+csim|6F46||EF SPCS|TR||1|12|||Y||
+csim|6F55||EF MECRP|TR||3|5||00..00|N||
+csim|6F70||EF HOME_TAG|TR||-|2|||Y|File size|
+csim|6F71||EF GROUP_TAG|TR||-|2|||Y|File size|
+csim|6F72||EF SPECIFIC_TAG|TR||-|2|||Y|File size|
+csim|6F73||EF CALL_PROMPT|TR||-|2|||Y|File size|
+# --- §9.7.2 optional CSIM EFs ---------------------------------------------
+opt-csim|6F2E||EF SSCI|TR||1|5|||Y||
+opt-csim|6F3B||EF FDN|LF|20|26|8||FF...FF|N||2
+opt-csim|6F3C||EF SMS|LF|-|-|5||00 FF...FF|N|Record size, File size|6
+opt-csim|6F3D||EF SMSP|LF|-|-|5||FF...FF|N|Record size, File size|7
+opt-csim|6F3E||EF SMSS|TR||-|5||FF...FF|N|File size|6
+opt-csim|6F3F||EF SSFC|TR||-|5|||Y|File size|
+opt-csim|6F41||EF SPN|TR||35|10|08||Y||10
+opt-csim|6F44||EF MDN|LF|-|11|5|||Y|File size|
+opt-csim|6F47||EF ECC|TR||-|10|09|FF...FF|N|File size|
+opt-csim|6F48||EF ME3GPDOPC|TR||1|5||00|N||14,15
+opt-csim|6F49||EF 3GPDOPM|TR||1|5|||Y||14,15
+opt-csim|6F4A||EF SIPCAP|TR||4|2|||Y||14
+opt-csim|6F4B||EF MIPCAP|TR||5|2|||Y||15
+opt-csim|6F4C||EF SIPUPP|TR||-|2|||Y|File size|14
+opt-csim|6F4D||EF MIPUPP|TR||-|2|||Y|File size|15
+opt-csim|6F4E||EF SIPSP|TR||1|5|||Y||14
+opt-csim|6F4F||EF MIPSP|TR||1|5|||Y||15
+opt-csim|6F50||EF SIPPAPSS|TR||-|5|||Y|File size|14
+opt-csim|6F53||EF PUZL|TR||-|2|||Y|File size|
+opt-csim|6F54||EF MAXPUZL|TR||5|5|||Y||
+opt-csim|6F56||EF HRPDCAP|TR||3|2|||Y||8
+opt-csim|6F57||EF HRPDUPP|TR||-|2|||Y|File size|8
+opt-csim|6F58||EF CSSPR|TR||1|2||FF|N||
+opt-csim|6F59||EF ATC|TR||1|2|||Y||8
+opt-csim|6F5A||EF EPRL|TR||-|2|0E||Y|File size|
+opt-csim|6F5B||EF BCSMScfg|TR||1|2|||Y||9
+opt-csim|6F5C||EF BCSMSpref|TR||1|5||FF|N||9
+opt-csim|6F5D||EF BCSMStable|LF|-|-|2||00 FF...FF|N|Record size, File size|9
+opt-csim|6F5E||EF BCSMSp|LF|-|2|5||FF FF|N|File size|9
+opt-csim|6F63||EF BAKPARA|LF|-|-|2|||Y|Record size, File size|18
+opt-csim|6F64||EF UpBAKPARA|CY|-|-|2|||Y|Record size, File size|18
+opt-csim|6F65||EF MMSN|LF|-|-|5||00 00 00 FF...FF|N|Record size, File size|19
+opt-csim|6F66||EF EXT8|LF|-|-|5||FF...FF|N|Record size, File size|20
+opt-csim|6F67||EF MMSICP|TR||-|2||FF...FF|N|File size|19
+opt-csim|6F68||EF MMSUP|LF|-|-|5||FF...FF|N|Record size, File size|19
+opt-csim|6F69||EF MMSUCP|TR||-|5||FF...FF|N|File size|19,21
+opt-csim|6F6A||EF AUTH_CAPABILITY|LF|-|5|2||00...00|N|File size|22
+opt-csim|6F6B||EF 3GCIK|TR||32|2|0B||Y||16
+opt-csim|6F6C||EF DCK|TR||20|5|||Y||25
+opt-csim|6F6D||EF GID1|TR||-|2|||Y|File size|23
+opt-csim|6F6E||EF GID2|TR||-|2|||Y|File size|24
+opt-csim|6F6F||EF CDMACNL|TR||-|2|||Y|File size|26
+opt-csim|6F74||EF SF_EUIMID|TR||7|4|||Y||34
+opt-csim|6F75||EF EST|TR||-|8|0F||Y|File size|2
+opt-csim|6F76||EF HIDDEN_KEY|TR||4|5|||Y||
+opt-csim|6F77||EF LCSVER|TR||-|2|||Y|File size|17
+opt-csim|6F78||EF LCSCP|TR||-|2|||Y|File size|17
+opt-csim|6F79||EF SDN|LF|-|-|2|||Y|Record size, File size|4
+opt-csim|6F7A||EF EXT2|LF|-|13|8|||Y|File size|3
+opt-csim|6F7B||EF EXT3|LF|-|13|2|||Y|File size|5
+opt-csim|6F7C||EF ICI|CY|-|-|5|10||Y|Record size, File size|28
+opt-csim|6F7D||EF OCI|CY|-|-|5|11||Y|Record size, File size|27
+opt-csim|6F7E||EF EXT5|LF|-|13|5|||Y|File size|29
+opt-csim|6F7F||EF CCP2|LF|-|-|5|12||Y|Record size, File size|33
+opt-csim|6F80||EF AppLabels|TR||-|2|||Y|File size|
+opt-csim|6F81||EF MODEL|TR||126|5||FF..FF|N||
+opt-csim|6F82||EF RC|TR||-|10|||Y|File size|36
+opt-csim|6F83||EF SMSCAP|TR||4|2|||Y||6
+opt-csim|6F84||EF MIPFlags|TR||1|2|||Y||35
+opt-csim|6F85||EF 3GPDUPPExt|TR||-|2|||Y|File size|14
+opt-csim|6F87||EF IPV6CAP|TR||21|2|||Y||35
+opt-csim|6F88||EF TCPConfig|TR||2|2|||Y||14
+opt-csim|6F89||EF DGC|TR||3|2|||Y||14
+opt-csim|6F8A||EF WAPBrowserCP|TR||-|2|||Y|File size|37
+opt-csim|6F8B||EF WAPBrowserBM|TR||-|5|||Y|File size|37
+opt-csim|6F8C||EF MMSConfig|TR||8|2|||Y||19
+opt-csim|6F8D||EF JDL|TR||-|2|||Y|File size|38
+# --- §9.8 EAP --------------------------------------------------------------
+eap|0000||DF EAP|DF|||14||||FID, pinStatusTemplateDO|
+eap|4F01||EF EAPKEYS|TR||-|2|||Y|File size|
+eap|4F02||EF EAPSTATUS|TR||1|2||00|N||
+eap|4F03||EF PUId|TR||-|2|||Y|File size|
+eap|4F04||EF Ps|TR||-|5||FF...FF|N|File size|
+eap|4F20||EF CurID|TR||-|5||FF...FF|N|File size|
+eap|4F21||EF ReID|TR||-|5|||Y|File size|
+eap|4F22||EF Realm|TR||-|5|||Y|File size|
