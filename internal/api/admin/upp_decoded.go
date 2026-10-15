@@ -60,6 +60,8 @@ func (h *Handler) decodedUPP(w http.ResponseWriter, r *http.Request) {
 		ICCID:       strings.TrimRight(strings.ToUpper(hex.EncodeToString(hdr.ICCID)), "F"),
 		Services:    hdr.Services(),
 		GFSTE:       hdr.GFSTEList(),
+		Elements:    []peInfo{},
+		Files:       []fileInfo{},
 	}
 	if out.Services == nil {
 		out.Services = []string{}

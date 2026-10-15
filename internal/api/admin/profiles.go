@@ -317,7 +317,7 @@ func (h *Handler) profileTimeline(w http.ResponseWriter, r *http.Request) {
 		Signed  *bool     `json:"signed,omitempty"`
 		Success *bool     `json:"processed,omitempty"`
 	}
-	var events []event
+	events := []event{}
 	if h.OrderRepo != nil {
 		orders, err := h.OrderRepo.ListByICCID(iccid)
 		if err != nil {
@@ -377,7 +377,7 @@ func (h *Handler) activationCode(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if r.URL.Query().Get("rotate") == "1" {
-		p.MatchingID = "MATCH-" + strings.ReplaceAll(uuid.NewString(), "-", "")[:16]
+		p.MatchingID = "MATCH-" + strings.ToUpper(strings.ReplaceAll(uuid.NewString(), "-", "")[:16])
 		if err := h.Profiles.Update(p); err != nil {
 			adminhttp.WriteErr(w, http.StatusInternalServerError, err.Error())
 			return

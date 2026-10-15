@@ -56,7 +56,7 @@ func (r *ProfileRepo) Stats(f ProfileFilter, groupBy string) ([]StatCount, error
 		return nil, err
 	}
 	defer func() { _ = rows.Close() }()
-	var out []StatCount
+	out := []StatCount{}
 	for rows.Next() {
 		var sc StatCount
 		if err := rows.Scan(&sc.Key, &sc.Count); err != nil {
@@ -89,7 +89,7 @@ func (r *AuditRepo) Stats(f AuditFilter, groupBy string) ([]StatCount, error) {
 		return nil, err
 	}
 	defer func() { _ = rows.Close() }()
-	var out []StatCount
+	out := []StatCount{}
 	for rows.Next() {
 		var sc StatCount
 		if err := rows.Scan(&sc.Key, &sc.Count); err != nil {
