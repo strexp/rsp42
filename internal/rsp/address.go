@@ -1,4 +1,4 @@
-package service
+package rsp
 
 import (
 	"net"
@@ -6,16 +6,17 @@ import (
 	"strings"
 )
 
-// addressMatches reports whether the RSP Server address an LPA carried in its
-// request identifies this server.
+// AddressMatches reports whether the RSP Server address an LPA carried in its
+// request identifies the server at fqdn (listening on port).
 //
+// It lives with the codecs because the address syntax is the protocol's:
 // SGP.22 §4.1 writes the SM-DP+/SM-DS address of an Activation Code as
 // "FQDN [:Port]", and LPAs do send it with the port (lpac passes its `-s` value
 // through verbatim), so the port must not make an otherwise correct address
 // fail. The host comparison is case-insensitive; the port is optional in the
 // request and, when present, has to be the one this server listens on — or the
 // one baked into the configured FQDN, which wins when set.
-func addressMatches(address, fqdn string, port int) bool {
+func AddressMatches(address, fqdn string, port int) bool {
 	wantHost, wantPort := splitHostPort(fqdn)
 	if wantPort == 0 {
 		wantPort = port

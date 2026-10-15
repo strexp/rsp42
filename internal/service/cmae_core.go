@@ -144,7 +144,7 @@ func (c *cmaeCore) authFor(id *cert.Identity) (*x509.Certificate, stdcrypto.Sign
 
 // initiate implements InitiateAuthentication (SGP.22 §5.6.1 / §5.8.1).
 func (c *cmaeCore) initiate(euiccChallenge, euiccInfo1 []byte, address string) (*InitiateResult, error) {
-	if !addressMatches(address, c.fqdn, c.port) {
+	if !rsp.AddressMatches(address, c.fqdn, c.port) {
 		return nil, cmErr(cmAddress, "server address mismatch")
 	}
 	if len(euiccChallenge) != 16 {

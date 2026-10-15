@@ -1,4 +1,4 @@
-package service
+package rsp
 
 import "testing"
 
@@ -29,8 +29,8 @@ func TestAddressMatches(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			if got := addressMatches(tc.address, tc.fqdn, tc.port); got != tc.want {
-				t.Fatalf("addressMatches(%q, %q, %d) = %v, want %v",
+			if got := AddressMatches(tc.address, tc.fqdn, tc.port); got != tc.want {
+				t.Fatalf("AddressMatches(%q, %q, %d) = %v, want %v",
 					tc.address, tc.fqdn, tc.port, got, tc.want)
 			}
 		})
