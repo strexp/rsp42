@@ -218,6 +218,23 @@ func TestLeafPackagesStayLeaves(t *testing.T) {
 	}
 }
 
+// TestTestutilIsTestOnly enforces that internal/testutil stays out of the
+// binary: only _test.go files may import it or its subpackages.
+func TestTestutilIsTestOnly(t *testing.T) {
+	const testutil = "internal/testutil"
+	for _, f := range scan(t) {
+		if f.isTest {
+			continue
+		}
+		for _, imp := range f.imports {
+			if imp == testutil || strings.HasPrefix(imp, testutil+"/") {
+				t.Errorf("%s: non-test file imports %s, which must not be linked into the binary",
+					f.relPath, imp)
+			}
+		}
+	}
+}
+
 // TestBertlvIsContained enforces that the BER-TLV library is imported by the
 // single adapter file only, so replacing the library stays a one-package change.
 func TestBertlvIsContained(t *testing.T) {

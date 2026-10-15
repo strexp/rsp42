@@ -12,10 +12,10 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"rsp42/internal/client/es2p"
+	"rsp42/internal/mockoperator"
 	"rsp42/internal/rsp"
 	"rsp42/internal/service"
 	"rsp42/internal/store"
-	"rsp42/internal/testutil/mockoperator"
 )
 
 // TestACRCheckerAgainstMockOperator closes the G13 loop in one process: the

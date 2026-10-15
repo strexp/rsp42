@@ -6,7 +6,7 @@ import (
 	"net/http"
 	"os"
 
-	"rsp42/internal/testutil/mockoperator"
+	"rsp42/internal/mockoperator"
 )
 
 func cmdMockOperator(args []string) int {

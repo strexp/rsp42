@@ -15,9 +15,9 @@ import (
 	"rsp42/internal/api/es2plus"
 	"rsp42/internal/client/es2p"
 	"rsp42/internal/iccid"
+	"rsp42/internal/mockoperator"
 	"rsp42/internal/service"
 	"rsp42/internal/store"
-	"rsp42/internal/testutil/mockoperator"
 	"time"
 )
 
