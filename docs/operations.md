@@ -21,12 +21,17 @@ for the SM-DP+ (`profiles.store.dsn` → `db/rsp42-smdpp.db`) and SM-DS
 startup. Apply migrations manually with `rsp42 admin migrate [--db dp|ds|all]`
 (the default, `all`, covers both roles).
 
-Sensitive columns (`cc_hash`, `server_challenge`, `smdp_ot_sk`,
-`shared_secret`) are encrypted with AES-256-GCM using the KMS key-encryption key.
-The KEK is given either as `kms.kek_hex` (64 hex characters) or via the file
-`kms.kek_file` (exactly 32 bytes); it must be protected and backed up, and it is
-required to read any persisted session material. Rotate it with
-`rsp42 admin rekey --new-kek NEW`.
+Sensitive columns are encrypted with AES-256-GCM using the KMS key-encryption
+key: `sessions.cc_hash`, `sessions.server_challenge`, `sessions.smdp_ot_sk`,
+`sessions.shared_secret`, plus the personalization key material
+(`personalization.k`, `personalization.opc`). The KEK is given either as
+`kms.kek_hex` (64 hex characters) or via the file `kms.kek_file` (exactly 32
+bytes); it must be protected and backed up, and it is required to read any
+persisted session or personalization key material. Rotate it with
+`rsp42 admin rekey --new-kek NEW`: the command re-encrypts every encrypted column
+of both databases, one transaction per table, and reports how many values it
+rotated. It is safe to re-run — values already sealed with the new KEK are
+skipped — and a value that neither the old nor the new KEK opens aborts the run.
 
 ## Certificates
 

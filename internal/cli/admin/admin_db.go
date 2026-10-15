@@ -113,57 +113,27 @@ func Rekey(prog string, args []string) int {
 		fmt.Fprintln(os.Stderr, err)
 		return 1
 	}
-	total := 0
+	total := store.RekeyResult{}
 	for _, t := range targets {
 		st, err := store.Open(t.dsn)
 		if err != nil {
 			fmt.Fprintln(os.Stderr, err)
 			return 1
 		}
-		n, err := rekeySessions(st, oldProvider, newProvider)
+		res, err := st.Rekey(oldProvider, newProvider)
 		_ = st.Close()
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "rekey %s: %v\n", t.name, err)
 			return 1
 		}
-		fmt.Printf("rekeyed %d session(s) in the %s database\n", n, t.name)
-		total += n
+		fmt.Printf("%s database: rotated %d value(s), %d already current, %d empty\n",
+			t.name, res.Rotated, res.Current, res.Empty)
+		total.Rotated += res.Rotated
+		total.Current += res.Current
+		total.Empty += res.Empty
 	}
-	_ = total
+	fmt.Printf("rekey complete: rotated %d value(s)\n", total.Rotated)
 	return 0
-}
-
-func rekeySessions(st *store.Store, oldP, newP kms.Provider) (int, error) {
-	txns, err := st.Sessions.ListTransactions()
-	if err != nil {
-		return 0, err
-	}
-	count := 0
-	for _, txn := range txns {
-		s, err := st.Sessions.Get(txn)
-		if err != nil {
-			continue
-		}
-		for _, f := range []*[]byte{&s.ServerChallenge, &s.SmdpOtSK, &s.SharedSecret, &s.CCHash} {
-			if len(*f) == 0 {
-				continue
-			}
-			pt, err := oldP.Decrypt(*f)
-			if err != nil {
-				return count, fmt.Errorf("decrypt %s: %w", txn, err)
-			}
-			ct, err := newP.Encrypt(pt)
-			if err != nil {
-				return count, err
-			}
-			*f = ct
-		}
-		if err := st.Sessions.Put(s); err != nil {
-			return count, err
-		}
-		count++
-	}
-	return count, nil
 }
 
 func Profile(prog string, args []string) int {
